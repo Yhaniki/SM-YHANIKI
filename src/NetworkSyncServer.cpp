@@ -830,16 +830,14 @@ void StepManiaLanServer::ShareSong(unsigned int ShareSongServerNum, unsigned int
 	int clientNum = ShareSongServerNum;
 	int client_index = ShareSongClientNum;
 	CString host_ip = ServerIp;
-	if(Client[clientNum]->hasSong == true//the player have song and another doesn't
-	&& Client[clientNum]->usingShareSongSystem == false
-	&& Client[clientNum]->inNetMusicSelect == true
-	&& clientNum!=client_index 
-	&& client_index<Client.size())
+
+	if (Client[clientNum]->hasSong == true && // the player have song and another doesn't
+		Client[clientNum]->usingShareSongSystem == false &&
+		Client[clientNum]->inNetMusicSelect == true &&
+		clientNum != client_index &&
+		client_index < Client.size() &&
+		Client[client_index]->hasSong == false)
 	{
-		if(Client[client_index]->hasSong == true)// already have song
-			return;
-		//CString host_ip = Client[clientNum]->clientSocket.getIp();
-		
 		Reply.ClearPacket();
 		Reply.Write1(NSSSS + NSServerOffset);
 		Reply.WriteNT(host_ip);

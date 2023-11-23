@@ -184,16 +184,16 @@ private:
 	bool Listen(unsigned short port);
 
 	PacketFunctions m_packet;
-	static DWORD WINAPI StaticThreadStartNSSSS(void* Param)
-    {
-        NetworkSyncManager* This = (NetworkSyncManager*) Param;
-        return This->ThreadProcNSSSS();
-    }
-	static DWORD WINAPI StaticThreadStartNSSSC(void* Param)
-    {
-        NetworkSyncManager* This = (NetworkSyncManager*) Param;
-        return This->ThreadProcNSSSC();
-    }
+	static DWORD WINAPI StaticThreadStartNSSSS(void *Param)
+	{
+		NetworkSyncManager *This = (NetworkSyncManager *)Param;
+		return This->ThreadProcNSSSS();
+	}
+	static DWORD WINAPI StaticThreadStartNSSSC(void *Param)
+	{
+		NetworkSyncManager *This = (NetworkSyncManager *)Param;
+		return This->ThreadProcNSSSC();
+	}
 	DWORD ThreadProcNSSSS(void);
 	DWORD ThreadProcNSSSC(void);
 

@@ -55,14 +55,16 @@
     <OutDir>./../Program\</OutDir>
     <IntDir>./../Release\</IntDir>
     <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <AdditionalOptions>/EHa  /wd4430 /wd4996 /wd4458 /wd4018 /wd4456 /wd4457 /wd4459 /wd4838 /wd4996 /wd26812 /wd26495 /wd4244 /wd4306 /wd4389 /wd4305 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\\local\\boost_1_72_0;$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;WINDOWS;DEBUG;_USING_V110_SDK71_;WINDOWS_IGNORE_PACKING_MISMATCH;_ITERATOR_DEBUG_LEVEL=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ExceptionHandling />
+      <ExceptionHandling>Sync</ExceptionHandling>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <TreatWChar_tAsBuiltInType>false</TreatWChar_tAsBuiltInType>
@@ -85,7 +87,7 @@
       <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutputPath)$(ProjectName)-$(COnfiguration).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\\local\\boost_1_72_0\\lib32-msvc-14.2;..\ThirdParty\dx80\lib;..\ThirdParty;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>wininet.lib;msimg32.lib;libci.lib;msvcrt.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>../Debug/StepMania-debug.pdb</ProgramDatabaseFile>
@@ -103,11 +105,11 @@
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;WINDOWS;RELEASE;_USING_V110_SDK71_;WINDOWS_IGNORE_PACKING_MISMATCH;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\include;C:\local\boost_1_76_0\include\boost-1_76;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;WINDOWS;RELEASE;_USING_V110_SDK71_;WINDOWS_IGNORE_PACKING_MISMATCH;BOOST_USE_WINAPI_VERSION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
-      <ExceptionHandling />
+      <ExceptionHandling>Sync</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <FunctionLevelLinking>false</FunctionLevelLinking>
@@ -128,10 +130,9 @@
     </ClCompile>
     <Link>
       <AdditionalOptions>/MACHINE:I386 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>../Program/StepMania.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\lib;C:\local\boost_1_76_0\stage\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>wininet.lib;msimg32.lib;libci.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <ProgramDatabaseFile>../Release/StepMania.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
@@ -139,6 +140,7 @@
       <MapExports>true</MapExports>
       <SubSystem>Windows</SubSystem>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -316,6 +318,7 @@
     <ClCompile Include="MusicSortDisplay.cpp" />
     <ClCompile Include="MusicWheel.cpp" />
     <ClCompile Include="MusicWheelItem.cpp" />
+    <ClCompile Include="NetworkFileManager.cpp" />
     <ClCompile Include="NetworkSyncManager.cpp" />
     <ClCompile Include="NetworkSyncServer.cpp" />
     <ClCompile Include="NoteData.cpp" />
@@ -709,6 +712,7 @@
     <ClInclude Include="MusicSortDisplay.h" />
     <ClInclude Include="MusicWheel.h" />
     <ClInclude Include="MusicWheelItem.h" />
+    <ClInclude Include="NetworkFileManager.h" />
     <ClInclude Include="NetworkSyncManager.h" />
     <ClInclude Include="NetworkSyncServer.h" />
     <ClInclude Include="NoteData.h" />

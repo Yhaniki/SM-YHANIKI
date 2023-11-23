@@ -1167,6 +1167,9 @@
     <ClCompile Include="crypto51\strciphr.cpp">
       <Filter>Crypto\crypto++</Filter>
     </ClCompile>
+    <ClCompile Include="NetworkFileManager.cpp">
+      <Filter>Global Singletons</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Screen.h">
@@ -2365,6 +2368,9 @@
     </ClInclude>
     <ClInclude Include="crypto51\words.h">
       <Filter>Crypto\crypto++</Filter>
+    </ClInclude>
+    <ClInclude Include="NetworkFileManager.h">
+      <Filter>Global Singletons</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
