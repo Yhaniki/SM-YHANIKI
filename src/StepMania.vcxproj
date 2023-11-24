@@ -105,7 +105,7 @@
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\include;C:\local\boost_1_76_0\include\boost-1_76;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;WINDOWS;RELEASE;_USING_V110_SDK71_;WINDOWS_IGNORE_PACKING_MISMATCH;BOOST_USE_WINAPI_VERSION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
@@ -132,7 +132,7 @@
       <AdditionalOptions>/MACHINE:I386 %(AdditionalOptions)</AdditionalOptions>
       <OutputFile>../Program/StepMania.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\lib;C:\local\boost_1_76_0\stage\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>wininet.lib;msimg32.lib;libci.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <ProgramDatabaseFile>../Release/StepMania.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
@@ -318,7 +318,6 @@
     <ClCompile Include="MusicSortDisplay.cpp" />
     <ClCompile Include="MusicWheel.cpp" />
     <ClCompile Include="MusicWheelItem.cpp" />
-    <ClCompile Include="NetworkFileManager.cpp" />
     <ClCompile Include="NetworkSyncManager.cpp" />
     <ClCompile Include="NetworkSyncServer.cpp" />
     <ClCompile Include="NoteData.cpp" />
@@ -712,7 +711,6 @@
     <ClInclude Include="MusicSortDisplay.h" />
     <ClInclude Include="MusicWheel.h" />
     <ClInclude Include="MusicWheelItem.h" />
-    <ClInclude Include="NetworkFileManager.h" />
     <ClInclude Include="NetworkSyncManager.h" />
     <ClInclude Include="NetworkSyncServer.h" />
     <ClInclude Include="NoteData.h" />

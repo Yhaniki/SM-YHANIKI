@@ -117,6 +117,7 @@ protected:
 	void RelayChat(CString &passedmessage, const unsigned int clientNum);
 	void SelectSong(PacketFunctions& Packet, const unsigned int clientNum);
 	void ServerChat(const CString& message);
+	void ServerChatOne(const CString& message, const unsigned int clientNum);
 	void SendToAllClients(PacketFunctions& Packet);
 	bool CheckHasSongState();
 	void ClearHasSong();
@@ -143,6 +144,7 @@ protected:
 	void GetAskSong(PacketFunctions&Packet, unsigned int clientNum);
 	void ShareSong(unsigned int ShareSongServerNum, unsigned int ShareSongClientNum, CString ServerIp);
 	void ShareAll(unsigned int ShareSongServerNum, CString ServerIp);
+	bool CheckShare(unsigned int hostIdx, unsigned int clientIdx, bool shareAll);
 #endif
 };
 

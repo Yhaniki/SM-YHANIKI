@@ -621,7 +621,7 @@ DWORD NetworkSyncManager::ThreadProcNSSSC(void)
 	// winsocket_client.exe {IP} "C:\\StepMania\\Songs\\connect\\temp.zip" {file_size}
 
 	// 3. unzip the song file
-	CString unZipCmd = CString("miniZip.exe 1");
+	CString unZipCmd = CString("Program\\miniZip.exe 1");
 	LOG->Info("unZipCmd %s", unZipCmd.c_str());
 	system(unZipCmd.c_str());
 	// miniZip.exe 1 "

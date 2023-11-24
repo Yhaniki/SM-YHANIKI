@@ -152,6 +152,7 @@ void SongManager::FastReload( LoadingWindow *ld )
 void SongManager::InitSongsFromDisk( LoadingWindow *ld )
 {
 	RageTimer tm;
+	FlushDirCache();
 	LoadStepManiaSongDir( SONGS_DIR, ld );
 	LOG->Trace( "Found %d songs in %f seconds.", (int)m_pSongs.size(), tm.GetDeltaTime() );
 }

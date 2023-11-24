@@ -1,3 +1,5 @@
+#define CMD_SHARE         ("share")
+#define CMD_SHARE_FULL    ("sharefull")
 #include "global.h"
 #include "NetworkSyncServer.h"
 #include "RageLog.h"
@@ -746,32 +748,77 @@ void StepManiaLanServer::SendValue(uint8_t value, const unsigned int clientNum)
 		Client[clientNum]->clientSocket.SendPack((char*)&value, sizeof(uint8_t));
 }
 
+bool StepManiaLanServer::CheckShare(unsigned int hostIdx, unsigned int clientIdx, bool shareAll)
+{
+	bool result = true;
+	if (hostIdx >= Client.size())
+	{
+		ServerChatOne("The host Index is invalid.", hostIdx);
+		result = false;
+	}
+	else if (!Client[hostIdx]->hasSong)
+	{
+		ServerChatOne("The Host hasn't selected a song yet.", hostIdx);
+		result = false;
+	}
+	else if (Client[hostIdx]->usingShareSongSystem)
+	{
+		ServerChatOne("File transfer system is in use.", hostIdx);
+		result = false;
+	}
+	else if (!Client[hostIdx]->inNetMusicSelect)
+	{
+		ServerChatOne("The host is not in the room.", hostIdx);
+		result = false;
+	}
+	else if (!shareAll)
+	{
+		if (clientIdx >= Client.size() || hostIdx == clientIdx)
+		{
+			ServerChatOne("The share song parameter is invalid.", hostIdx);
+			result = false;
+		}
+		else if (!Client[clientIdx]->inNetMusicSelect)
+		{
+			ServerChatOne("The client is not in the room.", hostIdx);
+			result = false;
+		}
+		else if (Client[clientIdx]->hasSong)
+		{
+			ServerChatOne("The client already has the song.", hostIdx);
+			result = false;
+		}
+	}
+	return result;
+}
+
 void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int clientNum)
 {
 	CString message = Packet.ReadNT();
 	if (message.at(0) == '/')
 	{
 		CString command = message.substr(1, message.find(" ")-1);
-		if((command.compare("share") == 0)||(command.compare("sharefull") == 0))
+		if ((command.compare(CMD_SHARE) == 0) || (command.compare(CMD_SHARE_FULL) == 0))
 		{
 			// LOG->Info("command.GetLength() %d", command.GetLength());
-			if(command.compare("share") == 0)
+			Client[clientNum]->filefilter = (command.compare(CMD_SHARE) == 0) ? true : false;
+			if (message.GetLength() == CString(CMD_SHARE).GetLength() + 1 ||
+				message.GetLength() == CString(CMD_SHARE_FULL).GetLength() + 1) // no arg, share all
 			{
-				Client[clientNum]->filefilter=true;
-			}else
-			{
-				Client[clientNum]->filefilter=false;
+				Client[clientNum]->shareAll = true;
+				if (CheckShare(clientNum, 0, true))
+				{
+					ShareAll(clientNum, Packet.fromIp);
+				}
 			}
-			if(message.GetLength() == 6||message.GetLength() == 10)//no arg, share all
+			else
 			{
-				Client[clientNum]->shareAll=true;
-				ShareAll(clientNum, Packet.fromIp);
-			}else
-			{
-				CString name = message.substr(message.find(" ")+1);
-				int client_index = atof( name.c_str() );
-				
-				ShareSong(clientNum, client_index, Packet.fromIp);
+				CString name = message.substr(message.find(" ") + 1);
+				int client_index = atof(name.c_str());
+				if (CheckShare(clientNum, client_index, false))
+				{
+					ShareSong(clientNum, client_index, Packet.fromIp);
+				}
 			}
 		}
 		else if ((command.compare("list") == 0)||(command.compare("have") == 0))
@@ -855,23 +902,23 @@ void StepManiaLanServer::ShareSong(unsigned int ShareSongServerNum, unsigned int
 }
 void StepManiaLanServer::ShareAll(unsigned int ShareSongServerNum, CString ServerIp)
 {
-	if(Client[ShareSongServerNum]->hasSong==false)return;
-	for(int i=Client[ShareSongServerNum]->ShareNum; i<Client.size(); i++)
+	if (Client[ShareSongServerNum]->hasSong == false) return;
+	for (int i = Client[ShareSongServerNum]->ShareNum; i < Client.size(); i++)
 	{
-		if(i!=0&&
-		   Client[i]->hasSong==false&&
-		   Client[i]->usingShareSongSystem==false&&
-		   Client[i]->inNetMusicSelect == true&&
-		   i!=ShareSongServerNum)
-		   {
-			   ShareSong(ShareSongServerNum, i, ServerIp);
-			   Client[ShareSongServerNum]->ShareNum=i+1;
-			   return;
-		   }
-		   Client[ShareSongServerNum]->ShareNum=i;
+		if (i != 0 &&
+			Client[i]->hasSong == false &&
+			Client[i]->usingShareSongSystem == false &&
+			Client[i]->inNetMusicSelect == true &&
+			i != ShareSongServerNum)
+		{
+			ShareSong(ShareSongServerNum, i, ServerIp);
+			Client[ShareSongServerNum]->ShareNum = i + 1;
+			return;
+		}
+		Client[ShareSongServerNum]->ShareNum = i;
 	}
-	Client[ShareSongServerNum]->shareAll=false;
-	Client[ShareSongServerNum]->ShareNum=0;
+	Client[ShareSongServerNum]->shareAll = false;
+	Client[ShareSongServerNum]->ShareNum = 0;
 }
 void StepManiaLanServer::RelayChat(CString &passedmessage, const unsigned int clientNum)
 {
@@ -1058,6 +1105,7 @@ void StepManiaLanServer::SendToAllClients(PacketFunctions& Packet)
 		SendNetPacket(x, Packet);
 
 }
+
 void StepManiaLanServer::ServerChat(const CString& message)
 {
 	CString x = servername + ": " + message;
@@ -1065,6 +1113,15 @@ void StepManiaLanServer::ServerChat(const CString& message)
 	Reply.Write1(NSCCM + NSServerOffset);
 	Reply.WriteNT(x);
 	SendToAllClients(Reply);
+}
+
+void  StepManiaLanServer::ServerChatOne(const CString& message, const unsigned int clientNum)
+{
+	CString msg = servername + ": " + message;
+	Reply.ClearPacket();
+	Reply.Write1(NSCCM + NSServerOffset);
+	Reply.WriteNT(msg);
+	SendNetPacket(clientNum, Reply);
 }
 
 bool StepManiaLanServer::CheckConnection(const unsigned int clientNum)
