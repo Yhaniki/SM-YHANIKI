@@ -13,7 +13,7 @@ class LoadingWindow;
 const int NETPROTOCOLVERSION=1;
 const int NETMAXBUFFERSIZE=1020; //1024 - 4 bytes for EzSockets
 const int NETNUMTAPSCORES=8;
-
+const int NETGRAPHSIZE=100;
 enum NSCommand
 {
 	NSCPing = 0,
@@ -50,7 +50,7 @@ struct EndOfGame_PlayerData
 	int tapScores[NETNUMTAPSCORES];	//This will be a const soon enough
 	CString playerOptions;
 	CString percentage;
-	float Graph[100];
+	float Graph[NETGRAPHSIZE];
 };
 
 enum NSScoreBoardColumn

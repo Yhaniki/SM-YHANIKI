@@ -1,11 +1,10 @@
-#define CMD_SHARE         ("share")
-#define CMD_SHARE_FULL    ("sharefull")
 #include "global.h"
 #include "NetworkSyncServer.h"
 #include "RageLog.h"
 #include "PrefsManager.h"
 #include <time.h>
 #include <windows.h>
+#include <unordered_set>
 
 #if defined(WITHOUT_NETWORKING)
 bool StepManiaLanServer::ServerStart() { return false; }
@@ -14,6 +13,18 @@ void StepManiaLanServer::ServerUpdate() { }
 StepManiaLanServer::StepManiaLanServer() { }
 StepManiaLanServer::~StepManiaLanServer() { }
 #else
+
+std::unordered_set<std::string> cmdList =
+	{"share",
+	 "sharefull",
+	 "list",
+	 "have"};
+
+std::unordered_set<std::string> hostCmdList =
+	{"start",
+	 "kick",
+	 "ban",
+	 "host"};
 
 LanPlayer::LanPlayer()
 {
@@ -28,9 +39,9 @@ LanPlayer::LanPlayer()
 	offset = 0;
 	options = "";
 	percentage = "";
-	for(int i=0; i<100; i++)
+	for (int i = 0; i < NETGRAPHSIZE; i++)
 	{
-		Graph[i]=0;
+		Graph[i] = 0;
 	}
 }
 
@@ -490,7 +501,7 @@ void StepManiaLanServer::GameOver(PacketFunctions& Packet, const unsigned int cl
 			Reply.Write1( NSCGraph + NSServerOffset );
 			Reply.Write1( (uint8_t) numPlayers );
 			Reply.Write1( (uint8_t) x );
-			for (int i=0; i<100; i++)
+			for (int i=0; i<NETGRAPHSIZE; i++)
 			{
 				Reply.Write4( playersPtr[x]->Graph[i] );
 			}
@@ -504,12 +515,9 @@ void StepManiaLanServer::GameOver(PacketFunctions& Packet, const unsigned int cl
 }
 void StepManiaLanServer::ServerGetGraph(PacketFunctions& Packet, unsigned int clientNum)
 {
-	for(int i=0; i<100; i++)
+	for (int i = 0; i < NETGRAPHSIZE; i++)
 	{
 		Client[clientNum]->Player[0].Graph[i] = Packet.Read4();
-	}
-	for(int i=0; i<100; i++)
-	{
 		Client[clientNum]->Player[1].Graph[i] = Packet.Read4();
 	}
 }
@@ -753,7 +761,7 @@ bool StepManiaLanServer::CheckShare(unsigned int hostIdx, unsigned int clientIdx
 	bool result = true;
 	if (hostIdx >= Client.size())
 	{
-		ServerChatOne("The host Index is invalid.", hostIdx);
+		ServerChatOne("The host index is invalid.", hostIdx);
 		result = false;
 	}
 	else if (!Client[hostIdx]->hasSong)
@@ -792,85 +800,98 @@ bool StepManiaLanServer::CheckShare(unsigned int hostIdx, unsigned int clientIdx
 	return result;
 }
 
+bool IsCmd(CString &command)
+{
+	bool result = false;
+	auto it = cmdList.find(command);
+
+	if (it != cmdList.end())
+	{
+		result = true;
+	}
+	return result;
+}
+
+bool IsHostCmd(CString &command)
+{
+	bool result = false;
+	auto it = hostCmdList.find(command);
+
+	if (it != hostCmdList.end())
+	{
+		result = true;
+	}
+	return result;
+}
+
+CString GetArg(CString&command)
+{
+	size_t spacePos = command.find(" ");
+	CString arg;
+
+	if (spacePos != std::string::npos) {
+		arg = command.substr(spacePos + 1);
+	} else {
+		arg = "";
+	}
+	return arg;
+}
+
 void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int clientNum)
 {
 	CString message = Packet.ReadNT();
 	if (message.at(0) == '/')
 	{
 		CString command = message.substr(1, message.find(" ")-1);
-		if ((command.compare(CMD_SHARE) == 0) || (command.compare(CMD_SHARE_FULL) == 0))
+		if(IsCmd(command) || IsHostCmd(command))
 		{
-			// LOG->Info("command.GetLength() %d", command.GetLength());
-			Client[clientNum]->filefilter = (command.compare(CMD_SHARE) == 0) ? true : false;
-			if (message.GetLength() == CString(CMD_SHARE).GetLength() + 1 ||
-				message.GetLength() == CString(CMD_SHARE_FULL).GetLength() + 1) // no arg, share all
+			if ((command.compare("share") == 0) ||
+			(command.compare("sharefull") == 0))
 			{
-				Client[clientNum]->shareAll = true;
-				if (CheckShare(clientNum, 0, true))
+				CommandShare(command, clientNum);
+			}
+			else if ((command.compare("list") == 0))
+			{
+				ServerChatOne(ListPlayers(), clientNum);
+			}
+			else if ((command.compare("have") == 0))
+			{
+				Have(clientNum);
+			}
+			else if (clientNum == 0)
+			{
+				CString arg = GetArg(command);
+				if (command.compare("start") == 0)
 				{
-					ShareAll(clientNum, Packet.fromIp);
+					ForceStart();
+				}
+				else if (command.compare("kick") == 0)
+				{
+					Kick(arg);
+				}
+				else if (command.compare("ban") == 0)
+				{
+					Ban(arg);
+				}
+				else if (command.compare("host") == 0)
+				{
+					Host(arg, Packet, clientNum);
 				}
 			}
 			else
 			{
-				CString name = message.substr(message.find(" ") + 1);
-				int client_index = atof(name.c_str());
-				if (CheckShare(clientNum, client_index, false))
-				{
-					ShareSong(clientNum, client_index, Packet.fromIp);
-				}
+				message = "No server command permission.";
+				ServerChatOne(message, clientNum);
 			}
 		}
-		else if ((command.compare("list") == 0)||(command.compare("have") == 0))
-			if (command.compare("list") == 0)
-			{
-				Reply.ClearPacket();
-				Reply.Write1(NSCCM + NSServerOffset);
-				Reply.WriteNT(ListPlayers());
-				SendNetPacket(clientNum, Reply);
-			}
-			else
-			{
-				message = "";
-				message += Client[clientNum]->Player[0].name;
-				if (Client[clientNum]->twoPlayers)
-					message += "&";
-				message += Client[clientNum]->Player[1].name;
-				message += " forces has song.";
-				Client[clientNum]->forceHas = true;
-				ServerChat(message);
-			}
 		else
-			if (clientNum == 0)
-			{
-				if (command.compare("force_start") == 0)
-					ForceStart();
-				if (command.compare("kick") == 0)
-				{
-					CString name = message.substr(message.find(" ")+1);
-					Kick(name);
-				}
-				if (command.compare("ban") == 0)
-				{
-					CString name = message.substr(message.find(" ")+1);
-					Ban(name);
-				}
-				if (command.compare("host") == 0)
-				{
-					CString name = message.substr(message.find(" ")+1);
-					Host(name, Packet, clientNum);
-				}
-			}
-			else
-			{
-				Reply.ClearPacket();
-				Reply.Write1(NSCCM + NSServerOffset);
-				Reply.WriteNT("You do not have permission to use server commands.");
-				SendNetPacket(clientNum, Reply);
-			}
+		{
+			message = "Unknown command.";
+			ServerChatOne(message, clientNum);
+		}
 	}
 	else
-		RelayChat(message, clientNum);
+		RelayChat(message, clientNum); //normal chat
 }
 void StepManiaLanServer::ShareSong(unsigned int ShareSongServerNum, unsigned int ShareSongClientNum, CString ServerIp)
 {
@@ -1266,6 +1287,41 @@ CString StepManiaLanServer::ListPlayers()
 	return list;
 }
 
+void StepManiaLanServer::CommandShare(CString &command, const unsigned int clientNum)
+{
+	// LOG->Info("command.GetLength() %d", command.GetLength());
+	Client[clientNum]->filefilter = (command.compare("share") == 0) ? true : false;
+	if (command.GetLength() == CString("share").GetLength() ||
+		command.GetLength() == CString("sharefull").GetLength()) // no arg, share all
+	{
+		Client[clientNum]->shareAll = true;
+		if (CheckShare(clientNum, 0, true))
+		{
+			ShareAll(clientNum, Packet.fromIp);
+		}
+	}
+	else
+	{
+		int index = atof(command.substr(command.find(" ") + 1).c_str());
+		if (CheckShare(clientNum, index, false))
+		{
+			ShareSong(clientNum, index, Packet.fromIp);
+		}
+	}
+}
+
+void StepManiaLanServer::Have(const unsigned int clientNum)
+{
+	CString message = "";
+	message += Client[clientNum]->Player[0].name;
+	if (Client[clientNum]->twoPlayers)
+		message += "&";
+	message += Client[clientNum]->Player[1].name;
+	message += " has song by force.";
+	Client[clientNum]->forceHas = true;
+	ServerChat(message);
+}
+
 void StepManiaLanServer::Kick(CString &name)
 {
 	bool kicked = false;
@@ -1303,54 +1359,55 @@ bool StepManiaLanServer::IsBanned(CString &ip)
 
 void StepManiaLanServer::Host(CString &name, PacketFunctions& Packet, unsigned int clientNum)
 {
-	bool rehosted = false;
+	bool result = false;
 	CString message = "";
+	int index = 1;
+
+	if(!name.empty())
+	{
+		for (unsigned int x = 1; x < Client.size() && !result; ++x)
+		{
+			for (unsigned int y = 0; (y < 2); ++y)
+			{
+				if (Client[x]->Player[y].name.compare(name) == 0)
+				{
+					result = true;
+					index = x;
+					break;
+				}
+			}
+		}
+	}
 	
-	for (unsigned int x = 0; x < Client.size(); ++x)
+	if(!result)
 	{
-		for (int y = 0; (y < 2)&&(rehosted == false); ++y)
+		if(!name.empty()) index = static_cast<unsigned int>(atof(name.c_str()));
+		
+		if (index > 0 && index < Client.size())
 		{
-			if (name == Client[x]->Player[y].name)
+			for (unsigned int y = 0; (y < 2); ++y)
 			{
-				message += "Host changed to " + Client[x]->Player[y].name + ".";
-				ServerChat(message);
-				if(x!=0)
-				{	
-					ClientSort(x);
-					rehosted = true;
-					ChangeHost = true;
-					return;
+				if (Client[index]->Player[y].name.length() > 0)
+				{
+					result = true;
+					name = Client[index]->Player[y].name;
+					break;
 				}
 			}
 		}
 	}
-	int clint_index = atof( name.c_str() );
-	if(!rehosted)
+
+	if(result)
 	{
-		if(clint_index!=0 && clint_index<Client.size())
-		{
-			for (int y = 0; (y < 2)&&(rehosted == false); ++y)
-			{
-				if (Client[clint_index]->Player[y].name.length() > 0){
-					CString name_ = Client[clint_index]->Player[y].name;
-					message += "Host changed to " + name_ + ".";
-					ServerChat(message);
-					ClientSort(clint_index);
-					rehosted = true;
-					ChangeHost = true;
-					return;
-				}
-			}
-		}
+		ChangeHost = true;
+		message = "Host changed to " + name + ".";
+		ClientSort(index);
+		ServerChat(message);
 	}
-	if(!rehosted){
-		//message += "User doesn't exist !";
-		message += "Failed !";
-		//ServerChat(message);
-		Reply.ClearPacket();
-		Reply.Write1(NSCCM + NSServerOffset);
-		Reply.WriteNT(message);
-		SendNetPacket(clientNum, Reply);
+	else
+	{
+		message = "Failed to change host.";
+		ServerChatOne(message, clientNum);
 	}
 }
 

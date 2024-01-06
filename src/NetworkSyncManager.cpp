@@ -524,11 +524,20 @@ CString GetSongDirPath(std::string &songDir,
 	char buf[maxBufferSize];
 	getcwd(buf, sizeof(buf));
 	currentPath.assign(buf);
-	CString path = currentPath + "\\" + songDir;
+	CString path = currentPath + "/" + songDir;
 	replace(path.begin(), path.end(), '/', '\\');
 	if (!IsPathExists(path))
 	{
-		path = additionalSongFolders + "\\" + songDir;
+		// Find the position of the first slash
+		size_t found = songDir.find('/');
+		
+		// Determine whether slash is found
+		if (found != std::string::npos) {
+			// Remove the slash and the string before it
+			songDir.erase(0, found + 1);
+		}
+		path = additionalSongFolders + "/" + songDir;
+		replace(path.begin(), path.end(), '/', '\\');
 		if (!IsPathExists(path))
 			path = "";
 	}
@@ -570,9 +579,12 @@ DWORD NetworkSyncManager::ThreadProcNSSSS(void)
 	// LOG->Info("songDir %s",songDir.c_str());
 
 	CString songDirPath = GetSongDirPath(songDir, PREFSMAN->m_sAdditionalSongFolders);
+
+	if (songDirPath.empty()) LOG->Info("cant not find the song directory %s", songDir.c_str());
+
 	CString zipCmd = CString("Program\\miniZip.exe 0 ") + (video_file_filter ? "1 " : "0 ") + "\"" + songDirPath.GetBuffer() + "\"";
 	LOG->Info("zipCmd %s", zipCmd);
-	system(zipCmd.c_str());
+	if (!songDirPath.empty()) system(zipCmd.c_str());
 	CString filePath = GetTempFilePath();
 	int file_size = GetFileSizeInKB(filePath); //(kb)
 	LOG->Info("file_size %d", file_size);
@@ -590,7 +602,7 @@ DWORD NetworkSyncManager::ThreadProcNSSSS(void)
 
 	CString serverCmd = "Program\\winsocket_server.exe " + ip_address + " \"" + filePath + "\"";
 	LOG->Info("serverCmd %s", serverCmd.c_str());
-	system(serverCmd.c_str());
+	if (!songDirPath.empty()) system(serverCmd.c_str());
 	// winsocket_server.exe "{server_ip}" "C:\\StepMania\\connect\\temp.zip"
 	usingShareSongSystem = false;
 	ReportShareSongFinish();
@@ -602,29 +614,34 @@ DWORD NetworkSyncManager::ThreadProcNSSSC(void)
 	LOG->Info("open the share song client!!");
 	LOG->Info("server_ip %s", server_ip.c_str());
 	LOG->Info("file_size %d", file_size);
-	CString fileSizeStr;
-	fileSizeStr.Format("%d", file_size);
+	if (file_size <= 0) LOG->Info("error file_size %d", file_size);
 
-	// 1. creat song folder for connect
-	CString connectFolderPath = GetConnectFolderPath();
-	CString tempFilePath = GetTempFilePath();
-	CString connect_dir_cmd = "mkdir \"" + connectFolderPath + "\"";
-	system(connect_dir_cmd.c_str());
-	// mkdir "C:\\StepMania\\Songs\\connect"
+	if (file_size > 0)
+	{
+		CString fileSizeStr;
+		fileSizeStr.Format("%d", file_size);
+		// 1. creat song folder for connect
+		CString connectFolderPath = GetConnectFolderPath();
+		CString tempFilePath = GetTempFilePath();
+		CString connect_dir_cmd = "mkdir \"" + connectFolderPath + "\"";
+		system(connect_dir_cmd.c_str());
+		// mkdir "C:\\StepMania\\Songs\\connect"
 
-	// 2. get zip file from other user
-	string zip_name = "temp.zip";
-	string filePath = GetTempFilePath();
-	CString client_cmd = "Program\\winsocket_client.exe " + server_ip + " \"" + tempFilePath + "\" " + fileSizeStr;
-	LOG->Info("client_cmd %s", client_cmd.c_str());
-	system(client_cmd.c_str());
-	// winsocket_client.exe {IP} "C:\\StepMania\\Songs\\connect\\temp.zip" {file_size}
+		// 2. get zip file from other user
+		string zip_name = "temp.zip";
+		string filePath = GetTempFilePath();
+		CString client_cmd = "Program\\winsocket_client.exe " + server_ip + " \"" + tempFilePath + "\" " + fileSizeStr;
+		LOG->Info("client_cmd %s", client_cmd.c_str());
+		system(client_cmd.c_str());
+		// winsocket_client.exe {IP} "C:\\StepMania\\Songs\\connect\\temp.zip" {file_size}
 
-	// 3. unzip the song file
-	CString unZipCmd = CString("Program\\miniZip.exe 1");
-	LOG->Info("unZipCmd %s", unZipCmd.c_str());
-	system(unZipCmd.c_str());
-	// miniZip.exe 1 "
+		// 3. unzip the song file
+		CString unZipCmd = CString("Program\\miniZip.exe 1");
+		LOG->Info("unZipCmd %s", unZipCmd.c_str());
+		system(unZipCmd.c_str());
+		// miniZip.exe 1 "
+	}
+
 	usingShareSongSystem = false;
 	ReportShareSongFinish();
 	SCREENMAN->SendMessageToTopScreen(SM_ReloadConnectPack);

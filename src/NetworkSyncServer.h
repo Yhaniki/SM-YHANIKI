@@ -25,7 +25,7 @@ public:
 	int diff;
 	CString options;
 	CString percentage;
-	int Graph[100];
+	int Graph[NETGRAPHSIZE];
 	LanPlayer();
 };
 
@@ -127,6 +127,8 @@ protected:
 	void ScreenNetMusicSelectStatus(PacketFunctions& Packet, const unsigned int clientNum);
 	void AnalizeChat(PacketFunctions &Packet, const unsigned int clientNum);
 	CString StepManiaLanServer::ListPlayers();
+	void CommandShare(CString &command, const unsigned int clientNum);
+	void Have(const unsigned int clientNum);
 	void Kick(CString &name);
 	void Ban(CString &name);
 	void Host(CString &name, PacketFunctions& Packet, unsigned int clientNum);
