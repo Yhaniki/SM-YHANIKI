@@ -513,14 +513,18 @@ void StepManiaLanServer::GameOver(PacketFunctions& Packet, const unsigned int cl
 		//============
 	}
 }
+
 void StepManiaLanServer::ServerGetGraph(PacketFunctions& Packet, unsigned int clientNum)
 {
-	for (int i = 0; i < NETGRAPHSIZE; i++)
+	for (int i = 0; i < 2; i++)
 	{
-		Client[clientNum]->Player[0].Graph[i] = Packet.Read4();
-		Client[clientNum]->Player[1].Graph[i] = Packet.Read4();
+		for (int j = 0; j < NETGRAPHSIZE; j++)
+		{
+			Client[clientNum]->Player[i].Graph[j] = Packet.Read4();
+		}
 	}
 }
+
 void StepManiaLanServer::GetHasSong(PacketFunctions&Packet, unsigned int clientNum)
 {
 	if(clientNum==0)return;
