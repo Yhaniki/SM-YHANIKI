@@ -15,7 +15,7 @@ struct PlayerOptions;
 #include "SongOptions.h"
 #include "PlayerOptions.h"
 #include "PlayerNumber.h"
-
+#include <mutex>
 class SongManager
 {
 public:
@@ -103,7 +103,7 @@ protected:
 					   Song*& pSongOut, Steps*& pStepsOut, PlayerOptions& po_out, SongOptions& so_out );
 	void SanityCheckGroupDir( CString sDir ) const;
 	void AddGroup( CString sDir, CString sGroupDirName );
-
+	void LoadSongs(CString &sDir, CStringArray &arrayGroupDirs);
 	Song *FindSong( CString sGroup, CString sSong );
 
 	vector<Song*>		m_pSongs;	// all songs that can be played
@@ -114,6 +114,9 @@ protected:
 	vector<Course*>		m_pCourses;
 	vector<Course*>		m_pBestCourses[NUM_PROFILE_SLOTS];
 	vector<Course*>		m_pShuffledCourses;	// used by GetRandomCourse
+	bool				m_bLoadFinish;
+	CString				m_pSongStr;
+	std::mutex			m_mutex;
 };
 
 

@@ -32,6 +32,7 @@
 #include "StageStats.h"
 #include "Style.h"
 #include <vector>
+#include <omp.h>
 SongManager*	SONGMAN = NULL;	// global and accessable from anywhere in our program
 
 #define SONGS_DIR				"Songs/"
@@ -78,6 +79,7 @@ SongManager::SongManager()
 {
 	g_LastMetricUpdate.SetZero();
 	UpdateMetrics();
+	m_bLoadFinish = false;
 }
 
 SongManager::~SongManager()
@@ -211,17 +213,9 @@ void SongManager::AddGroup( CString sDir, CString sGroupDirName )
 	m_sGroupBannerPaths.push_back(sBannerPath);
 }
 
-void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
+void SongManager::LoadSongs(CString &sDir, CStringArray &arrayGroupDirs)
 {
-	/* Make sure sDir has a trailing slash. */
-	if( sDir.Right(1) != "/" )
-		sDir += "/";
-
-	// Find all group directories in "Songs" folder
-	CStringArray arrayGroupDirs;
-	GetDirListing( sDir+"*", arrayGroupDirs, true );
-	SortCStringArray( arrayGroupDirs );
-
+	bool ldInUse = false; // A flag to check if UI update is required
 	for( unsigned i=0; i< arrayGroupDirs.size(); i++ )	// for each dir in /Songs/
 	{
 		CString sGroupDirName = arrayGroupDirs[i];
@@ -247,34 +241,43 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 		GetDirListing( sDir+sGroupDirName + "/*", arraySongDirs, true, true );
 		SortCStringArray( arraySongDirs );
 
-		LOG->Trace("Attempting to load %i songs from \"%s\"", arraySongDirs.size(), (sDir+sGroupDirName).c_str() );
+		// LOG->Trace("Attempting to load %i songs from \"%s\"", arraySongDirs.size(), (sDir+sGroupDirName).c_str() );
 		int loaded = 0;
-
-		for( unsigned j=0; j< arraySongDirs.size(); j++ )	// for each song dir
+		// #pragma omp parallel for schedule(dynamic)
+		for (int j = 0; j < static_cast<int>(arraySongDirs.size()); j++) // for each song dir
 		{
 			CString sSongDirName = arraySongDirs[j];
 
-			if( 0 == stricmp( Basename(sSongDirName), "cvs" ) )	// the directory called "CVS"
-				continue;		// ignore it
+			if (0 == stricmp(Basename(sSongDirName), "cvs")) // the directory called "CVS"
+				continue; // ignore it
 
-			// this is a song directory.  Load a new song!
-			if( ld ) {
-				ld->SetText( ssprintf("Loading songs...\n%s\n%s",
-					Basename(sGroupDirName).c_str(),
-					Basename(sSongDirName).c_str()));
-				ld->Paint();
+			// Loading feedback: Only allow one thread to update the UI
+			if(!ldInUse){
+				ldInUse = true;
+				m_pSongStr = (ssprintf("Loading songs...\n%s\n%s",
+									   Basename(sGroupDirName).c_str(),
+									   Basename(sSongDirName).c_str()));
+				ldInUse = false;
 			}
+
+			// Now proceed with loading the song in parallel
 			Song* pNewSong = new Song;
-			if( !pNewSong->LoadFromSongDir( sSongDirName ) ) {
+			if (!pNewSong->LoadFromSongDir(sSongDirName)) {
 				/* The song failed to load. */
 				delete pNewSong;
 				continue;
 			}
-			
-            m_pSongs.push_back( pNewSong );
+
+			// Critical section to safely push the new song to the shared vector
+			#pragma omp critical
+			{
+				m_pSongs.push_back(pNewSong);
+			}
+
+			// Safely increment the loaded counter
+			#pragma omp atomic
 			loaded++;
 		}
-
 		LOG->Trace("Loaded %i songs from \"%s\"", loaded, (sDir+sGroupDirName).c_str() );
 
 		/* Don't add the group name if we didn't load any songs in this group. */
@@ -289,6 +292,31 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 		/* Load the group sym links (if any)*/
 		LoadGroupSymLinks(sDir, sGroupDirName);
 	}
+	m_bLoadFinish = true;
+}
+
+void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
+{
+	/* Make sure sDir has a trailing slash. */
+	if( sDir.Right(1) != "/" )
+		sDir += "/";
+
+	// Find all group directories in "Songs" folder
+	CStringArray arrayGroupDirs;
+	GetDirListing( sDir+"*", arrayGroupDirs, true );
+	SortCStringArray( arrayGroupDirs );
+
+	m_bLoadFinish = false;
+	m_pSongStr.clear();
+	std::thread loadingThread(&SongManager::LoadSongs, this, std::ref(sDir), std::ref(arrayGroupDirs));
+    loadingThread.detach();
+	while (!m_bLoadFinish) {
+        if (ld) {
+            ld->SetText(m_pSongStr);
+            ld->Paint();
+        }
+		std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    }
 }
 
 void SongManager::LoadGroupSymLinks(CString sDir, CString sGroupFolder)

@@ -224,10 +224,10 @@ bool Song::LoadFromSongDir( CString sDir )
 		bUseCache = false;
 	if( !PREFSMAN->m_bFastLoad && GetHashForDirectory(m_sSongDir) != uDirHash )
 		bUseCache = false; // this cache is out of date 
-	// if(GAMESTATE->m_pCurSongGroup==m_sGroupName)
-	// {
-	// 	bUseCache = false;
-	// }
+	if(GAMESTATE->m_pCurSongGroup==m_sGroupName)
+	{
+		bUseCache = false;
+	}
 	
 	if( bUseCache )
 	{
@@ -273,8 +273,8 @@ bool Song::LoadFromSongDir( CString sDir )
 	}
 
 
-	
-	for( unsigned i=0; i<m_vpSteps.size(); i++ )
+	#pragma omp parallel for
+	for( int i=0; i<(int)m_vpSteps.size(); i++ )
 	{
 		m_vpSteps[i]->SetFile( GetCacheFilePath() );
 
