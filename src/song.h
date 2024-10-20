@@ -135,7 +135,7 @@ public:
 	CString GetCDTitlePath() const;
 
 	/* For loading only: */
-	bool m_bHasMusic, m_bHasBanner;
+	bool m_bHasMusic, m_bHasBanner, m_bHasCache;
 
 	bool HasMusic() const;
 	bool HasBanner() const;

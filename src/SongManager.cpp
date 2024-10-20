@@ -54,7 +54,14 @@ CachedThemeMetricI EXTRA_COLOR_METER	("SongManager","ExtraColorMeter");
 
 vector<RageColor> g_vGroupColors;
 RageTimer g_LastMetricUpdate; /* can't use RageTimer globally */
-
+struct LoadSongsArgs {
+    SongManager* manager;
+    CString sDir;
+    CStringArray arrayGroupDirs;
+};
+static RageThread loadThread;
+static RageThread cacheThread;
+LoadSongsArgs* args;
 static void UpdateMetrics()
 {
 	if( !g_LastMetricUpdate.IsZero() && g_LastMetricUpdate.PeekDeltaTime() < 1 )
@@ -80,10 +87,17 @@ SongManager::SongManager()
 	g_LastMetricUpdate.SetZero();
 	UpdateMetrics();
 	m_bLoadFinish = false;
+	m_bSavingCache = false;
+	m_bShutdown = false;
+	loadThread.SetName( "loadThread" );
+	cacheThread.SetName( "cacheThread" );
 }
 
 SongManager::~SongManager()
 {
+	m_bShutdown = true;
+	if(loadThread.IsCreated()) loadThread.Wait();
+	if(cacheThread.IsCreated()) cacheThread.Wait();
 	// Courses depend on Songs and Songs don't depend on Courses.
 	// So, delete the Courses first.
 	FreeCourses();
@@ -218,6 +232,7 @@ void SongManager::LoadSongs(CString &sDir, CStringArray &arrayGroupDirs)
 	bool ldInUse = false; // A flag to check if UI update is required
 	for( unsigned i=0; i< arrayGroupDirs.size(); i++ )	// for each dir in /Songs/
 	{
+		if(m_bShutdown) break;
 		CString sGroupDirName = arrayGroupDirs[i];
 
 		if(GAMESTATE->m_bLoadPackConnect==true)//only read connect package 
@@ -243,9 +258,10 @@ void SongManager::LoadSongs(CString &sDir, CStringArray &arrayGroupDirs)
 
 		// LOG->Trace("Attempting to load %i songs from \"%s\"", arraySongDirs.size(), (sDir+sGroupDirName).c_str() );
 		int loaded = 0;
-		// #pragma omp parallel for schedule(dynamic)
+		#pragma omp parallel for schedule(dynamic)
 		for (int j = 0; j < static_cast<int>(arraySongDirs.size()); j++) // for each song dir
 		{
+			if(m_bShutdown) break;
 			CString sSongDirName = arraySongDirs[j];
 
 			if (0 == stricmp(Basename(sSongDirName), "cvs")) // the directory called "CVS"
@@ -253,6 +269,7 @@ void SongManager::LoadSongs(CString &sDir, CStringArray &arrayGroupDirs)
 
 			// Loading feedback: Only allow one thread to update the UI
 			if(!ldInUse){
+				std::lock_guard<std::mutex> lock(m_songStrMutex);
 				ldInUse = true;
 				m_pSongStr = (ssprintf("Loading songs...\n%s\n%s",
 									   Basename(sGroupDirName).c_str(),
@@ -295,6 +312,31 @@ void SongManager::LoadSongs(CString &sDir, CStringArray &arrayGroupDirs)
 	m_bLoadFinish = true;
 }
 
+void SongManager::SaveSongsCache(void)
+{
+	for (int i = 0; i < (int)m_pSongs.size(); i++)
+	{
+		if(m_bShutdown) break;
+		if (m_pSongs.at(i)->m_bHasCache)
+			m_pSongs.at(i)->SaveToCacheFile();
+	}
+}
+
+int SongManager::LoadSongsThreadFunc(void *pData)
+{
+	LoadSongsArgs *args = static_cast<LoadSongsArgs *>(pData);
+	args->manager->LoadSongs(args->sDir, args->arrayGroupDirs);
+	delete args; // Don't forget to clean up!
+	return 0;
+}
+
+int SongManager::SaveSongsCacheThreadFunc(void *pData)
+{
+	SongManager *pThis = static_cast<SongManager *>(pData);
+	pThis->SaveSongsCache();
+	return 0;
+}
+
 void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 {
 	/* Make sure sDir has a trailing slash. */
@@ -308,15 +350,34 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 
 	m_bLoadFinish = false;
 	m_pSongStr.clear();
-	std::thread loadingThread(&SongManager::LoadSongs, this, std::ref(sDir), std::ref(arrayGroupDirs));
-    loadingThread.detach();
-	while (!m_bLoadFinish) {
-        if (ld) {
-            ld->SetText(m_pSongStr);
-            ld->Paint();
-        }
-		std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    }
+	args = new LoadSongsArgs;
+	args->manager = this;
+	args->sDir = sDir;
+	args->arrayGroupDirs = arrayGroupDirs;
+	if(loadThread.IsCreated()) loadThread.Wait();
+	loadThread.Create(SongManager::LoadSongsThreadFunc, args);
+	const double sleepMs = 33 * 1000.0;
+	CString lastSongStr;
+	while (!m_bLoadFinish)
+	{
+		if (ld)
+		{
+			std::lock_guard<std::mutex> lock(m_songStrMutex);
+			if (m_pSongStr != lastSongStr)
+			{
+				lastSongStr = m_pSongStr;
+				ld->SetText(lastSongStr);
+				ld->Paint();
+			}
+		}
+		usleep(sleepMs);
+	}
+	if(!m_bSavingCache)
+	{
+		m_bSavingCache = true;
+		if(cacheThread.IsCreated()) cacheThread.Wait();
+		cacheThread.Create(SongManager::SaveSongsCacheThreadFunc, this);
+	}
 }
 
 void SongManager::LoadGroupSymLinks(CString sDir, CString sGroupFolder)

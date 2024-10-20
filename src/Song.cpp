@@ -74,6 +74,7 @@ Song::Song()
 	m_bIsSymLink = false;
 	m_bHasMusic = false;
 	m_bHasBanner = false;
+	m_bHasCache = false;
 }
 
 Song::~Song()
@@ -219,28 +220,18 @@ bool Song::LoadFromSongDir( CString sDir )
 	// First look in the cache for this song (without loading NoteData)
 	//
 	unsigned uDirHash = SONGINDEX->GetCacheHash(m_sSongDir);
-	bool bUseCache = true;
-	if( !DoesFileExist(GetCacheFilePath()) )
-		bUseCache = false;
-	if( !PREFSMAN->m_bFastLoad && GetHashForDirectory(m_sSongDir) != uDirHash )
-		bUseCache = false; // this cache is out of date 
-	if(GAMESTATE->m_pCurSongGroup==m_sGroupName)
-	{
-		bUseCache = false;
-	}
-	
-	if( bUseCache )
-	{
-		// if(GAMESTATE->m_pCurSongGroup!="")//fast load only load new songs
-		// {
-		// 	return false;
-		// }
-//		LOG->Trace( "Loading '%s' from cache file '%s'.", m_sSongDir.c_str(), GetCacheFilePath().c_str() );
-		SMLoader ld;
-		ld.LoadFromSMFile( GetCacheFilePath(), *this, true );
-		ld.TidyUpData( *this, true );
-	}
-	else
+	m_bHasCache = DoesFileExist(GetCacheFilePath()) &&
+				  PREFSMAN->m_bFastLoad &&
+				  GetHashForDirectory(m_sSongDir) == uDirHash;
+// 	if( m_bHasCache ) todo mike
+// 	{ 
+// //		LOG->Trace( "Loading '%s' from cache file '%s'.", m_sSongDir.c_str(), GetCacheFilePath().c_str() );
+// 		SMLoader ld;
+// 		ld.LoadFromSMFile( GetCacheFilePath(), *this, true );
+// 		// ld.TidyUpData( *this, true );
+// 	}
+// 	// else return false;
+// 	else
 	{
 		//
 		// There was no entry in the cache for this song, or it was out of date.
@@ -269,7 +260,7 @@ bool Song::LoadFromSongDir( CString sDir )
 		delete ld;
 
 		// save a cache file so we don't have to parse it all over again next time
-		SaveToCacheFile();
+		// SaveToCacheFile();
 	}
 
 
@@ -294,17 +285,17 @@ bool Song::LoadFromSongDir( CString sDir )
 		return false;	// don't load this song
 	else
 	{
-		if(GAMESTATE->m_bfastLoadInScreenSelectMusic==true
-			&&GAMESTATE->m_pCurSong==NULL
-			&&GAMESTATE->m_pPreferredSong==NULL
-			&&bUseCache==false)
-			{
-				GAMESTATE->m_pCurSong=GAMESTATE->m_pPreferredSong=this;
-			}
-
+		// If a new song is loaded, select that song as soon as you enter the system
+		if (PREFSMAN->m_bFastLoad &&
+			GAMESTATE->m_bfastLoadInScreenSelectMusic &&
+			!GAMESTATE->m_pCurSong &&
+			!GAMESTATE->m_pPreferredSong &&
+			!m_bHasCache)
+		{
+			GAMESTATE->m_pCurSong = GAMESTATE->m_pPreferredSong = this;
+		}
 		return true;	// do load this song
 	}
-		
 }
 
 static void GetImageDirListing( CString sPath, CStringArray &AddTo, bool bReturnPathToo=false )
@@ -328,15 +319,15 @@ void Song::DeleteDuplicateSteps( vector<Steps*> &vSteps )
 {
 	/* vSteps have the same StepsType and Difficulty.  Delete them if they have the
 	 * same m_sDescription, m_iMeter and SMNoteData. */
-	CHECKPOINT;
+	// CHECKPOINT;
 	for( unsigned i=0; i<vSteps.size(); i++ )
 	{
-		CHECKPOINT;
+		// CHECKPOINT;
 		const Steps *s1 = vSteps[i];
 
 		for( unsigned j=i+1; j<vSteps.size(); j++ )
 		{
-			CHECKPOINT;
+			// CHECKPOINT;
 			const Steps *s2 = vSteps[j];
 
 			if( s1->GetDescription() != s2->GetDescription() )
@@ -404,9 +395,9 @@ void Song::AdjustDuplicateSteps()
 			 * bug in an earlier version. */
 			DeleteDuplicateSteps( vSteps );
 
-			CHECKPOINT;
+			// CHECKPOINT;
 			StepsUtil::SortNotesArrayByDifficulty( vSteps );
-			CHECKPOINT;
+			// CHECKPOINT;
 			for( unsigned k=1; k<vSteps.size(); k++ )
 			{
 				vSteps[k]->SetDifficulty( DIFFICULTY_EDIT );
@@ -586,7 +577,7 @@ void Song::TidyUpData()
 	// image is the banner, which is the background, and which is the CDTitle.
 	//
 
-	CHECKPOINT_M( "Looking for images..." );
+	// CHECKPOINT_M( "Looking for images..." );
 
 	//
 	// First, check the file name for hints.

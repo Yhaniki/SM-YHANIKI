@@ -105,6 +105,9 @@ protected:
 	void AddGroup( CString sDir, CString sGroupDirName );
 	void LoadSongs(CString &sDir, CStringArray &arrayGroupDirs);
 	Song *FindSong( CString sGroup, CString sSong );
+	void SaveSongsCache(void);
+	static int LoadSongsThreadFunc(void* pData);
+	static int SaveSongsCacheThreadFunc(void* pData);
 
 	vector<Song*>		m_pSongs;	// all songs that can be played
 	vector<Song*>		m_pBestSongs[NUM_PROFILE_SLOTS];
@@ -116,7 +119,9 @@ protected:
 	vector<Course*>		m_pShuffledCourses;	// used by GetRandomCourse
 	bool				m_bLoadFinish;
 	CString				m_pSongStr;
-	std::mutex			m_mutex;
+	std::mutex			m_songStrMutex;
+	bool				m_bShutdown;
+	bool				m_bSavingCache;
 };
 
 
