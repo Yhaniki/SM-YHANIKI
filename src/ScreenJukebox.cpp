@@ -67,7 +67,7 @@ bool ScreenJukebox::SetSong( bool bDemonstration )
 			return true;
 
 		Song* pSong = vSongs[rand()%vSongs.size()];
-
+		pSong->CheckInit();
 		if( !pSong->HasMusic() )
 			continue;	// skip
 		if( UNLOCKMAN->SongIsLocked(pSong) )

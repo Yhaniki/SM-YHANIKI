@@ -399,6 +399,7 @@ void MusicWheel::GetSongList(vector<Song*> &arraySongs, SortOrder so, CString sP
 		// pSong->GetSteps( arraySteps, GAMESTATE->GetCurrentStyle()->m_StepsType, DIFFICULTY_INVALID, -1, -1, "", 1 );
 
 		// if( !arraySteps.empty() )
+		if(!pSong->m_iStepSize[GAMESTATE->GetCurrentStyle()->m_StepsType]==0)
 			arraySongs.push_back( pSong );
 	}
 
@@ -513,7 +514,7 @@ void MusicWheel::BuildWheelItemDatas( vector<WheelItemData> &arrayWheelItemDatas
 			SongUtil::SortSongPointerArrayByTitle( arraySongs );
 			break;
 		case SORT_BPM:
-			// SongUtil::SortSongPointerArrayByBPM( arraySongs );
+			SongUtil::SortSongPointerArrayByBPM( arraySongs );
 			break;
 		case SORT_MOST_PLAYED:
 		{

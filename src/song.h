@@ -50,6 +50,8 @@ struct SONG_BASIC_INFO
 	CString m_sSubTitleTranslit;
 	CString m_sArtistTranslit;
 	CString m_sSongFileName;
+	float m_fMaxDisplayBpm;
+	int m_iStepSize[NUM_STEPS_TYPES];
 };
 
 class Song
@@ -208,9 +210,13 @@ public:
 
 	unsigned int m_hash;
 	bool m_bInit;
+	float m_fMaxDisplayBpm;
+	int m_iStepSize[NUM_STEPS_TYPES];
 	unsigned int GetHash();
 	bool FastLoad(CString sDir, std::map<unsigned int, SONG_BASIC_INFO> &songsInfo);
 	bool CheckInit(void);
+	void ComputeMaxDisplayBpm(void);
+	void ComputeStepSize(void);
 private:
 	void AdjustDuplicateSteps(); // part of TidyUpData
 	void DeleteDuplicateSteps( vector<Steps*> &vSteps );

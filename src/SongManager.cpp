@@ -107,6 +107,10 @@ void SaveMapToFile(const std::string &filename, const std::map<unsigned int, SON
 		writeString(info.m_sSubTitleTranslit);
 		writeString(info.m_sArtistTranslit);
 		writeString(info.m_sSongFileName);
+
+		// Write the new float and array elements
+		outFile.write(reinterpret_cast<const char *>(&info.m_fMaxDisplayBpm), sizeof(info.m_fMaxDisplayBpm));
+		outFile.write(reinterpret_cast<const char *>(info.m_iStepSize), sizeof(info.m_iStepSize));
 	}
 }
 
@@ -146,6 +150,10 @@ void LoadMapFromFile(const std::string &filename, std::map<unsigned int, SONG_BA
 		info.m_sSubTitleTranslit = readString();
 		info.m_sArtistTranslit = readString();
 		info.m_sSongFileName = readString();
+
+		// Read the new float and array elements
+		inFile.read(reinterpret_cast<char *>(&info.m_fMaxDisplayBpm), sizeof(info.m_fMaxDisplayBpm));
+		inFile.read(reinterpret_cast<char *>(info.m_iStepSize), sizeof(info.m_iStepSize));
 		m_pSongsInfo[key] = info;
 	}
 }
@@ -361,7 +369,9 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 				continue;
 			}
 			SONG_BASIC_INFO songInfo = pNewSong->GetSongInfo();
-			m_pSongsInfo[pNewSong->GetHash()] = songInfo;
+			const vector<Steps*>& steps = pNewSong->GetAllSteps();
+			if(!steps.empty())
+				m_pSongsInfo[pNewSong->GetHash()] = songInfo;
 
             m_pSongs.push_back( pNewSong );
 			loaded++;
@@ -382,7 +392,9 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 		LoadGroupSymLinks(sDir, sGroupDirName);
 	}
 	auto it = std::remove_if(m_pSongs.begin(), m_pSongs.end(), [](Song *song)
-							 { return song->m_sSongFileName.empty() || song->m_sMainTitle.empty(); });
+	{
+		return song->m_sSongFileName.empty(); 
+	});
 
 	m_pSongs.erase(it, m_pSongs.end());
 
@@ -392,7 +404,12 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 	}
 	for (auto it = m_pSongsInfo.begin(); it != m_pSongsInfo.end();)
 	{
-		if (it->second.m_sSongFileName.GetLength() == 0 || it->second.m_sMainTitle.GetLength() == 0)
+		bool allStepsZero = std::all_of(std::begin(it->second.m_iStepSize), std::end(it->second.m_iStepSize), [](int i)
+										{ return i == 0; });
+
+		if (it->second.m_sSongFileName.GetLength() == 0 ||
+			it->second.m_sMainTitle.GetLength() == 0 ||
+			allStepsZero)
 		{
 			it = m_pSongsInfo.erase(it);
 		}
@@ -739,9 +756,9 @@ void SongManager::InitAutogenCourses()
 		pCourse->AutogenEndlessFromGroup( sGroupName, DIFFICULTY_MEDIUM );
 		m_pCourses.push_back( pCourse );
 
-		//pCourse = new Course; //todo mike
-		//pCourse->AutogenNonstopFromGroup( sGroupName, DIFFICULTY_MEDIUM );
-		//m_pCourses.push_back( pCourse );
+		pCourse = new Course; //todo mike
+		pCourse->AutogenNonstopFromGroup( sGroupName, DIFFICULTY_MEDIUM );
+		m_pCourses.push_back( pCourse );
 	}
 	
 	vector<Song*> apCourseSongs = GetAllSongs();

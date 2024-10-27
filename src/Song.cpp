@@ -75,6 +75,8 @@ Song::Song()
 	m_bHasMusic = false;
 	m_bHasBanner = false;
 	m_bInit = false;
+	m_fMaxDisplayBpm = 0;
+	std::fill(std::begin(m_iStepSize), std::end(m_iStepSize), 0);
 }
 
 Song::~Song()
@@ -190,6 +192,23 @@ NotesLoader *Song::MakeLoader( CString sDir ) const
  * pull in <set> into Song.h, which is heavily used. */
 static set<istring> BlacklistedImages;
 
+void Song::ComputeMaxDisplayBpm(void)
+{
+	DisplayBpms bpms;
+	GetDisplayBpms(bpms);
+	m_fMaxDisplayBpm = bpms.GetMax();
+}
+
+void Song::ComputeStepSize(void)
+{
+	for (int i = 0; i < NUM_STEPS_TYPES; i++)
+	{
+		vector<Steps *> arraySteps;
+		GetSteps(arraySteps, (StepsType)i, DIFFICULTY_INVALID, -1, -1, "", 1);
+		m_iStepSize[i] = arraySteps.size();
+	}
+}
+
 /*
  * If PREFSMAN->m_bFastLoad is true, always load from cache if possible. Don't read
  * the contents of sDir if we can avoid it.  That means we can't call HasMusic(),
@@ -292,6 +311,8 @@ bool Song::LoadFromSongDir( CString sDir )
 	/* Add AutoGen pointers.  (These aren't cached.) */
 	AddAutoGenNotes();
 
+	ComputeMaxDisplayBpm();
+	ComputeStepSize();
 	if( !m_bHasMusic )
 		return false;	// don't load this song
 	else
@@ -335,11 +356,20 @@ bool Song::FastLoad(CString sDir, std::map<unsigned int, SONG_BASIC_INFO> &songs
 		m_sSubTitleTranslit = songsInfo[hash].m_sSubTitleTranslit;
 		m_sArtistTranslit = songsInfo[hash].m_sArtistTranslit;
 		m_sSongFileName = songsInfo[hash].m_sSongFileName;
+		m_fMaxDisplayBpm = songsInfo[hash].m_fMaxDisplayBpm;
+		//m_iStepSize = songsInfo[hash].m_iStepSize;
+		std::memcpy(m_iStepSize, songsInfo[hash].m_iStepSize, sizeof(m_iStepSize));
 		m_bHasMusic = true;
 	}
 	else
 	{
 		result = LoadFromSongDir(sDir);
+		const vector<Steps*>& steps = GetAllSteps();
+		if(!result || steps.empty())
+		{
+			auto it = songsInfo.find(m_hash);
+			if (it != songsInfo.end()) songsInfo.erase(it);
+		}
 	}
 	return result;
 }
@@ -1467,6 +1497,8 @@ SONG_BASIC_INFO Song::GetSongInfo()
 	info.m_sSubTitleTranslit  = m_sSubTitleTranslit;
 	info.m_sArtistTranslit    = m_sArtistTranslit;
 	info.m_sSongFileName      = m_sSongFileName;
+	info.m_fMaxDisplayBpm     = m_fMaxDisplayBpm;
+	std::memcpy(info.m_iStepSize, m_iStepSize, sizeof(info.m_iStepSize));
 	return info;
 }
 

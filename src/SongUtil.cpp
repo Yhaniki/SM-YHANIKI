@@ -107,15 +107,17 @@ void SongUtil::SortSongPointerArrayByDifficulty( vector<Song*> &arraySongPointer
 
 bool CompareSongPointersByBPM(const Song *pSong1, const Song *pSong2)
 {
-	DisplayBpms bpms1, bpms2;
-	pSong1->GetDisplayBpms( bpms1 );
-	pSong2->GetDisplayBpms( bpms2 );
+	// DisplayBpms bpms1, bpms2;
+	// pSong1->GetDisplayBpms( bpms1 );
+	// pSong2->GetDisplayBpms( bpms2 );
 
-	if( bpms1.GetMax() < bpms2.GetMax() )
-		return true;
-	if( bpms1.GetMax() > bpms2.GetMax() )
-		return false;
-	
+	// if( bpms1.GetMax() < bpms2.GetMax() )
+	// 	return true;
+	// if( bpms1.GetMax() > bpms2.GetMax() )
+	// 	return false;
+	float bpm1 = pSong1->m_fMaxDisplayBpm;
+	float bpm2 = pSong2->m_fMaxDisplayBpm;
+	if (bpm1 != bpm2) return bpm1 < bpm2;
 	return CompareCStringsAsc( pSong1->GetSongFilePath(), pSong2->GetSongFilePath() );
 }
 
