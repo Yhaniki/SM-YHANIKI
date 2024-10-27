@@ -381,6 +381,26 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 		/* Load the group sym links (if any)*/
 		LoadGroupSymLinks(sDir, sGroupDirName);
 	}
+	auto it = std::remove_if(m_pSongs.begin(), m_pSongs.end(), [](Song *song)
+							 { return song->m_sSongFileName.empty() || song->m_sMainTitle.empty(); });
+
+	m_pSongs.erase(it, m_pSongs.end());
+
+	for (auto song = it; song != m_pSongs.end(); ++song)
+	{
+		delete *song;
+	}
+	for (auto it = m_pSongsInfo.begin(); it != m_pSongsInfo.end();)
+	{
+		if (it->second.m_sSongFileName.GetLength() == 0 || it->second.m_sMainTitle.GetLength() == 0)
+		{
+			it = m_pSongsInfo.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
 }
 
 void SongManager::LoadGroupSymLinks(CString sDir, CString sGroupFolder)
