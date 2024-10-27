@@ -12,35 +12,60 @@
 static HBITMAP g_hBitmap = NULL;
 
 /* Load a file into a GDI surface. */
-HBITMAP LoadWin32Surface( CString fn )
+HBITMAP LoadWin32Surface(HWND hWnd, CString fn)
 {
+	// Load the image file into a RageSurface
 	CString error;
-	RageSurface *s = RageSurfaceUtils::LoadFile( fn, error );
-	if( s == NULL )
+	RageSurface *s = RageSurfaceUtils::LoadFile(fn, error);
+	if (s == NULL)
 		return NULL;
 
-	RageSurfaceUtils::ConvertSurface( s, s->w, s->h, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0 );
+	// Convert the surface to a 32-bit format
+	RageSurfaceUtils::ConvertSurface(s, s->w, s->h, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0);
 
-	HBITMAP bitmap = CreateCompatibleBitmap( GetDC(NULL), s->w, s->h );
-	ASSERT( bitmap );
+	// Get the dimensions of the window
+	RECT rect;
+	GetClientRect(hWnd, &rect);
+	int windowWidth = rect.right - rect.left;
 
-	HDC BitmapDC = CreateCompatibleDC( GetDC(NULL) );
-	SelectObject( BitmapDC, bitmap );
+	// Calculate the new dimensions for the image to maintain the aspect ratio
+	float aspectRatio = static_cast<float>(s->h) / s->w;
+	int newWidth = windowWidth;
+	int newHeight = static_cast<int>(newWidth * aspectRatio);
 
-	/* This is silly, but simple.  We only do this once, on a small image. */
-	for( int y = 0; y < s->h; ++y )
+	// Create a compatible bitmap with the new dimensions
+	HBITMAP bitmap = CreateCompatibleBitmap(GetDC(NULL), newWidth, newHeight);
+	ASSERT(bitmap);
+
+	// Create a device context for the bitmap
+	HDC BitmapDC = CreateCompatibleDC(GetDC(NULL));
+	SelectObject(BitmapDC, bitmap);
+
+	// Create a stretch mode to improve quality
+	SetStretchBltMode(BitmapDC, HALFTONE);
+
+	// Scale and draw the image to fit the new dimensions
+	HDC hdcSrc = CreateCompatibleDC(GetDC(NULL));
+	HBITMAP hbmSrc = CreateCompatibleBitmap(GetDC(NULL), s->w, s->h);
+	SelectObject(hdcSrc, hbmSrc);
+
+	for (int y = 0; y < s->h; ++y)
 	{
-		unsigned const char *line = ((unsigned char *) s->pixels) + (y * s->pitch);
-		for( int x = 0; x < s->w; ++x )
+		unsigned const char *line = ((unsigned char *)s->pixels) + (y * s->pitch);
+		for (int x = 0; x < s->w; ++x)
 		{
-			unsigned const char *data = line + (x*s->format->BytesPerPixel);
-			
-			SetPixelV( BitmapDC, x, y, RGB( data[3], data[2], data[1] ) );
+			unsigned const char *data = line + (x * s->format->BytesPerPixel);
+			SetPixelV(hdcSrc, x, y, RGB(data[3], data[2], data[1]));
 		}
 	}
 
-	SelectObject( BitmapDC, NULL );
-	DeleteObject( BitmapDC );
+	StretchBlt(BitmapDC, 0, 0, newWidth, newHeight, hdcSrc, 0, 0, s->w, s->h, SRCCOPY);
+
+	// Cleanup
+	SelectObject(BitmapDC, NULL);
+	DeleteObject(BitmapDC);
+	DeleteObject(hbmSrc);
+	DeleteObject(hdcSrc);
 
 	delete s;
 	return bitmap;
@@ -51,9 +76,9 @@ BOOL CALLBACK LoadingWindow_Win32::WndProc( HWND hWnd, UINT msg, WPARAM wParam, 
 	switch( msg )
 	{
 	case WM_INITDIALOG:
-		g_hBitmap = LoadWin32Surface( "Data/splash.png" );
+		g_hBitmap = LoadWin32Surface(hWnd, "Data/splash.png" );
 		if( g_hBitmap == NULL )
-			g_hBitmap = LoadWin32Surface( "Data/splash.bmp" );
+			g_hBitmap = LoadWin32Surface(hWnd, "Data/splash.bmp" );
 		SendMessage( 
 			GetDlgItem(hWnd,IDC_SPLASH), 
 			STM_SETIMAGE, 
