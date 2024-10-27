@@ -32,11 +32,13 @@
 #include "StageStats.h"
 #include "Style.h"
 #include <vector>
+#include <iostream>
+#include <fstream>
 SongManager*	SONGMAN = NULL;	// global and accessable from anywhere in our program
 
 #define SONGS_DIR				"Songs/"
 #define COURSES_DIR				"Courses/"
-
+#define FAST_CACHE_DIR			"Cache/song.bin"
 #define MAX_EDITS_PER_PROFILE	200
 #define MAX_EDIT_SIZE_BYTES		30*1024		// 30KB
 
@@ -74,6 +76,80 @@ static void UpdateMetrics()
 	EXTRA_COLOR_METER.Refresh();
 }
 
+void SaveMapToFile(const std::string &filename, const std::map<unsigned int, SONG_BASIC_INFO> &m_pSongsInfo)
+{
+	std::ofstream outFile(filename, std::ios::binary);
+	if (!outFile)
+	{
+		std::cerr << "Failed to open file for writing: " << filename << std::endl;
+		return;
+	}
+
+	size_t mapSize = m_pSongsInfo.size();
+	outFile.write(reinterpret_cast<const char *>(&mapSize), sizeof(mapSize));
+
+	for (const auto &entry : m_pSongsInfo)
+	{
+		outFile.write(reinterpret_cast<const char *>(&entry.first), sizeof(entry.first));
+
+		const SONG_BASIC_INFO &info = entry.second;
+		auto writeString = [&outFile](const std::string &str)
+		{
+			size_t len = str.size();
+			outFile.write(reinterpret_cast<const char *>(&len), sizeof(len));
+			outFile.write(str.data(), len);
+		};
+
+		writeString(info.m_sMainTitle);
+		writeString(info.m_sSubTitle);
+		writeString(info.m_sArtist);
+		writeString(info.m_sMainTitleTranslit);
+		writeString(info.m_sSubTitleTranslit);
+		writeString(info.m_sArtistTranslit);
+		writeString(info.m_sSongFileName);
+	}
+}
+
+void LoadMapFromFile(const std::string &filename, std::map<unsigned int, SONG_BASIC_INFO> &m_pSongsInfo)
+{
+	std::ifstream inFile(filename, std::ios::binary);
+	if (!inFile)
+	{
+		std::cerr << "Failed to open file for reading: " << filename << std::endl;
+		return;
+	}
+
+	size_t mapSize;
+	inFile.read(reinterpret_cast<char *>(&mapSize), sizeof(mapSize));
+
+	m_pSongsInfo.clear();
+	for (size_t i = 0; i < mapSize; ++i)
+	{
+		unsigned int key;
+		SONG_BASIC_INFO info;
+
+		inFile.read(reinterpret_cast<char *>(&key), sizeof(key));
+
+		auto readString = [&inFile]() -> std::string
+		{
+			size_t len;
+			inFile.read(reinterpret_cast<char *>(&len), sizeof(len));
+			std::string str(len, '\0');
+			inFile.read(&str[0], len);
+			return str;
+		};
+
+		info.m_sMainTitle = readString();
+		info.m_sSubTitle = readString();
+		info.m_sArtist = readString();
+		info.m_sMainTitleTranslit = readString();
+		info.m_sSubTitleTranslit = readString();
+		info.m_sArtistTranslit = readString();
+		info.m_sSongFileName = readString();
+		m_pSongsInfo[key] = info;
+	}
+}
+
 SongManager::SongManager()
 {
 	g_LastMetricUpdate.SetZero();
@@ -90,6 +166,8 @@ SongManager::~SongManager()
 
 void SongManager::InitAll( LoadingWindow *ld )
 {
+	m_pSongsInfo.clear();
+	ReadSongsInfo();
 	InitSongsFromDisk( ld );
 	InitCoursesFromDisk( ld );
 	InitAutogenCourses();
@@ -99,6 +177,17 @@ void SongManager::InitAll( LoadingWindow *ld )
 	if( ld )
 		ld->SetText( "Saving Catalog.xml ..." );
 	SaveCatalogXml();
+	SaveSongsInfo();
+}
+
+void SongManager::SaveSongsInfo(void)
+{
+	SaveMapToFile(FAST_CACHE_DIR, m_pSongsInfo);
+}
+
+void SongManager::ReadSongsInfo(void)
+{
+	LoadMapFromFile(FAST_CACHE_DIR, m_pSongsInfo);
 }
 
 void SongManager::Reload( LoadingWindow *ld )
@@ -265,12 +354,15 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 				ld->Paint();
 			}
 			Song* pNewSong = new Song;
-			if( !pNewSong->LoadFromSongDir( sSongDirName ) ) {
+			// if( !pNewSong->LoadFromSongDir( sSongDirName ) ) {
+			if( !pNewSong->FastLoad( sSongDirName, m_pSongsInfo ) ) {
 				/* The song failed to load. */
 				delete pNewSong;
 				continue;
 			}
-			
+			SONG_BASIC_INFO songInfo = pNewSong->GetSongInfo();
+			m_pSongsInfo[pNewSong->GetHash()] = songInfo;
+
             m_pSongs.push_back( pNewSong );
 			loaded++;
 		}
@@ -627,9 +719,9 @@ void SongManager::InitAutogenCourses()
 		pCourse->AutogenEndlessFromGroup( sGroupName, DIFFICULTY_MEDIUM );
 		m_pCourses.push_back( pCourse );
 
-		pCourse = new Course;
-		pCourse->AutogenNonstopFromGroup( sGroupName, DIFFICULTY_MEDIUM );
-		m_pCourses.push_back( pCourse );
+		//pCourse = new Course; //todo mike
+		//pCourse->AutogenNonstopFromGroup( sGroupName, DIFFICULTY_MEDIUM );
+		//m_pCourses.push_back( pCourse );
 	}
 	
 	vector<Song*> apCourseSongs = GetAllSongs();

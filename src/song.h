@@ -7,7 +7,6 @@
 #include "GameConstantsAndTypes.h"
 #include "Grade.h"
 #include "TimingData.h"
-
 class Steps;
 class Style;
 class NotesLoader;
@@ -42,6 +41,16 @@ struct LyricSegment
 	RageColor m_Color;
 };
 
+struct SONG_BASIC_INFO
+{
+	CString	m_sMainTitle;
+	CString	m_sSubTitle;
+	CString	m_sArtist;
+	CString m_sMainTitleTranslit;
+	CString m_sSubTitleTranslit;
+	CString m_sArtistTranslit;
+	CString m_sSongFileName;
+};
 
 class Song
 {
@@ -195,7 +204,13 @@ public:
 	bool WasLoadedFromProfile() const { return m_LoadedFromProfile != PROFILE_SLOT_INVALID; }
 	int GetNumStepsLoadedFromProfile( ProfileSlot slot ) const;
 	bool IsEditAlreadyLoaded( Steps* pSteps ) const;
+	SONG_BASIC_INFO GetSongInfo();
 
+	unsigned int m_hash;
+	bool m_bInit;
+	unsigned int GetHash();
+	bool FastLoad(CString sDir, std::map<unsigned int, SONG_BASIC_INFO> &songsInfo);
+	bool CheckInit(void);
 private:
 	void AdjustDuplicateSteps(); // part of TidyUpData
 	void DeleteDuplicateSteps( vector<Steps*> &vSteps );

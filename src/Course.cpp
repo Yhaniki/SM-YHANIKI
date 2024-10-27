@@ -200,6 +200,7 @@ void Course::LoadFromCRSFile( CString sPath )
 								m_sPath.c_str(), sSong.c_str());
 					continue;	// skip this #SONG
 				}
+				new_entry.pSong->CheckInit();
 			}
 
 			new_entry.difficulty = StringToDifficulty( sParams[2] );

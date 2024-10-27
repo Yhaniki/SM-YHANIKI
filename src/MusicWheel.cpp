@@ -221,6 +221,10 @@ void MusicWheel::Load()
 		&& !GAMESTATE->IsExtraStage() && !GAMESTATE->IsExtraStage2() )
 			GAMESTATE->m_pCurSong = NULL;
 
+	if(GAMESTATE->m_pCurSong)
+		GAMESTATE->m_pCurSong->CheckInit();
+	if(GAMESTATE->m_pPreferredSong)
+		GAMESTATE->m_pPreferredSong->CheckInit();
 	// Select the the previously selected song (if any)
 	if( !SelectSongOrCourse() )
 		SetOpenGroup("");
@@ -391,10 +395,10 @@ void MusicWheel::GetSongList(vector<Song*> &arraySongs, SortOrder so, CString sP
 		if( so!=SORT_ROULETTE && UNLOCKMAN->SongIsLocked(pSong) )
 			continue;
 
-		vector<Steps*> arraySteps;
-		pSong->GetSteps( arraySteps, GAMESTATE->GetCurrentStyle()->m_StepsType, DIFFICULTY_INVALID, -1, -1, "", 1 );
+		// vector<Steps*> arraySteps;
+		// pSong->GetSteps( arraySteps, GAMESTATE->GetCurrentStyle()->m_StepsType, DIFFICULTY_INVALID, -1, -1, "", 1 );
 
-		if( !arraySteps.empty() )
+		// if( !arraySteps.empty() )
 			arraySongs.push_back( pSong );
 	}
 
@@ -509,7 +513,7 @@ void MusicWheel::BuildWheelItemDatas( vector<WheelItemData> &arrayWheelItemDatas
 			SongUtil::SortSongPointerArrayByTitle( arraySongs );
 			break;
 		case SORT_BPM:
-			SongUtil::SortSongPointerArrayByBPM( arraySongs );
+			// SongUtil::SortSongPointerArrayByBPM( arraySongs );
 			break;
 		case SORT_MOST_PLAYED:
 		{
@@ -1172,7 +1176,10 @@ void MusicWheel::ChangeMusic(int dist)
 {
 	m_iSelection += dist;
 	wrap( m_iSelection, m_CurWheelItemData.size() );
-
+	if(m_CurWheelItemData[m_iSelection]->m_Type==TYPE_SONG)
+	{
+		m_CurWheelItemData[m_iSelection]->m_pSong->CheckInit();
+	}
 	RebuildMusicWheelItems();
 
 	m_fPositionOffsetFromSelection += dist;

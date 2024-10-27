@@ -74,6 +74,7 @@ Song::Song()
 	m_bIsSymLink = false;
 	m_bHasMusic = false;
 	m_bHasBanner = false;
+	m_bInit = false;
 }
 
 Song::~Song()
@@ -219,10 +220,11 @@ bool Song::LoadFromSongDir( CString sDir )
 	// First look in the cache for this song (without loading NoteData)
 	//
 	unsigned uDirHash = SONGINDEX->GetCacheHash(m_sSongDir);
+	m_hash = GetHashForDirectory(m_sSongDir);
 	bool bUseCache = true;
 	if( !DoesFileExist(GetCacheFilePath()) )
 		bUseCache = false;
-	if( !PREFSMAN->m_bFastLoad && GetHashForDirectory(m_sSongDir) != uDirHash )
+	if( !PREFSMAN->m_bFastLoad && m_hash != uDirHash )
 		bUseCache = false; // this cache is out of date 
 	// if(GAMESTATE->m_pCurSongGroup==m_sGroupName)
 	// {
@@ -301,10 +303,52 @@ bool Song::LoadFromSongDir( CString sDir )
 			{
 				GAMESTATE->m_pCurSong=GAMESTATE->m_pPreferredSong=this;
 			}
-
+		m_bInit = true;
 		return true;	// do load this song
 	}
-		
+}
+
+bool Song::FastLoad(CString sDir, std::map<unsigned int, SONG_BASIC_INFO> &songsInfo)
+{
+	bool result = true;
+	ASSERT( sDir != "" );
+
+	// make sure there is a trailing slash at the end of sDir
+	if( sDir.Right(1) != "/" )
+		sDir += "/";
+	unsigned int hash = GetHashForDirectory(sDir);
+	m_sSongDir = sDir;
+
+	// save group name
+	CStringArray sDirectoryParts;
+	split( m_sSongDir, "/", sDirectoryParts, false );
+	ASSERT( sDirectoryParts.size() >= 4 ); /* Songs/Slow/Taps/ */
+	m_sGroupName = sDirectoryParts[sDirectoryParts.size()-3];	// second from last item
+	ASSERT( m_sGroupName != "" );
+	if (songsInfo.find(hash) != songsInfo.end())
+	{
+		// The hash key exists in the map
+		m_sMainTitle = songsInfo[hash].m_sMainTitle;
+		m_sSubTitle = songsInfo[hash].m_sSubTitle;
+		m_sArtist = songsInfo[hash].m_sArtist;
+		m_sMainTitleTranslit = songsInfo[hash].m_sMainTitleTranslit;
+		m_sSubTitleTranslit = songsInfo[hash].m_sSubTitleTranslit;
+		m_sArtistTranslit = songsInfo[hash].m_sArtistTranslit;
+		m_sSongFileName = songsInfo[hash].m_sSongFileName;
+		m_bHasMusic = true;
+	}
+	else
+	{
+		result = LoadFromSongDir(sDir);
+	}
+	return result;
+}
+
+bool Song::CheckInit(void)
+{
+	bool result = m_bInit;
+	if(!m_bInit) LoadFromSongDir(m_sSongDir);
+	return result;
 }
 
 static void GetImageDirListing( CString sPath, CStringArray &AddTo, bool bReturnPathToo=false )
@@ -1413,6 +1457,23 @@ bool Song::HasSignificantBpmChangesOrStops() const
 	return m_Timing.HasBpmChangesOrStops();
 }
 
+SONG_BASIC_INFO Song::GetSongInfo()
+{
+	SONG_BASIC_INFO info;
+	info.m_sMainTitle         = m_sMainTitle;
+	info.m_sSubTitle          = m_sSubTitle;
+	info.m_sArtist            = m_sArtist;
+	info.m_sMainTitleTranslit = m_sMainTitleTranslit;
+	info.m_sSubTitleTranslit  = m_sSubTitleTranslit;
+	info.m_sArtistTranslit    = m_sArtistTranslit;
+	info.m_sSongFileName      = m_sSongFileName;
+	return info;
+}
+
+unsigned int Song::GetHash(void)
+{
+	return m_hash;
+}
 /*
  * (c) 2001-2004 Chris Danford, Glenn Maynard
  * All rights reserved.

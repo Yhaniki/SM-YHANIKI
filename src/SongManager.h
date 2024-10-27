@@ -15,7 +15,8 @@ struct PlayerOptions;
 #include "SongOptions.h"
 #include "PlayerOptions.h"
 #include "PlayerNumber.h"
-
+#include "song.h"
+#include <map>
 class SongManager
 {
 public:
@@ -105,6 +106,8 @@ protected:
 	void AddGroup( CString sDir, CString sGroupDirName );
 
 	Song *FindSong( CString sGroup, CString sSong );
+	void SaveSongsInfo(void);
+	void ReadSongsInfo(void);
 
 	vector<Song*>		m_pSongs;	// all songs that can be played
 	vector<Song*>		m_pBestSongs[NUM_PROFILE_SLOTS];
@@ -114,6 +117,7 @@ protected:
 	vector<Course*>		m_pCourses;
 	vector<Course*>		m_pBestCourses[NUM_PROFILE_SLOTS];
 	vector<Course*>		m_pShuffledCourses;	// used by GetRandomCourse
+	std::map<unsigned int, SONG_BASIC_INFO> m_pSongsInfo; 
 };
 
 
