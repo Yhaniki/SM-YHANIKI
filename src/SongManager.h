@@ -108,6 +108,7 @@ protected:
 	Song *FindSong( CString sGroup, CString sSong );
 	void SaveSongsInfo(void);
 	void ReadSongsInfo(void);
+	void InitRandomSongWithNum(int num);
 
 	vector<Song*>		m_pSongs;	// all songs that can be played
 	vector<Song*>		m_pBestSongs[NUM_PROFILE_SLOTS];

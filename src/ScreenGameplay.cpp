@@ -170,7 +170,7 @@ void ScreenGameplay::Init()
 
 	if( GAMESTATE->m_pCurSong == NULL && GAMESTATE->m_pCurCourse == NULL )
 		return;	// ScreenDemonstration will move us to the next scren.  We just need to survive for one update without crashing.
-
+	if(GAMESTATE->m_pCurSong) GAMESTATE->m_pCurSong->CheckInit();
 	/* This is usually done already, but we might have come here without going through
 	 * ScreenSelectMusic or the options menus at all. */
 	GAMESTATE->AdjustFailType();
@@ -944,6 +944,7 @@ void ScreenGameplay::LoadNextSong()
 	int iPlaySongIndex = GAMESTATE->GetCourseSongIndex();
 	iPlaySongIndex %= m_apSongsQueue.size();
 	GAMESTATE->m_pCurSong = m_apSongsQueue[iPlaySongIndex];
+	if(GAMESTATE->m_pCurSong) GAMESTATE->m_pCurSong->CheckInit();
 	g_CurStageStats.vpSongs.push_back( GAMESTATE->m_pCurSong );
 
 	// No need to do this here.  We do it in SongFinished().
@@ -966,6 +967,7 @@ void ScreenGameplay::LoadNextSong()
 
 		Song* pSong = GAMESTATE->m_pCurSong;
 		Steps* pSteps = GAMESTATE->m_pCurSteps[p];
+		if(GAMESTATE->m_pCurSong) GAMESTATE->m_pCurSong->CheckInit();
 		g_CurStageStats.vpSteps[p].push_back( pSteps );
 
 		ASSERT( GAMESTATE->m_pCurSteps[p] );

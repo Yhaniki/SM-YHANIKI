@@ -34,6 +34,10 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <algorithm>
+#include <random>
+#include <numeric>
+#include <ctime>
 SongManager*	SONGMAN = NULL;	// global and accessable from anywhere in our program
 
 #define SONGS_DIR				"Songs/"
@@ -736,12 +740,31 @@ void SongManager::InitCoursesFromDisk( LoadingWindow *ld )
 		}
 	}
 }
-	
+
+void SongManager::InitRandomSongWithNum(int num)
+{
+	if (num <= 0) return;
+	if (num > m_pSongs.size()) num = m_pSongs.size();
+
+	std::vector<int> indices(m_pSongs.size());
+	std::iota(indices.begin(), indices.end(), 0);
+	std::mt19937 g(static_cast<unsigned int>(std::time(nullptr)));
+	std::shuffle(indices.begin(), indices.end(), g);
+
+	for (int i = 0; i < num; ++i)
+	{
+		int songIndex = indices[i];
+		if (m_pSongs[songIndex]) m_pSongs[songIndex]->CheckInit();
+	}
+}
+
 void SongManager::InitAutogenCourses()
 {
 	//
 	// Create group courses for Endless and Nonstop
 	//
+	const int songNum = 100;
+	InitRandomSongWithNum(songNum); //init some songs for nonstop group
 	CStringArray saGroupNames;
 	this->GetGroupNames( saGroupNames );
 	Course* pCourse;
