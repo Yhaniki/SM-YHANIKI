@@ -87,10 +87,10 @@ const ScreenMessage SM_BackFromInsertAttack			= (ScreenMessage)(SM_User+9);
 const ScreenMessage SM_BackFromInsertAttackModifiers= (ScreenMessage)(SM_User+10);
 const ScreenMessage SM_BackFromPrefs				= (ScreenMessage)(SM_User+11);
 const ScreenMessage SM_BackFromCourseModeMenu		= (ScreenMessage)(SM_User+12);
-const ScreenMessage SM_DoReloadFromDisk			= (ScreenMessage)(SM_User+13);
-const ScreenMessage SM_DoUpdateTextInfo			= (ScreenMessage)(SM_User+14);
-const ScreenMessage SM_BackFromBPMChange		= (ScreenMessage)(SM_User+15);
-const ScreenMessage SM_BackFromStopChange		= (ScreenMessage)(SM_User+16);
+const ScreenMessage SM_DoReloadFromDisk				= (ScreenMessage)(SM_User+13);
+const ScreenMessage SM_DoUpdateTextInfo				= (ScreenMessage)(SM_User+14);
+const ScreenMessage SM_BackFromBPMChange			= (ScreenMessage)(SM_User+15);
+const ScreenMessage SM_BackFromStopChange			= (ScreenMessage)(SM_User+16);
 const ScreenMessage SM_BackFromDisplayBPMMin		= (ScreenMessage)(SM_User+17);
 const ScreenMessage SM_BackFromDisplayBPMMax		= (ScreenMessage)(SM_User+18);
 const CString HELP_TEXT = 
@@ -210,9 +210,9 @@ static const MenuRow g_EditSongInfoItems[] =
 	{ "Main title transliteration",	true, 0, { NULL } },
 	{ "Sub title transliteration",	true, 0, { NULL } },
 	{ "Artist transliteration",		true, 0, { NULL } },
-	{ "Display BPM type",		    true, 0, { "REAL", "FIXED", "CUSTOM", "RANDOM" } },
+	{ "Display BPM type",			true, 0, { "REAL", "FIXED", "CUSTOM", "RANDOM" } },
 	{ "Display BPM MIN(FIXED)",		true, 0, { NULL } },
-	{ "Display BPM MAX",		    true, 0, { NULL } },
+	{ "Display BPM MAX",			true, 0, { NULL } },
 	{ NULL, true, 0, { NULL } }
 };
 static Menu g_EditSongInfo( "Edit Song Info", g_EditSongInfoItems );
@@ -238,13 +238,13 @@ static Menu g_BGChange( "Background Change", g_BGChangeItems );
 static const MenuRow g_PrefsItems[] =
 {
 	{ "Show BGChanges during Play/Record",			true, 0, { "NO","YES" } },
-	{ "Screen Filter",		                    	true, 4, { "Default", "0%", "20%", "40%", "60%", "80%", "100%" } },
-	{ "Default Scroll Reverse",				        true, 1, { "NO","YES" } },
+	{ "Screen Filter",								true, 4, { "Default", "0%", "20%", "40%", "60%", "80%", "100%" } },
+	{ "Default Scroll Reverse",						true, 1, { "NO","YES" } },
 	{ "Reverse Control Intuitive",					true, 1, { "NO","YES" } },
-	{ "AutoSave During Time(minute)",	            true, 5, { "NO", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+	{ "AutoSave During Time(minute)",				true, 5, { "NO", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
 																	"11","12","13","14","15","16","17","18","19","20",
 																	"21","22","23","24","25","26","27","28","29","30" } },
-	{ "Play Mode Beats Buffer",					    true, 4, { "0","1","2","3","4","5","6","7","8" } },
+	{ "Play Mode Beats Buffer",						true, 4, { "0","1","2","3","4","5","6","7","8" } },
 	{ NULL, true, 0, { NULL } }
 };
 static Menu g_Prefs( "Preferences", g_PrefsItems );
@@ -274,7 +274,7 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 {
 	LOG->Trace( "ScreenEdit::ScreenEdit()" );
 	FOREACH_PotentialCpuPlayer(p)
-        GAMESTATE->m_pCurSteps[p] = GAMESTATE->m_pCurSteps[ GAMESTATE->GetFirstHumanPlayer() ];
+		GAMESTATE->m_pCurSteps[p] = GAMESTATE->m_pCurSteps[ GAMESTATE->GetFirstHumanPlayer() ];
 	/* We do this ourself. */
 	SOUND->HandleSongTimer( false );
 
@@ -286,6 +286,7 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	SCREENMAN->RefreshCreditsMessages();
 
 	m_pSong = GAMESTATE->m_pCurSong;
+	m_pSong->CheckInit();
 	m_pSteps = GAMESTATE->m_pCurSteps[PLAYER_1];
 	m_pAttacksFromCourse = NULL;
 
@@ -329,6 +330,10 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 
 	m_rectRecordBack.StretchTo( RectI(SCREEN_LEFT, SCREEN_TOP, SCREEN_RIGHT, SCREEN_BOTTOM) );
 	m_rectRecordBack.SetDiffuse( RageColor(0,0,0,0) );
+	// m_rectRecordBack.SetXY(CENTER_X, CENTER_Y);
+	// m_rectRecordBack.SetWidth( 100 );
+	// m_rectRecordBack.SetHeight( 100 );
+	// m_rectRecordBack.SetDiffuse( RageColor(0,0,1,1) );
 
 	m_NoteFieldRecord.SetXY( EDIT_X, PLAYER_Y );
 	m_NoteFieldRecord.SetZoom( 1.0f );
@@ -360,7 +365,7 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	m_Player.SetX( PLAYER_X );
 	/* Why was this here?  Nothing ever sets Player Y values; this was causing
 	 * the display in play mode to be offset half a screen down. */
-//	m_Player.SetXY( PLAYER_X, PLAYER_Y );
+	//	m_Player.SetXY( PLAYER_X, PLAYER_Y );
 
 	m_In.Load( THEME->GetPathToB("ScreenEdit in") );
 	m_In.StartTransitioning();
@@ -406,8 +411,28 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	m_soundChangeSnap.Load( THEME->GetPathToS("ScreenEdit snap") );
 	m_soundMarker.Load(		THEME->GetPathToS("ScreenEdit marker") );
 
-
 	m_soundMusic.Load(m_pSong->GetMusicPath());
+
+	// 初始化波形顯示
+    m_WaveformDisplay.SetSound(&m_soundMusic);
+	LOG->Trace("11111+++++++aaaaaaaaaaaaa %s\n ",m_pSong->GetMusicPath().c_str());
+    // m_WaveformDisplay.SetXY(CENTER_X, SCREEN_BOTTOM - 100); // 設定顯示位置
+    m_WaveformDisplay.SetXY(CENTER_X, CENTER_Y);
+	RageColor c(0, 1, 0, 1);;
+	m_WaveformDisplay.SetDiffuse( c );
+	//this->AddChildBefore(&m_WaveformDisplay, &m_NoteFieldEdit); // 確保 WaveformDisplay 加入 ActorFrame
+	// m_test.SetXY(CENTER_X, CENTER_Y);
+	// m_test.SetWidth( 100 );
+	// m_test.SetHeight( 100 );
+	// RageColor c(0, 1, 0, 1);;
+	// m_test.SetDiffuse( c );
+	// this->AddChild( &m_test );
+	// m_rectUsersBG.SetName( "UsersBG" );
+	// //ON_COMMAND( m_rectUsersBG );
+	
+	// m_rectUsersBG.SetXY(
+	// 	THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dX",ShowSide)),
+	// 	THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dY",ShowSide)) );
 
 	m_soundAssistTick.Load(		THEME->GetPathToS("ScreenEdit assist tick") );
 
@@ -425,14 +450,17 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	m_Foreground.SetDrawOrder( DRAW_ORDER_AFTER_EVERYTHING );	// on top of everything else, including transitions
 	this->AddChild( &m_Foreground );
 
-	start_time = time(0);
+	m_start_time = time(0);
 }
 
 ScreenEdit::~ScreenEdit()
 {
 	LOG->Trace( "ScreenEdit::~ScreenEdit()" );
+	// m_test.SetDiffuse( c );
+	// m_test.SetDiffuse(RageColor(0, 0, 0, 0));
 	m_soundMusic.StopPlaying();
 }
+
 void ScreenEdit::UpdateAutoPlayText()
 {
 	CString sText;
@@ -460,6 +488,7 @@ void ScreenEdit::UpdateAutoPlayText()
 	
 	m_textAutoPlay.SetText( sText );
 }
+
 // play assist ticks
 void ScreenEdit::PlayTicks()
 {
@@ -512,20 +541,25 @@ void ScreenEdit::AutoSave()
 	if(PREFSMAN->m_bEditorAutosaveMinute==0)return;
 	time_t now = time(0);
 	int save_time = (PREFSMAN->m_bEditorAutosaveMinute)*60;
-	if((now-start_time) > save_time){
-		HandleMainMenuChoice( save, NULL );
-		start_time = now;
+	if ((now - m_start_time) > save_time)
+	{
+		HandleMainMenuChoice(save, NULL);
+		m_start_time = now;
 	}
 }
 
 void ScreenEdit::Update( float fDeltaTime )
 {
+	// m_test.Update(fDeltaTime);
 	if( m_soundMusic.IsPlaying() )
 	{
 		RageTimer tm;
 		const float fSeconds = m_soundMusic.GetPositionSeconds( NULL, &tm );
 		GAMESTATE->UpdateSongPosition( fSeconds, GAMESTATE->m_pCurSong->m_Timing, tm );
 	}
+
+	// 更新波形顯示
+    m_WaveformDisplay.Update(fDeltaTime);
 	if( m_EditMode == MODE_EDITING  )
 	{
 		if(PREFSMAN->m_bEditorAutosaveMinute>0)
@@ -693,8 +727,8 @@ void ScreenEdit::UpdateTextInfo()
 	CString sNoteType;
 	switch( m_SnapDisplay.GetNoteType() )
 	{
-	case NOTE_TYPE_4TH:		sNoteType = "4th notes";	break;
-	case NOTE_TYPE_8TH:		sNoteType = "8th notes";	break;
+	case NOTE_TYPE_4TH:			sNoteType = "4th notes";	break;
+	case NOTE_TYPE_8TH:			sNoteType = "8th notes";	break;
 	case NOTE_TYPE_12TH:		sNoteType = "12th notes";	break;
 	case NOTE_TYPE_16TH:		sNoteType = "16th notes";	break;
 	case NOTE_TYPE_24TH:		sNoteType = "24th notes";	break;
@@ -728,20 +762,25 @@ void ScreenEdit::UpdateTextInfo()
 	sText += ssprintf( "Hold Steps:\n     %d\n",			iNumHoldNotes );
 	sText += ssprintf( "Beat 0 Offset:\n     %.3f secs\n",	m_pSong->m_Timing.m_fBeat0OffsetInSeconds );
 	sText += ssprintf( "Preview Start:\n     %.2f secs\n",	m_pSong->m_fMusicSampleStartSeconds );
-	sText += ssprintf( "Preview Length:\n     %.2f secs\n",m_pSong->m_fMusicSampleLengthSeconds );
+	sText += ssprintf( "Preview Length:\n     %.2f secs\n",	m_pSong->m_fMusicSampleLengthSeconds );
 
 	m_textInfo.SetText( sText );
 }
 
 void ScreenEdit::DrawPrimitives()
 {
-//	m_rectRecordBack.Draw();
-
+	m_rectRecordBack.Draw();
+	// m_test.SetDiffuse( c );
+	// m_test.SetDiffuse(RageColor(0, 0, 0, 0));
+	
 	switch( m_EditMode )
 	{
 	case MODE_EDITING:
 		{
+			// 
 			m_BGAnimation.Draw();
+			m_WaveformDisplay.Draw(); 
+			// m_WaveformDisplay.SetDiffuseAlpha(1);
 			m_sprHelp.Draw();
 			m_textHelp.Draw();
 			m_sprInfo.Draw();
@@ -755,6 +794,7 @@ void ScreenEdit::DrawPrimitives()
 			// HACK:  Make NoteFieldEdit draw using the trailing beat
 			float fSongBeat = GAMESTATE->m_fSongBeat;	// save song beat
 			GAMESTATE->m_fSongBeat = m_fTrailingBeat;	// put trailing beat in effect
+			// m_WaveformDisplay.DrawPrimitives();
 			m_NoteFieldEdit.Draw();
 			GAMESTATE->m_fSongBeat = fSongBeat;	// restore real song beat
 
@@ -803,7 +843,7 @@ void ScreenEdit::DrawPrimitives()
 		}
 		else
 			m_BGAnimation.Draw();
-
+		m_WaveformDisplay.Draw(); 
 		m_Player.Draw();
 		m_textAutoPlay.Draw();
 		if( PREFSMAN->m_bEditorShowBGChangesPlay )
@@ -835,7 +875,6 @@ void ScreenEdit::Input( const DeviceInput& DeviceI, const InputEventType type, c
 	 * so it doesn't feel lagged. */
 	UpdateTextInfo();
 }
-
 
 void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType type, const GameInput &GameI, const MenuInput &MenuI, const StyleInput &StyleI )
 {
@@ -1403,8 +1442,7 @@ void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType typ
 			if(INPUTFILTER->IsBeingPressed( DeviceInput(DEVICE_KEYBOARD, KEY_LCTRL)))
 			{
 				HandleMainMenuChoice( save, NULL );
-				time_t now = time(0);
-				start_time = now;
+				m_start_time = time(0);
 			}
 		}
 		break;
@@ -1694,7 +1732,6 @@ void ScreenEdit::InputPlay( const DeviceInput& DeviceI, const InputEventType typ
 	}
 
 }
-
 
 /* Switch to editing. */
 void ScreenEdit::TransitionToEdit()
@@ -2173,8 +2210,7 @@ void ScreenEdit::HandleMainMenuChoice( MainMenuChoice c, int* iAnswers )
 				else
 					SCREENMAN->SystemMessage( "Saved as SM." );
 				SOUND->PlayOnce( THEME->GetPathToS("ScreenEdit save") );
-				time_t now = time(0);
-				start_time = now;
+				m_start_time = time(0);
 			}
 			break;
 		case reload:

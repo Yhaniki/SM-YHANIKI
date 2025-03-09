@@ -452,13 +452,7 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 
 	if (DeviceI.button == KEY_F8)
 	{
-		if (GAMESTATE->ScreenNetSelectMusicAlpha) {
-			GAMESTATE->ScreenNetSelectMusicAlpha = false;
-		}
-		else
-		{
-			GAMESTATE->ScreenNetSelectMusicAlpha = true;
-		}
+		GAMESTATE->ScreenNetSelectMusicAlpha = !GAMESTATE->ScreenNetSelectMusicAlpha;
 	}
 	switch (DeviceI.button)
 	{
@@ -1120,69 +1114,66 @@ void ScreenNetSelectMusic::Update( float fDeltaTime )
 }
 void ScreenNetSelectMusic::UpdateUsersStates()
 {
-	float alpha = 1;
-	if(GAMESTATE->ScreenNetSelectMusicAlpha)
-	{
-		alpha = 1;
-	}else{
-		alpha = 0;
-	}
+	float alpha = GAMESTATE->ScreenNetSelectMusicAlpha ? 1.0f : 0.0f;
 
-	m_rectUsersBG.SetDiffuse(RageColor(0,1,0.9,alpha*0.2));
-	for( int i=0; i<20; ++i )
+	m_rectUsersBG.SetDiffuse(RageColor(0, 1, 0.9, alpha * 0.2));
+	for (int i = 0; i < NETMAXPLAYERS; ++i)
 	{
-		m_textUsers[i].SetText( "" );
-		m_textUsersNum[i].SetText( "" );
+		m_textUsers[i].SetText("");
+		m_textUsersNum[i].SetText("");
 	}
 	//RageColor(R,G,B,A)
-	for( int i=0; i<NSMAN->m_PlayerNames.size()/2; ++i )
+	for (int i = 0; i < NSMAN->m_PlayerNames.size() / 2; ++i)
 	{
 		if(NSMAN->m_PlayerCondition.size()<=i)
 			return;
-		if(NSMAN->m_PlayerCondition[i]==0)
+		if (NSMAN->m_PlayerCondition[i] == CONDITION_NORMAL)
 		{
-			m_textUsers[i].SetDiffuse(RageColor(1,1,1,alpha));
-			m_textUsersNum[i].SetDiffuse(RageColor(1,1,1,alpha));
-		}else if(NSMAN->m_PlayerCondition[i]==1)
-		{
-			m_textUsers[i].SetDiffuse(RageColor(0.9,0,0,alpha));
-			m_textUsersNum[i].SetDiffuse(RageColor(0.9,0,0,alpha));
-		}else
-		{
-			m_textUsers[i].SetDiffuse(RageColor(0.3,0.3,0.3,alpha));
-			m_textUsersNum[i].SetDiffuse(RageColor(0.3,0.3,0.3,alpha));
+			m_textUsers[i].SetDiffuse(RageColor(1, 1, 1, alpha));
+			m_textUsersNum[i].SetDiffuse(RageColor(1, 1, 1, alpha));
 		}
-		
+		else if (NSMAN->m_PlayerCondition[i] == CONDITION_LACK_SONG)
+		{
+			m_textUsers[i].SetDiffuse(RageColor(0.9, 0, 0, alpha));
+			m_textUsersNum[i].SetDiffuse(RageColor(0.9, 0, 0, alpha));
+		}
+		else
+		{
+			m_textUsers[i].SetDiffuse(RageColor(0.3, 0.3, 0.3, alpha));
+			m_textUsersNum[i].SetDiffuse(RageColor(0.3, 0.3, 0.3, alpha));
+		}
+
 		CString Num;
 		Num.Format("%d", i);
 		CString Display_Num;
-		if(i==0)
+		if (i == 0)
 		{
-			Display_Num="HOST";
-		}else
+			Display_Num = "HOST";
+		}
+		else
 		{
-			Display_Num+=Num;
-			Display_Num+=".";
+			Display_Num += Num;
+			Display_Num += ".";
 		}
 		m_textUsersNum[i].SetText( Display_Num );
 		//=========
 		CString temp_PlayerName="";
-		if(NSMAN->m_PlayerNames[i*2]!=""
-		 &&NSMAN->m_PlayerNames[i*2+1]=="")
+		if (NSMAN->m_PlayerNames[i * 2] != "" &&
+			NSMAN->m_PlayerNames[i * 2 + 1] == "")
 		{
-			temp_PlayerName=NSMAN->m_PlayerNames[i*2];
+			temp_PlayerName = NSMAN->m_PlayerNames[i * 2];
 		}
-		else if(NSMAN->m_PlayerNames[i*2]==""
-		 &&NSMAN->m_PlayerNames[i*2+1]!="")
+		else if (NSMAN->m_PlayerNames[i * 2] == "" &&
+				 NSMAN->m_PlayerNames[i * 2 + 1] != "")
 		{
-			temp_PlayerName=NSMAN->m_PlayerNames[i*2+1];
+			temp_PlayerName = NSMAN->m_PlayerNames[i * 2 + 1];
 		}
-		else if(NSMAN->m_PlayerNames[i*2]!=""
-		 &&NSMAN->m_PlayerNames[i*2+1]!="")
+		else if (NSMAN->m_PlayerNames[i * 2] != "" &&
+				 NSMAN->m_PlayerNames[i * 2 + 1] != "")
 		{
-			temp_PlayerName=NSMAN->m_PlayerNames[i*2];
-			temp_PlayerName+="&";
-			temp_PlayerName+=NSMAN->m_PlayerNames[i*2+1];
+			temp_PlayerName = NSMAN->m_PlayerNames[i * 2];
+			temp_PlayerName += "&";
+			temp_PlayerName += NSMAN->m_PlayerNames[i * 2 + 1];
 		}
 		m_textUsers[i].SetText( temp_PlayerName );
 		// m_textUsers[i].SetDiffuse(RageColor(r,g,b,a));

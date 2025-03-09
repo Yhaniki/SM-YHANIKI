@@ -923,6 +923,151 @@ RageSoundParams::StopMode_t RageSound::GetStopMode() const
 		return RageSoundParams::M_STOP;
 }
 
+bool RageSound::GetChannelWaveform(float startSecond,
+                                   float endSecond,
+                                   std::vector<int16_t> &leftChannel,
+                                   std::vector<int16_t> &rightChannel)
+{
+    LockMut(m_Mutex);
+
+    if (!Sample)
+    {
+        LOG->Warn("GetChannelWaveform failed: No sample loaded.");
+        return false;
+    }
+
+    // 時間區間檢查
+    if (startSecond < 0)
+        startSecond = 0;
+    if (endSecond <= startSecond)
+    {
+        LOG->Warn("GetChannelWaveform: invalid time range start=%.3f end=%.3f", startSecond, endSecond);
+        return false;
+    }
+
+    // 計算要讀的 frame 數量
+    const int sr = GetSampleRate();  // 這是經過 Resample 後的最終播放採樣率
+    int startFrame = static_cast<int>(startSecond * sr);
+    int endFrame   = static_cast<int>(endSecond   * sr);
+    int totalFrames = endFrame - startFrame;
+    if (totalFrames <= 0)
+    {
+        LOG->Warn("GetChannelWaveform: totalFrames <= 0");
+        return false;
+    }
+
+    // 先清空輸出緩衝
+    leftChannel.clear();
+    rightChannel.clear();
+    leftChannel.reserve(totalFrames);
+    rightChannel.reserve(totalFrames);
+
+    // 1) 建立一個 SoundReader 的副本，不去動原本正在播放的 Sample。
+    SoundReader* readerCopy = Sample->Copy();
+    if (!readerCopy)
+    {
+        LOG->Warn("GetChannelWaveform: Copy() failed.");
+        return false;
+    }
+
+    // 2) 將副本 Seek 到 startFrame對應的毫秒位置
+    int ms = static_cast<int>((static_cast<long long>(startFrame) * 1000LL) / readerCopy->GetSampleRate());
+    int seekRet = 0;
+    if (m_Param.AccurateSync)
+        seekRet = readerCopy->SetPosition_Accurate(ms);
+    else
+        seekRet = readerCopy->SetPosition_Fast(ms);
+    if (seekRet < 0)
+    {
+        LOG->Warn("GetChannelWaveform: cannot seek to %dms in readerCopy->SetPosition", ms);
+        delete readerCopy;
+        return false;
+    }
+
+    // 3) 分塊解碼音檔資料到 buffer，再把 PCM 拆到左右聲道
+    const int channelsInFile = readerCopy->GetNumChannels();
+    const unsigned blockBytes = 4096; // 解碼時一次讀多少 byte，可自行調大調小
+    std::vector<char> rawBuf(blockBytes);
+
+    int framesReadTotal = 0;
+    while (framesReadTotal < totalFrames)
+    {
+        // 還需要多少 frames？
+        int framesRemaining = totalFrames - framesReadTotal;
+        // 要讀多少 bytes？( 1 frame = 2bytes * channelsInFile )
+        int bytesToRead = framesRemaining * sizeof(int16_t) * channelsInFile;
+        if (bytesToRead > static_cast<int>(blockBytes))
+            bytesToRead = blockBytes;
+
+        // 讀檔
+        int got = readerCopy->Read(rawBuf.data(), bytesToRead);
+        if (got <= 0)
+            break; // EOF 或錯誤，跳出
+
+        // got 是實際讀到的 byte 數，換算成 frames
+        int gotFrames = got / (sizeof(int16_t) * channelsInFile);
+
+        // 若原音檔是單聲道，就要自己做擴充
+        // 若檔案本身是立體聲，就可直接讀左右聲道
+        const int16_t* pcmIn = reinterpret_cast<const int16_t*>(rawBuf.data());
+
+        // 有需要的話，可呼叫 RateChange(...) 作速度轉換
+        // 例如:
+        //   int bytesTemp = got;
+        //   RateChange(reinterpret_cast<char*>(rawBuf.data()), 
+        //              bytesTemp, 
+        //              m_Param.speed_input_samples, 
+        //              m_Param.speed_output_samples, 
+        //              /*2 channelsOut*/ );
+        //   gotFrames = bytesTemp / (2 * sizeof(int16_t));
+
+        if (channelsInFile == 2)
+        {
+            // 直接拆左、右聲道
+            for (int i = 0; i < gotFrames; ++i)
+            {
+                leftChannel.push_back(pcmIn[i * 2 + 0]);
+                rightChannel.push_back(pcmIn[i * 2 + 1]);
+            }
+        }
+        else if (channelsInFile == 1)
+        {
+            // 單聲道 -> 直接複製給 left/right
+            for (int i = 0; i < gotFrames; ++i)
+            {
+                int16_t s = pcmIn[i];
+                leftChannel.push_back(s);
+                rightChannel.push_back(s);
+            }
+        }
+        else
+        {
+            // 若真的遇到非 1 或 2 聲道，可再自行擴充
+            LOG->Warn("GetChannelWaveform: channelsInFile = %d not supported", channelsInFile);
+            delete readerCopy;
+            return false;
+        }
+
+        framesReadTotal += gotFrames;
+    }
+
+    delete readerCopy;
+
+    // 取樣結果
+    const int actualFrames = static_cast<int>(leftChannel.size());
+    if (actualFrames <= 0)
+    {
+        LOG->Warn("GetChannelWaveform: no frames read");
+        return false;
+    }
+
+    LOG->Trace("GetChannelWaveform success: read %d frames, range=%.3f~%.3fsec",
+               actualFrames, startSecond, endSecond);
+    return true;
+}
+
+
+
 /*
  * Copyright (c) 2002-2004 Glenn Maynard
  * All rights reserved.

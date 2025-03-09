@@ -508,6 +508,7 @@
     <ClCompile Include="TrailUtil.cpp" />
     <ClCompile Include="Transition.cpp" />
     <ClCompile Include="UnlockSystem.cpp" />
+    <ClCompile Include="WaveformDisplay.cpp" />
     <ClCompile Include="WheelNotifyIcon.cpp" />
     <ClCompile Include="XmlFile.cpp" />
   </ItemGroup>
@@ -909,6 +910,7 @@
     <ClInclude Include="TrailUtil.h" />
     <ClInclude Include="Transition.h" />
     <ClInclude Include="UnlockSystem.h" />
+    <ClInclude Include="WaveformDisplay.h" />
     <ClInclude Include="WheelNotifyIcon.h" />
     <ClInclude Include="XmlFile.h" />
   </ItemGroup>

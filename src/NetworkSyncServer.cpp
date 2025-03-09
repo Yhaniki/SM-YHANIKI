@@ -1196,34 +1196,24 @@ void StepManiaLanServer::SendPlayerCondition()
 	//1 = lack song
 	//2 = leave room
 	for (unsigned int x = 0; x < Client.size(); ++x)
+	{
 		for (int y = 0; y < 2; ++y)
 		{
-			if (Client[x]->Player[y].name.length() != 0)
+			if (Client[x]->Player[y].name.empty())
 			{
-				if(Client[0]->hasSong==true)
-				{
-					if(Client[x]->inNetMusicSelect==false)
-					{
-						Reply.Write1(2);
-					}else if(Client[x]->hasSong==false)
-					{
-						Reply.Write1(1);
-					}else if(Client[x]->hasSong==true)
-					{
-						Reply.Write1(0);
-					}
-				}else
-				{
-					if(Client[x]->inNetMusicSelect==false)
-					{
-						Reply.Write1(2);
-					}else
-					{
-						Reply.Write1(0);
-					}
-				}
+				continue;
 			}
+
+			PLAYER_CONDITION status = CONDITION_NORMAL;
+
+			if (!Client[x]->inNetMusicSelect) status = CONDITION_LEAVE_ROOM;
+			else if (!Client[0]->hasSong) status = CONDITION_NORMAL;
+			else if (!Client[x]->hasSong) status = CONDITION_LACK_SONG;
+
+			Reply.Write1((int)status);
 		}
+	}
+
 	PacketFunctions tmp = Reply;
 	for (unsigned int x = 0; x < Client.size(); ++x)
 	{

@@ -377,7 +377,7 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 			if(!steps.empty())
 				m_pSongsInfo[pNewSong->GetHash()] = songInfo;
 
-            m_pSongs.push_back( pNewSong );
+			m_pSongs.push_back( pNewSong );
 			loaded++;
 		}
 

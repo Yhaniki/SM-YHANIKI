@@ -28,16 +28,24 @@ enum NSCommand
 	NSCUUL,			//9
 	NSCSMS,			//10
 	NSCUPOpts,		//11
-	NSCUPPer,       //12
-	NSSSS,          //13 share song server
-	NSSSC,          //14
-	NSCGraph,       //15
+	NSCUPPer,		//12
+	NSSSS,			//13 share song server
+	NSSSC,			//14
+	NSCGraph,		//15
 	NSCPC,			//16 player conditions //is the data size enough to use 16?
 	NSCCHS,			//17 checkhassong
 	NSCAS,			//18 ask song
-	NSRSSF,         //19 share song finish
+	NSRSSF,			//19 share song finish
 	NUM_NS_COMMANDS
 };
+
+typedef enum
+{
+	CONDITION_NORMAL,
+	CONDITION_LACK_SONG,
+	CONDITION_LEAVE_ROOM,
+	CONDITION_NUM
+} PLAYER_CONDITION;
 
 const NSCommand NSServerOffset = (NSCommand)128;
 
