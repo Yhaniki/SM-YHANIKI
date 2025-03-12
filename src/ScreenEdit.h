@@ -51,7 +51,7 @@ protected:
 	void AutoSave();
 	void SetDisplayBPMType(int DisplayBPMType);
 	void UpdateAutoPlayText();
-
+	void SyncWaveformWithNoteField();
 	enum EditMode { MODE_EDITING, MODE_RECORDING, MODE_PLAYING };
 	EditMode m_EditMode;
 
@@ -105,7 +105,7 @@ protected:
 	RageSound		m_soundAssistTick;
 // for auto save
 	time_t			m_start_time;
-    WaveformDisplay m_WaveformDisplay; // 新增波形顯示
+    // WaveformDisplay m_WaveformDisplay; // 新增波形顯示
 public:
 	enum MainMenuChoice {
 		edit_notes_statistics,

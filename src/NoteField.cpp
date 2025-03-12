@@ -438,7 +438,6 @@ void NoteField::DrawPrimitives()
 	iFirstPixelToDraw = (int)(iFirstPixelToDraw * fFirstDrawScale * fDrawScale);
 	iLastPixelToDraw = (int)(iLastPixelToDraw * fLastDrawScale * fDrawScale);
 
-
 	// Probe for first and last notes on the screen
 	float fFirstBeatToDraw = FindFirstDisplayedBeat( m_PlayerNumber, iFirstPixelToDraw );
 	float fLastBeatToDraw = FindLastDisplayedBeat( m_PlayerNumber, iLastPixelToDraw );
@@ -448,15 +447,22 @@ void NoteField::DrawPrimitives()
 	const int iFirstIndexToDraw  = BeatToNoteRow(fFirstBeatToDraw);
 	const int iLastIndexToDraw   = BeatToNoteRow(fLastBeatToDraw);
 
-//	LOG->Trace( "start = %f.1, end = %f.1", fFirstBeatToDraw-fSongBeat, fLastBeatToDraw-fSongBeat );
-//	LOG->Trace( "Drawing elements %d through %d", iFirstIndexToDraw, iLastIndexToDraw );
+	float startSecond = GAMESTATE->m_pCurSong->GetElapsedTimeFromBeat( fFirstBeatToDraw );
+	float endSecond   = GAMESTATE->m_pCurSong->GetElapsedTimeFromBeat( fLastBeatToDraw );
+	if(endSecond < startSecond)
+		std::swap(startSecond, endSecond);
+	int iVisTopPixel = iFirstPixelToDraw;
+	int iVisBottomPixel = iLastPixelToDraw;
+	m_WaveformDisplay.SetPlayerNumber(m_PlayerNumber);
+	m_WaveformDisplay.ExtractWaveformSegment(fFirstBeatToDraw, fLastBeatToDraw, startSecond, endSecond-startSecond);
+	m_WaveformDisplay.SetHeight(iLastPixelToDraw-iFirstPixelToDraw);
 
 	if( GAMESTATE->m_bEditing )
 	{
 		ASSERT(GAMESTATE->m_pCurSong);
 
 		unsigned i;
-
+		m_WaveformDisplay.Draw();
 		//
 		// Draw beat bars
 		//

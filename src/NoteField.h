@@ -13,7 +13,7 @@
 #include "ArrowBackdrop.h"
 #include "ReceptorArrowRow.h"
 #include "GhostArrowRow.h"
-
+#include "WaveformDisplay.h"
 class Song;
 
 class NoteField : public NoteDataWithScoring, public ActorFrame
@@ -32,7 +32,7 @@ public:
 	map<RowTrack,bool> m_ActiveHoldNotes;	// true if hold has life > 0
 
 	float	m_fBeginMarker, m_fEndMarker;	// only used with MODE_EDIT
-
+	WaveformDisplay m_WaveformDisplay;
 	void FadeToFail();
 	void CacheAllUsedNoteSkins();
 	void CacheNoteSkin( CString skin );
@@ -41,7 +41,8 @@ public:
 	void SetPressed( int iCol );
 	void DidTapNote( int iCol, TapNoteScore score, bool bBright );
 	void DidHoldNote( int iCol );
-
+	int GetStartDrawingPixel() { return m_iStartDrawingPixel; };
+	int GetEndDrawingPixel() { return m_iEndDrawingPixel; };
 protected:
 	void DrawBeatBar( const float fBeat );
 	void DrawMarkerBar( const float fBeat );
@@ -90,8 +91,10 @@ protected:
 	BitmapText		m_textMeasureNumber;
 	Quad			m_rectMarkerBar;
 	Quad			m_rectAreaHighlight;
+	void SyncWaveformWithNoteField();
 };
-
+float FindFirstDisplayedBeat( PlayerNumber pn, int iFirstPixelToDraw );
+float FindLastDisplayedBeat( PlayerNumber pn, int iLastPixelToDraw );
 #endif
 
 /*
