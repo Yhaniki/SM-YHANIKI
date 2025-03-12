@@ -451,11 +451,11 @@ void NoteField::DrawPrimitives()
 	float endSecond   = GAMESTATE->m_pCurSong->GetElapsedTimeFromBeat( fLastBeatToDraw );
 	if(endSecond < startSecond)
 		std::swap(startSecond, endSecond);
-	int iVisTopPixel = iFirstPixelToDraw;
-	int iVisBottomPixel = iLastPixelToDraw;
+
 	m_WaveformDisplay.SetPlayerNumber(m_PlayerNumber);
-	m_WaveformDisplay.ExtractWaveformSegment(fFirstBeatToDraw, fLastBeatToDraw, startSecond, endSecond-startSecond);
-	m_WaveformDisplay.SetHeight(iLastPixelToDraw-iFirstPixelToDraw);
+	m_WaveformDisplay.ExtractWaveformSegment(fFirstBeatToDraw, fLastBeatToDraw, startSecond, endSecond - startSecond);
+	m_WaveformDisplay.SetHeight(iLastPixelToDraw - iFirstPixelToDraw);
+	m_WaveformDisplay.SetYReverseOffsetPixels(m_fYReverseOffsetPixels);
 
 	if( GAMESTATE->m_bEditing )
 	{

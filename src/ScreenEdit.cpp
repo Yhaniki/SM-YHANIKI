@@ -413,16 +413,6 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 
 	m_soundMusic.Load(m_pSong->GetMusicPath());
 
-	// 初始化波形顯示
-	m_NoteFieldEdit.m_WaveformDisplay.SetSound(&m_soundMusic);
-	m_NoteFieldEdit.m_WaveformDisplay.SetHorizAlign(Actor::align_center);
-	m_NoteFieldEdit.m_WaveformDisplay.SetVertAlign(Actor::align_middle);
-    // m_WaveformDisplay.SetSound(&m_soundMusic);
-    // // m_WaveformDisplay.SetXY(CENTER_X, SCREEN_BOTTOM - 100); // 設定顯示位置
-    // m_WaveformDisplay.SetXY(CENTER_X, CENTER_Y-35);
-	// RageColor c(0, 1, 0, 1);;
-	// m_WaveformDisplay.SetDiffuse( c );
-	
 	// m_rectUsersBG.SetXY(
 	// 	THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dX",ShowSide)),
 	// 	THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dY",ShowSide)) );
@@ -543,7 +533,6 @@ void ScreenEdit::AutoSave()
 
 void ScreenEdit::Update( float fDeltaTime )
 {
-	// m_test.Update(fDeltaTime);
 	if( m_soundMusic.IsPlaying() )
 	{
 		RageTimer tm;
@@ -551,8 +540,6 @@ void ScreenEdit::Update( float fDeltaTime )
 		GAMESTATE->UpdateSongPosition( fSeconds, GAMESTATE->m_pCurSong->m_Timing, tm );
 	}
 
-	// 更新波形顯示
-    // m_WaveformDisplay.Update(fDeltaTime);
 	if( m_EditMode == MODE_EDITING  )
 	{
 		if(PREFSMAN->m_bEditorAutosaveMinute>0)
@@ -760,40 +747,15 @@ void ScreenEdit::UpdateTextInfo()
 	m_textInfo.SetText( sText );
 }
 
-// ScreenEdit.cpp
-// void ScreenEdit::SyncWaveformWithNoteField()
-// {
-//     // 取得 NoteField 的可視範圍
-//     float fFirstBeatToDraw = FindFirstDisplayedBeat(PLAYER_1, m_NoteFieldEdit.GetStartDrawingPixel());
-//     float fLastBeatToDraw  = FindLastDisplayedBeat(PLAYER_1, m_NoteFieldEdit.GetEndDrawingPixel());
-
-//     // 轉秒數
-//     float startSecond = m_pSong->GetElapsedTimeFromBeat( fFirstBeatToDraw );
-//     float endSecond   = m_pSong->GetElapsedTimeFromBeat( fLastBeatToDraw );
-// 	// if(m_EditMode!=MODE_EDITING)
-// 	// 	endSecond = (startSecond+endSecond)/2.0f;
-//     // 交給 WaveformDisplay
-//     // float waveHeight = 600.f;  // 你可以自行決定
-//     if(endSecond < startSecond)
-//         std::swap(startSecond, endSecond);
-
-//     // 假設你在 WaveformDisplay.cpp 多寫一個 SetDisplayRange( startSec, endSec, visualHeight )
-// 	m_WaveformDisplay.SetPlayerNumber(PLAYER_1); 
-// 	m_WaveformDisplay.ExtractWaveformSegment(startSecond, endSecond - startSecond);
-// }
-
 void ScreenEdit::DrawPrimitives()
 {
-	// SyncWaveformWithNoteField();
 	// m_rectRecordBack.Draw();
 
 	switch( m_EditMode )
 	{
 	case MODE_EDITING:
 		{
-			// 
 			m_BGAnimation.Draw();
-			// m_WaveformDisplay.Draw(); 
 			m_sprHelp.Draw();
 			m_textHelp.Draw();
 			m_sprInfo.Draw();
@@ -807,10 +769,7 @@ void ScreenEdit::DrawPrimitives()
 			// HACK:  Make NoteFieldEdit draw using the trailing beat
 			float fSongBeat = GAMESTATE->m_fSongBeat;	// save song beat
 			GAMESTATE->m_fSongBeat = m_fTrailingBeat;	// put trailing beat in effect
-			// m_WaveformDisplay.DrawPrimitives();
-			LOG->Trace("111111111111111111" );
 			m_NoteFieldEdit.Draw();
-			LOG->Trace("222222222222222222" );
 			GAMESTATE->m_fSongBeat = fSongBeat;	// restore real song beat
 
 			m_In.Draw();
@@ -858,7 +817,7 @@ void ScreenEdit::DrawPrimitives()
 		}
 		else
 			m_BGAnimation.Draw();
-		// m_WaveformDisplay.Draw(); 
+
 		m_Player.Draw();
 		m_textAutoPlay.Draw();
 		if( PREFSMAN->m_bEditorShowBGChangesPlay )

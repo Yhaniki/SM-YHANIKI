@@ -105,7 +105,6 @@ protected:
 	RageSound		m_soundAssistTick;
 // for auto save
 	time_t			m_start_time;
-    // WaveformDisplay m_WaveformDisplay; // 新增波形顯示
 public:
 	enum MainMenuChoice {
 		edit_notes_statistics,
