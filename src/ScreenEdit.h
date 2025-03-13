@@ -51,7 +51,7 @@ protected:
 	void AutoSave();
 	void SetDisplayBPMType(int DisplayBPMType);
 	void UpdateAutoPlayText();
-	void SyncWaveformWithNoteField();
+	void AdjustBPMToMatchTime();
 	enum EditMode { MODE_EDITING, MODE_RECORDING, MODE_PLAYING };
 	EditMode m_EditMode;
 
@@ -144,6 +144,7 @@ public:
 		shift_pauses_backward,
 		convert_beat_to_pause,
 		convert_pause_to_beat,
+		adjust_bpm_to_match_time,
 		NUM_AREA_MENU_CHOICES
 	};
 	void HandleAreaMenuChoice( AreaMenuChoice c, int* iAnswers );

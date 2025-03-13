@@ -1,6 +1,7 @@
 #define LINE_THICKNESS                (0.2f)
 #define BLOCK_SIZE                    (256)
 #define ALPHA                         (0.6)
+#define MAX_DISPLAY_SAMPLE_SIZE       (2000)
 
 #include "global.h"
 #include "WaveformDisplay.h"
@@ -57,7 +58,7 @@ void WaveformDisplay::AdjustBlockSize(float duration)
 	int totalSamples = static_cast<int>(duration * sampleRate);
 
 	const int minBlockSize = 2;
-	const int maxBlockSize = 1024;
+	const int maxBlockSize = 16384;
 	const int targetBlocks = 1000;
 
 	int blockSize = totalSamples / targetBlocks;
@@ -244,6 +245,7 @@ void WaveformDisplay::DrawEnvelopeRange(const std::vector<MinMax> &envelope,
 
 	for (int i = 0; i < blockCount; i++)
 	{
+		if (i > MAX_DISPLAY_SAMPLE_SIZE) return;
 		int blockIndex = m_iBlockStart + i;
 		if (blockIndex < 0 || blockIndex >= (int)envelope.size())
 			continue;
@@ -356,6 +358,7 @@ void WaveformDisplay::DrawPrimitives()
 	float afterPartPixel = afterPartDuration * pixelsPerSec;
 
 	float currentY = fYPos;
+
 	// part 1: Negative number (blank)
 	if (negativePartPixel > 0)
 	{
@@ -392,4 +395,14 @@ void WaveformDisplay::DrawPrimitives()
 		// DrawBlackRectangle(currentY, currentY + afterPartPixel, -110.f, 110.f, ALPHA);
 		currentY += afterPartPixel;
 	}
+
+	float currentBeat = GAMESTATE->m_fSongBeat;
+	const float fYOffset3     = ArrowGetYOffset(m_PlayerNumber, 0, currentBeat);
+	const float fYPos3        = ArrowGetYPos(m_PlayerNumber, 0, fYOffset3, m_fYReverseOffsetPixels);
+	RageSpriteVertex v[2];
+	v[0].p = RageVector3(-waveWidth/2, fYPos3, 0);
+	v[0].c = RageColor(0, 0, 1, 1);
+	v[1].p = RageVector3(waveWidth/2, fYPos3, 0);
+	v[1].c = RageColor(0, 0, 1, 1);
+	DISPLAY->DrawLineStrip(v, 2, 1.0f);
 }

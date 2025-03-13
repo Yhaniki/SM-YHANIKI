@@ -93,6 +93,8 @@ const ScreenMessage SM_BackFromBPMChange			= (ScreenMessage)(SM_User+15);
 const ScreenMessage SM_BackFromStopChange			= (ScreenMessage)(SM_User+16);
 const ScreenMessage SM_BackFromDisplayBPMMin		= (ScreenMessage)(SM_User+17);
 const ScreenMessage SM_BackFromDisplayBPMMax		= (ScreenMessage)(SM_User+18);
+const ScreenMessage SM_BackFromBPMToMatchTime		= (ScreenMessage)(SM_User+19);
+
 const CString HELP_TEXT = 
 	"Up/Down:\n     change beat\n"
 	"Left/Right:\n     change snap\n"
@@ -180,6 +182,7 @@ static const MenuRow g_AreaMenuItems[] =
 									true, 0, { NULL } },
 	{ "Convert beats to pause",		true, 0, { NULL } },
 	{ "Convert pause to beats",		true, 0, { NULL } },
+	{ "Adjust BPM to Match Time",	true, 0, { NULL } },
 	{ NULL, true, 0, { NULL } }
 };
 static Menu g_AreaMenu( "Area Menu", g_AreaMenuItems );
@@ -1756,6 +1759,32 @@ void ReloadFromDisk( void *p )
 	g_DoReload = true;
 }
 
+void ScreenEdit::AdjustBPMToMatchTime()
+{
+	if (m_NoteFieldEdit.m_fBeginMarker == -1 || m_NoteFieldEdit.m_fEndMarker == -1)
+	{
+		SCREENMAN->SystemMessage("No range selected!");
+		return;
+	}
+
+	float fStartBeat = m_NoteFieldEdit.m_fBeginMarker;
+	float fEndBeat = m_NoteFieldEdit.m_fEndMarker;
+	float fStartTime = m_pSong->m_Timing.GetElapsedTimeFromBeat(fStartBeat);
+
+	float fTargetSeconds = atof(ScreenTextEntry::s_sLastAnswer.c_str());
+	if (fTargetSeconds <= fStartTime)
+	{
+		SCREENMAN->SystemMessage("Invalid target time! Must be greater than start time.");
+		return;
+	}
+	float fCurrentBPM = m_pSong->GetBPMAtBeat(fStartBeat);
+	float fNewBPM = (fEndBeat - fStartBeat) / ((fTargetSeconds - fStartTime) / 60.0f);
+
+	m_pSong->SetBPMAtBeat(fStartBeat, fNewBPM);
+	m_pSong->SetBPMAtBeat(fEndBeat, fCurrentBPM);
+	// SCREENMAN->SystemMessage(ssprintf("BPM adjusted to %.2f at beat %.2f", fNewBPM, fStartBeat));
+}
+
 void ScreenEdit::HandleScreenMessage( const ScreenMessage SM )
 {
 	switch( SM )
@@ -1963,6 +1992,9 @@ void ScreenEdit::HandleScreenMessage( const ScreenMessage SM )
 			SetDisplayBPMType(ScreenMiniMenu::s_iLastAnswers[display_bpm_type]);
 		}
 		break;	
+	case SM_BackFromBPMToMatchTime:
+		AdjustBPMToMatchTime();
+		break;
 	}
 }
 
@@ -2325,6 +2357,7 @@ void ScreenEdit::HandleMainMenuChoice( MainMenuChoice c, int* iAnswers )
 		case play_preview_music:
 			PlayPreviewMusic();
 			break;
+
 		case exit:
 			m_Out.StartTransitioning( SM_GoToNextScreen );
 			break;
@@ -2784,6 +2817,10 @@ void ScreenEdit::HandleAreaMenuChoice( AreaMenuChoice c, int* iAnswers )
 			// Hello and welcome to I FEEL STUPID :-)
 			break;
 			}
+		case adjust_bpm_to_match_time:
+			GAMESTATE->m_bClearText = true;
+			SCREENMAN->TextEntry(SM_BackFromBPMToMatchTime, "Enter target end time (seconds):", "");
+			break;
 		default:
 			ASSERT(0);
 	};
