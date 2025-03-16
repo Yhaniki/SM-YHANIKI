@@ -4,6 +4,8 @@
 #include "Actor.h"
 #include "RageSound.h"
 #include "PlayerNumber.h"
+#include "TimingData.h"
+#include "Song.h"
 #include <vector>
 
 typedef struct
@@ -18,6 +20,7 @@ public:
 	WaveformDisplay();
 	~WaveformDisplay() override {}
 
+	void Initialize(Song *pSong);
 	void SetPlayerNumber(PlayerNumber pn);
 	void Update(float deltaTime) override;
 	void DrawPrimitives() override;
@@ -32,10 +35,14 @@ private:
 	float m_fLastBeat;
 	PlayerNumber m_PlayerNumber;
 
-	float m_fUserStartRaw;
 	float m_fUserDurationRaw;
+	float m_fUserRequestedStart;
+	float m_fUserRequestedEnd;
+	float m_fClampedStart;
+	float m_fClampedEnd;
 	bool m_bInit;
 	float m_fYReverseOffsetPixels;
+	Song* m_pSong;
 	RageSound m_Sound;
 
 	std::vector<int16_t> m_LeftChannelFull;
@@ -50,29 +57,23 @@ private:
 	int m_iBlockStart;
 	int m_iBlockEnd;
 	int m_totalBlocks;
-	float m_fUserRequestedStart;
-	float m_fUserRequestedEnd;
-	float m_fClampedStart;
-	float m_fClampedEnd;
-
 	float m_fBaseY;
 	float m_fSegmentYStep;
-
 	int m_iDynamicBlockSize;
-	int m_prevBlockSize;
 
 	void PrecomputeWaveform();
 	void RebuildEnvelope();
 	void BuildEnvelope(const std::vector<int16_t> &source, std::vector<MinMax> &envelope);
 	void ApplyHighPassFilter(const std::vector<int16_t> &inData, std::vector<int16_t> &outData, float strength);
 	void AdjustBlockSize(float duration);
-	void ExtractWaveformSegment_Actual(float startSecond, float duration);
 	void DrawEnvelopeRange(const std::vector<MinMax> &envelope,
 						   float waveHeight,
 						   float waveWidth,
 						   float offsetX,
 						   RageColor lineColor);
 	void DrawBlackRectangle(float bottomY, float topY, float leftX, float rightX, float alpha);
+	float BeatToYPosition(float beat);
+	std::vector<BPMSegment> GetRelevantBPMSegments(float &firstBeat, float &lastBeat);
 };
 
 #endif

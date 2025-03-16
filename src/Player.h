@@ -101,7 +101,7 @@ class Player : public PlayerMinus
 {
 public:
 	void Load( PlayerNumber player_no, const NoteData* pNoteData, LifeMeter* pLM, CombinedLifeMeter* pCombinedLM, ScoreDisplay* pScoreDisplay, ScoreDisplay* pSecondaryScoreDisplay, Inventory* pInventory, ScoreKeeper* pPrimaryScoreKeeper, ScoreKeeper* pSecondaryScoreKeeper );
-
+	void SetWaveFormDisplay(WaveformDisplay wave){m_NoteField.SetWaveFormDisplay(wave);};
 protected:
 	NoteField		m_NoteField;
 

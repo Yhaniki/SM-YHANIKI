@@ -330,6 +330,7 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	m_NoteFieldEdit.SetXY( EDIT_X, PLAYER_Y );
 	m_NoteFieldEdit.SetZoom( 0.5f );
 	m_NoteFieldEdit.Load( &noteData, PLAYER_1, -240, 800, PLAYER_HEIGHT*2 );
+	m_NoteFieldEdit.InitWaveFromDisplay(m_pSong);
 
 	m_rectRecordBack.StretchTo( RectI(SCREEN_LEFT, SCREEN_TOP, SCREEN_RIGHT, SCREEN_BOTTOM) );
 	m_rectRecordBack.SetDiffuse( RageColor(0,0,0,0) );
@@ -364,6 +365,7 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	/* XXX: Do we actually have to send real note data here, and to m_NoteFieldRecord? 
 	 * (We load again on play/record.) */
 	m_Player.Load( PLAYER_1, &noteData, NULL, NULL, NULL, NULL, NULL, NULL, NULL );
+	m_Player.SetWaveFormDisplay(m_NoteFieldEdit.GetWaveFormDisplay());
 	GAMESTATE->m_PlayerController[PLAYER_1] = PC_HUMAN;
 	m_Player.SetX( PLAYER_X );
 	/* Why was this here?  Nothing ever sets Player Y values; this was causing
@@ -1780,8 +1782,19 @@ void ScreenEdit::AdjustBPMToMatchTime()
 	float fCurrentBPM = m_pSong->GetBPMAtBeat(fStartBeat);
 	float fNewBPM = (fEndBeat - fStartBeat) / ((fTargetSeconds - fStartTime) / 60.0f);
 
+	const vector<BPMSegment> &bpmSegments = m_pSong->GetBPMSegment();
+	auto it = std::lower_bound(bpmSegments.begin(), bpmSegments.end(), fEndBeat,
+							   [](const BPMSegment &seg, float beat)
+							   { return seg.m_fStartBeat < beat; });
+
+	bool hasBPMAtEndBeat = (it != bpmSegments.end() && it->m_fStartBeat == fEndBeat);
+
 	m_pSong->SetBPMAtBeat(fStartBeat, fNewBPM);
-	m_pSong->SetBPMAtBeat(fEndBeat, fCurrentBPM);
+
+	if (!hasBPMAtEndBeat)
+	{
+		m_pSong->SetBPMAtBeat(fEndBeat, fCurrentBPM);
+	}
 	// SCREENMAN->SystemMessage(ssprintf("BPM adjusted to %.2f at beat %.2f", fNewBPM, fStartBeat));
 }
 

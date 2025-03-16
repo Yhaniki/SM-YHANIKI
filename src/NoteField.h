@@ -43,6 +43,9 @@ public:
 	void DidHoldNote( int iCol );
 	int GetStartDrawingPixel() { return m_iStartDrawingPixel; };
 	int GetEndDrawingPixel() { return m_iEndDrawingPixel; };
+	void InitWaveFromDisplay(Song *pSong) { m_WaveformDisplay.Initialize(pSong); };
+	WaveformDisplay GetWaveFormDisplay() { return m_WaveformDisplay;};
+	void SetWaveFormDisplay(WaveformDisplay wave) {m_WaveformDisplay = wave;};
 protected:
 	void DrawBeatBar( const float fBeat );
 	void DrawMarkerBar( const float fBeat );
@@ -91,7 +94,6 @@ protected:
 	BitmapText		m_textMeasureNumber;
 	Quad			m_rectMarkerBar;
 	Quad			m_rectAreaHighlight;
-	void SyncWaveformWithNoteField();
 };
 float FindFirstDisplayedBeat( PlayerNumber pn, int iFirstPixelToDraw );
 float FindLastDisplayedBeat( PlayerNumber pn, int iLastPixelToDraw );

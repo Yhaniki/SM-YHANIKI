@@ -158,7 +158,6 @@ void TimingData::GetBeatAndBPSFromElapsedTime( float fElapsedTime, float &fBeatO
 	}
 }
 
-
 float TimingData::GetElapsedTimeFromBeat( float fBeat ) const
 {
 	float fElapsedTime = 0;

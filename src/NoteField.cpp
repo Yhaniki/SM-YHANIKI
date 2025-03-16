@@ -138,7 +138,6 @@ void NoteField::Update( float fDeltaTime )
 	m_rectMarkerBar.Update( fDeltaTime );
 
 	NoteDisplayCols *cur = SearchForSongBeat();
-
 	if( cur != LastDisplay )
 	{
 		/* The display has changed.  We might be in the middle of a step; copy any
@@ -452,10 +451,13 @@ void NoteField::DrawPrimitives()
 	if(endSecond < startSecond)
 		std::swap(startSecond, endSecond);
 
-	m_WaveformDisplay.SetPlayerNumber(m_PlayerNumber);
-	m_WaveformDisplay.ExtractWaveformSegment(fFirstBeatToDraw, fLastBeatToDraw, startSecond, endSecond - startSecond);
-	m_WaveformDisplay.SetHeight(iLastPixelToDraw - iFirstPixelToDraw);
-	m_WaveformDisplay.SetYReverseOffsetPixels(m_fYReverseOffsetPixels);
+	if (m_PlayerNumber == PLAYER_1)
+	{
+		m_WaveformDisplay.SetPlayerNumber(m_PlayerNumber);
+		m_WaveformDisplay.ExtractWaveformSegment(fFirstBeatToDraw, fLastBeatToDraw, startSecond, endSecond - startSecond);
+		m_WaveformDisplay.SetHeight(iLastPixelToDraw - iFirstPixelToDraw);
+		m_WaveformDisplay.SetYReverseOffsetPixels(m_fYReverseOffsetPixels);
+	}
 
 	if( GAMESTATE->m_bEditing )
 	{
