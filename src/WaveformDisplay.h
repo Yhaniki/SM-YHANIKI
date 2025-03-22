@@ -73,7 +73,8 @@ private:
 						   RageColor lineColor);
 	void DrawBlackRectangle(float bottomY, float topY, float leftX, float rightX, float alpha);
 	float BeatToYPosition(float beat);
-	std::vector<BPMSegment> GetRelevantBPMSegments(float &firstBeat, float &lastBeat);
+	std::vector<BPMSegment> GetRelevantBPMSegments(float firstBeat, float lastBeat);
+	std::vector<StopSegment> GetRelevantStopSegments(float firstBeat, float lastBeat);
 };
 
 #endif

@@ -235,7 +235,7 @@ float WaveformDisplay::BeatToYPosition(float beat)
 	return ArrowGetYPos(m_PlayerNumber, 0, fYOffset, m_fYReverseOffsetPixels);
 }
 
-std::vector<BPMSegment> WaveformDisplay::GetRelevantBPMSegments(float &firstBeat, float &lastBeat)
+std::vector<BPMSegment> WaveformDisplay::GetRelevantBPMSegments(float firstBeat, float lastBeat)
 {
 	std::vector<BPMSegment> relevantSegments;
 	const std::vector<BPMSegment> &bpmSegments = m_pSong->GetBPMSegment();
@@ -257,6 +257,24 @@ std::vector<BPMSegment> WaveformDisplay::GetRelevantBPMSegments(float &firstBeat
 	return relevantSegments;
 }
 
+std::vector<StopSegment> WaveformDisplay::GetRelevantStopSegments(float firstBeat, float lastBeat)
+{
+	std::vector<StopSegment> relevantStops;
+	const std::vector<StopSegment> &stopSegments = m_pSong->m_Timing.m_StopSegments;
+	float totalMusicTime = m_Sound.GetLengthSeconds();
+
+	for (const auto &segment : stopSegments)
+	{
+		float segmentTime = m_pSong->GetElapsedTimeFromBeat(segment.m_fStartBeat);
+		if (segmentTime >= 0 && segmentTime <= totalMusicTime &&
+			segment.m_fStartBeat >= firstBeat && segment.m_fStartBeat <= lastBeat)
+		{
+			relevantStops.push_back(segment);
+		}
+	}
+	return relevantStops;
+}
+
 void WaveformDisplay::DrawEnvelopeRange(const std::vector<MinMax> &envelope,
 										float waveHeight,
 										float waveWidth,
@@ -265,8 +283,6 @@ void WaveformDisplay::DrawEnvelopeRange(const std::vector<MinMax> &envelope,
 {
 	int blockCount = m_iBlockEnd - m_iBlockStart;
 	if (blockCount < 1) return;
-
-	
 
 	float totalMusicTime = m_Sound.GetLengthSeconds();
 	float firstBeat = m_fFirstBeat;
@@ -380,11 +396,14 @@ void WaveformDisplay::DrawPrimitives()
 	float userTotalSec = std::max(0.001f, m_fUserRequestedEnd - m_fUserRequestedStart);
 	float realTotalSec = std::max(0.0f, m_fClampedEnd - m_fClampedStart);
 	float pixelsPerSec = waveHeight / userTotalSec;
-	float negativePartDuration = std::max(0.0f, -m_fUserRequestedStart);
-	float negativePartPixel = negativePartDuration * pixelsPerSec;
+	// float negativePartDuration = std::max(0.0f, -m_fUserRequestedStart);
+	// float negativePartPixel = negativePartDuration * pixelsPerSec;
+	float firstBeat = m_pSong->GetBeatFromElapsedTime(0);
+	float fStartPos = BeatToYPosition(firstBeat);
 	float realPartPixel = realTotalSec * pixelsPerSec;
 
-	m_fBaseY = fYPos + std::max(0.0f, negativePartPixel);
+	// m_fBaseY = fYPos + std::max(0.0f, negativePartPixel);
+	m_fBaseY = std::max(fYPos, fStartPos);
 
 	// part 2: Audio Interpretation
 	if (realPartPixel > 0)
