@@ -254,6 +254,7 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 	{
 		GAMESTATE->m_pCurSong=m_vSongs[0];
 	}
+	GAMESTATE->m_pCurSong->CheckInit();
 	if (GAMESTATE->m_pCurSong != NULL)
 	{
 		for ( unsigned i = 0 ; i<m_vSongs.size() ; ++i )
@@ -334,7 +335,7 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 	float cx = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("User%dX",ShowSide));
 	float cy = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("User%dY",ShowSide));
 	
-	m_iActivePlayers = 20;
+	m_iActivePlayers = NETMAXPLAYERS;
 	m_iCurrentPlayer = 0;
 
 	for( int i=0; i<m_iActivePlayers; ++i )
@@ -395,6 +396,7 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 				GAMESTATE->m_bEditing = true;
 				int j = m_iSongNum % m_vSongs.size();
 				GAMESTATE->m_pPreferredSong = m_vSongs[j];
+				GAMESTATE->m_pPreferredSong->CheckInit();
 				SCREENMAN->AddNewScreenToTop("ScreenSelectMusic", SM_BackFromSelectSongs);
 				return;
 			}
@@ -1246,7 +1248,7 @@ void ScreenNetSelectMusic::UpdateSongsListPos()
 	m_textArtist.SetText( m_vSongs[j]->GetDisplayArtist() );
 	m_textSubtitle.SetText( m_vSongs[j]->GetDisplaySubTitle() );
 	GAMESTATE->m_pCurSong = m_vSongs[j];
-
+	GAMESTATE->m_pCurSong->CheckInit();
 	//Update the difficulty Icons
 	//Handle difficulty
 	FOREACH_EnabledPlayer (pn)
