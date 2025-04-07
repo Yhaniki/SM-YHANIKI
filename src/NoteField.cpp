@@ -464,7 +464,7 @@ void NoteField::DrawPrimitives()
 		ASSERT(GAMESTATE->m_pCurSong);
 
 		unsigned i;
-		m_WaveformDisplay.Draw();
+		if(GAMESTATE->m_bShowWave) m_WaveformDisplay.Draw();
 		//
 		// Draw beat bars
 		//

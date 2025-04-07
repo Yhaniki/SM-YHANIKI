@@ -1230,6 +1230,9 @@ void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType typ
 	case KEY_F1:
 		SCREENMAN->MiniMenu( &g_KeyboardShortcuts, SM_None );
 		break;
+	case KEY_F3:
+		GAMESTATE->m_bShowWave ^= 1;
+		break;
 	case KEY_F4:
 		// SCREENMAN->SystemMessage( ssprintf("Assist Tick is %s", GAMESTATE->m_SongOptions.m_bAssistTick?"ON":"OFF") );
 		GAMESTATE->m_SongOptions.m_bAssistTick ^= 1;
@@ -1634,6 +1637,9 @@ void ScreenEdit::InputPlay( const DeviceInput& DeviceI, const InputEventType typ
 		{
 		case KEY_ESC:
 			TransitionToEdit();
+			break;
+		case KEY_F3:
+			GAMESTATE->m_bShowWave ^= 1;
 			break;
 		case KEY_F4:
 			// SCREENMAN->SystemMessage( ssprintf("Assist Tick is %s", GAMESTATE->m_SongOptions.m_bAssistTick?"ON":"OFF") );
