@@ -485,3 +485,116 @@ CString EzSockets::getIp()
 	CString cstr = str;
 	return cstr;	
 }
+
+#include <iostream>
+#include <string>
+#include <ctime>
+#include <cstdlib>
+#include <thread>
+#include <chrono>
+#include <mutex>
+#include <atomic>
+#include "steam/steam_api.h"
+
+CSteamID gLobbyID;
+std::string gRoomCode;
+std::atomic<bool> gLobbyJoined{ false };
+std::mutex gInputMutex;
+
+class SteamLobbyExample {
+public:
+	SteamLobbyExample()
+		: m_LobbyCreated(this, &SteamLobbyExample::OnLobbyCreated),
+		m_LobbyEnter(this, &SteamLobbyExample::OnLobbyEnter),
+		m_LobbyMatchList(this, &SteamLobbyExample::OnLobbyMatchList),
+		m_LobbyChatUpdate(this, &SteamLobbyExample::OnLobbyChatUpdate),
+		m_LobbyChatMsg(this, &SteamLobbyExample::OnLobbyChatMsg) {}
+
+	void CreateLobby() {
+		int code = 1000 + std::rand() % 90000;
+		gRoomCode = std::to_string(code);
+		SteamMatchmaking()->CreateLobby(k_ELobbyTypePublic, 4);
+	}
+
+	void SearchLobby(const std::string& code) {
+		gRoomCode = code;
+		SteamMatchmaking()->AddRequestLobbyListStringFilter("room_code", code.c_str(), k_ELobbyComparisonEqual);
+		SteamMatchmaking()->RequestLobbyList();
+	}
+
+	void SendChatMessage(const std::string& message) {
+		if (!gLobbyJoined) return;
+		SteamMatchmaking()->SendLobbyChatMsg(gLobbyID, message.c_str(), static_cast<int>(message.size()) + 1);
+	}
+
+private:
+	CCallback<SteamLobbyExample, LobbyCreated_t> m_LobbyCreated;
+	CCallback<SteamLobbyExample, LobbyEnter_t> m_LobbyEnter;
+	CCallback<SteamLobbyExample, LobbyMatchList_t> m_LobbyMatchList;
+	CCallback<SteamLobbyExample, LobbyChatUpdate_t> m_LobbyChatUpdate;
+	CCallback<SteamLobbyExample, LobbyChatMsg_t> m_LobbyChatMsg;
+
+	void OnLobbyCreated(LobbyCreated_t* pCallback) {
+		if (pCallback->m_eResult == k_EResultOK) {
+			gLobbyID = pCallback->m_ulSteamIDLobby;
+			SteamMatchmaking()->SetLobbyData(gLobbyID, "room_code", gRoomCode.c_str());
+			std::cout << "[HOST] Lobby created. Room code: " << gRoomCode << std::endl;
+
+			// std::string status = "Room " + gRoomCode;
+			// SteamFriends()->SetRichPresence("status", status.c_str());
+			// SteamFriends()->SetRichPresence("steam_display", "#Status_InRoom");
+		}
+		else {
+			std::cout << "[HOST] Failed to create lobby. Error code: " << pCallback->m_eResult << std::endl;
+		}
+	}
+
+	void OnLobbyEnter(LobbyEnter_t* pCallback) {
+		gLobbyID = pCallback->m_ulSteamIDLobby;
+		CSteamID self = SteamUser()->GetSteamID();
+		std::string name = SteamFriends()->GetFriendPersonaName(self);
+		std::cout << "[JOIN] You (" << name << ") have entered lobby ID: " << gLobbyID.ConvertToUint64() << std::endl;
+		gLobbyJoined = true;
+	}
+
+	void OnLobbyMatchList(LobbyMatchList_t* pCallback) {
+		int matches = pCallback->m_nLobbiesMatching;
+		std::cout << "[CLIENT] Found " << matches << " matching lobbies." << std::endl;
+
+		for (int i = 0; i < matches; ++i) {
+			CSteamID lobbyID = SteamMatchmaking()->GetLobbyByIndex(i);
+			std::string code = SteamMatchmaking()->GetLobbyData(lobbyID, "room_code");
+			if (code == gRoomCode) {
+				std::cout << "[CLIENT] Joining lobby with room code: " << code << std::endl;
+				SteamMatchmaking()->JoinLobby(lobbyID);
+				return;
+			}
+		}
+
+		std::cout << "[CLIENT] No lobby with matching code found." << std::endl;
+	}
+
+	void OnLobbyChatUpdate(LobbyChatUpdate_t* pCallback) {
+		CSteamID userChanged = pCallback->m_ulSteamIDUserChanged;
+		std::string name = SteamFriends()->GetFriendPersonaName(userChanged);
+
+		if (pCallback->m_rgfChatMemberStateChange & k_EChatMemberStateChangeEntered) {
+			std::cout << "[LOBBY] " << name << " joined the lobby." << std::endl;
+		}
+		else if (pCallback->m_rgfChatMemberStateChange & k_EChatMemberStateChangeLeft) {
+			std::cout << "[LOBBY] " << name << " left the lobby." << std::endl;
+		}
+	}
+
+	void OnLobbyChatMsg(LobbyChatMsg_t* pCallback) {
+		char buffer[4096] = {};
+		EChatEntryType chatType;
+		CSteamID sender;
+		int len = SteamMatchmaking()->GetLobbyChatEntry(pCallback->m_ulSteamIDLobby,
+			pCallback->m_iChatID, &sender, buffer, sizeof(buffer), &chatType);
+		if (len > 0) {
+			std::string name = SteamFriends()->GetFriendPersonaName(sender);
+			std::cout << name << ": " << buffer << std::endl;
+		}
+	}
+};

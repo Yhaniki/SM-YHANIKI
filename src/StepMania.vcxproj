@@ -50,12 +50,13 @@
     <IntDir>./../Debug\</IntDir>
     <LinkIncremental>true</LinkIncremental>
     <TargetName>$(ProjectName)-$(Configuration)</TargetName>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);;D:\SM-YHANIKI\src\ThirdParty_rebuild\steam sdk\public</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>./../Program\</OutDir>
     <IntDir>./../Release\</IntDir>
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>$(IncludePath);D:\SM-YHANIKI\src\ThirdParty_rebuild\steam sdk\public</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -84,10 +85,10 @@
     </ClCompile>
     <Link>
       <AdditionalOptions>/MACHINE:I386 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;steam_api.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutputPath)$(ProjectName)-$(COnfiguration).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>C:\\local\\boost_1_72_0\\lib32-msvc-14.2;..\ThirdParty\dx80\lib;..\ThirdParty;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\\local\\boost_1_72_0\\lib32-msvc-14.2;..\ThirdParty\dx80\lib;..\ThirdParty;%(AdditionalLibraryDirectories);D:\SM-YHANIKI\src\ThirdParty_rebuild\steam sdk\redistributable_bin</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>wininet.lib;msimg32.lib;libci.lib;msvcrt.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>../Debug/StepMania-debug.pdb</ProgramDatabaseFile>
@@ -132,7 +133,7 @@
       <AdditionalOptions>/MACHINE:I386 %(AdditionalOptions)</AdditionalOptions>
       <OutputFile>../Program/StepMania.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\lib;%(AdditionalLibraryDirectories);D:\SM-YHANIKI\src\ThirdParty_rebuild\steam sdk\redistributable_bin</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>wininet.lib;msimg32.lib;libci.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <ProgramDatabaseFile>../Release/StepMania.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
@@ -140,7 +141,7 @@
       <MapExports>true</MapExports>
       <SubSystem>Windows</SubSystem>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
-      <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;steam_api.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
