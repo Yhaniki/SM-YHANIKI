@@ -32,6 +32,10 @@
 #include <netinet/in.h>
 #endif
 
+// 添加Steam API相關頭文件
+#include "steam/steam_api.h"
+#include "steam/isteamnetworkingsockets.h"
+
 using namespace std;
 
 class EzSockets
@@ -45,6 +49,7 @@ public:
 	bool create();
 	bool create(int Protocol);
 	bool create(int Protocol, int Type);
+	bool create(CString roomCode);
 
 	//Bind Socket to local port
 	bool bind(unsigned short port);
@@ -145,6 +150,39 @@ private:
 	timeval *times;
 
 	//Buffers
+	
+	// Steam API相關成員
+	HSteamListenSocket m_hListenSocket;
+	HSteamNetConnection m_hConnection;
+	ISteamNetworkingSockets* m_pNetworkingSockets;
+	bool m_useSteamNetworking;
+	
+	// 初始化Steam API
+	bool InitializeSteamNetworking();
+	
+	// 處理Steam回調
+	void ProcessSteamCallbacks();
+	
+	// 將IP地址和端口轉換為SteamNetworkingIPAddr
+	SteamNetworkingIPAddr CreateSteamNetworkingIPAddr(const string& host, unsigned short port);
+	
+	// 將SteamNetworkingIPAddr轉換為字符串
+	string SteamNetworkingIPAddrToString(const SteamNetworkingIPAddr& addr);
+	
+	// 處理Steam連接狀態變化
+	void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* pCallback);
+	
+	// 處理Steam消息
+	void OnSteamNetworkingMessages(SteamNetworkingMessage_t* pMessage);
+	
+	// 回調處理器
+	CCallback<EzSockets, SteamNetConnectionStatusChangedCallback_t, false> m_SteamNetConnectionStatusChanged;
+	// STEAM_CALLBACK(EzSockets, OnSteamNetConnectionStatusChanged, SteamNetConnectionStatusChangedCallback_t, m_SteamNetConnectionStatusChanged);
+	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyCreated, LobbyCreated_t, m_LobbyCreatedCallback);
+	bool m_lobbyCreated = false;
+	bool m_lobbySuccess = false;
+	CSteamID m_lobbyID;
+	CString m_roomCode;
 };
 
 istream& operator>>(istream& is, EzSockets& obj);

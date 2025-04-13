@@ -87,10 +87,13 @@ void ScreenNetworkOptions::HandleScreenMessage( const ScreenMessage SM )
 			if ( NSMAN->LANserver == NULL)
 				NSMAN->LANserver = new StepManiaLanServer;
 			NSMAN->LANserver->servername = ScreenTextEntry::s_sLastAnswer;
-			if (NSMAN->LANserver->ServerStart())
+			NSMAN->LANserver->roomCode = NSMAN->LANserver->GenerateRoomCode();
+			if (NSMAN->LANserver->ServerStart(NSMAN->LANserver->roomCode))
 			{
 				NSMAN->isLanServer = true;
-				SCREENMAN->SystemMessage( "Server Started." );
+				// SCREENMAN->SystemMessage( "Server Started." );
+				std::string msg = "Server Started. Room Code: " + NSMAN->LANserver->roomCode;
+				SCREENMAN->SystemMessage(CString(msg.c_str())); // std::string → CString
 			}
 			else
 				SCREENMAN->SystemMessage( "Server failed: " + NSMAN->LANserver->lastError + ssprintf(" Code:%d",NSMAN->LANserver->lastErrorCode) );

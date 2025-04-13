@@ -77,14 +77,16 @@ class StepManiaLanServer
 {
 public:
 	bool ServerStart();
+	bool ServerStart(CString roomCode);
 	void ServerStop();
 	void ServerUpdate();
+	std::string GenerateRoomCode();
 	StepManiaLanServer();
 	~StepManiaLanServer();
 	CString servername;
 	CString lastError;
+	CString roomCode;
 	int lastErrorCode;
-
 protected:
 #if !defined(WITHOUT_NETWORKING)
 	bool stop;

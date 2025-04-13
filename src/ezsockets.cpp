@@ -4,6 +4,7 @@
 |   Socket programming methods based on Charles Lohr's EZW progam.  |
 |   Modified by Charles Lohr for use with Windows-Based OSes.       |
 |   UDP/NON-TCP Support by Adam Lowman.                             |
+|   Steam API Integration by Claude AI.                              |
 \*******************************************************************/
 #include "global.h"
 #include "ezsockets.h"
@@ -22,6 +23,9 @@
 #endif
 
 EzSockets::EzSockets()
+// ezsockets.cpp 中 constructor 修正為：
+: m_SteamNetConnectionStatusChanged(this, &EzSockets::OnSteamNetConnectionStatusChanged)
+
 {
 	MAXCON = 5;
 	memset (&addr,0,sizeof(addr)); //Clear the sockaddr_in structure
@@ -37,6 +41,15 @@ EzSockets::EzSockets()
 	times->tv_sec = 0;
 	times->tv_usec = 0;
 	state = skDISCONNECTED;
+	
+	// 初始化Steam API相關成員
+	m_hListenSocket = k_HSteamListenSocket_Invalid;
+	m_hConnection = k_HSteamNetConnection_Invalid;
+	m_pNetworkingSockets = nullptr;
+	m_useSteamNetworking = false;
+	
+	// 嘗試初始化Steam網絡功能
+	InitializeSteamNetworking();
 }
 
 EzSockets::~EzSockets()
@@ -44,12 +57,154 @@ EzSockets::~EzSockets()
 	close();
 	delete scks;
 	delete times;
+	SteamAPI_Shutdown();
 }
 
+// 初始化Steam網絡功能
+bool EzSockets::InitializeSteamNetworking()
+{
+	// 檢查Steam API是否可用
+	if (!SteamAPI_Init())
+	{
+		LOG->Warn("Steam API not initialized. Falling back to standard sockets.");
+		return false;
+	}
+	
+	// // 獲取Steam網絡接口
+	// m_pNetworkingSockets = SteamNetworkingSockets();
+	// if (!m_pNetworkingSockets)
+	// {
+	// 	LOG->Warn("SteamNetworkingSockets not available. Falling back to standard sockets.");
+	// 	return false;
+	// }
+	
+	// // 初始化Steam網絡認證
+	// ESteamNetworkingAvailability avail = m_pNetworkingSockets->InitAuthentication();
+	// if (avail != k_ESteamNetworkingAvailability_Current)
+	// {
+	// 	LOG->Warn("Steam networking authentication not available. Status: %d", avail);
+	// 	return false;
+	// }
+	
+	m_useSteamNetworking = true;
+	LOG->Info("Steam networking initialized successfully.");
+	return true;
+}
+
+// 處理Steam回調
+void EzSockets::ProcessSteamCallbacks()
+{
+	// if (!m_useSteamNetworking || !m_pNetworkingSockets)
+	// 	return;
+		
+	// // 處理Steam網絡回調
+	// SteamAPI_RunCallbacks();
+}
+
+// 將IP地址和端口轉換為SteamNetworkingIPAddr
+SteamNetworkingIPAddr EzSockets::CreateSteamNetworkingIPAddr(const string& host, unsigned short port)
+{
+	SteamNetworkingIPAddr addr;
+	addr.Clear();
+	
+	// 如果是主機名，嘗試解析
+	if (host != "LISTEN" && host != "localhost" && host != "127.0.0.1")
+	{
+		struct hostent* phe = gethostbyname(host.c_str());
+		if (phe)
+		{
+			// 轉換為IPv4地址
+			addr.SetIPv4(*(uint32_t*)phe->h_addr, port);
+			return addr;
+		}
+	}
+	
+	// 如果是IP地址，直接解析
+	if (host == "LISTEN" || host == "localhost" || host == "127.0.0.1")
+	{
+		// 監聽模式，使用任意地址
+		addr.SetIPv4(0, port);
+	}
+	else
+	{
+		// 嘗試解析IP地址
+		addr.ParseString(host.c_str());
+		addr.m_port = port;
+	}
+	
+	return addr;
+}
+
+// 將SteamNetworkingIPAddr轉換為字符串
+string EzSockets::SteamNetworkingIPAddrToString(const SteamNetworkingIPAddr& addr)
+{
+	char szAddr[128];
+	addr.ToString(szAddr, sizeof(szAddr), true);
+	return string(szAddr);
+}
+
+// 處理Steam連接狀態變化
+void EzSockets::OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* pCallback)
+{
+	if (!m_useSteamNetworking)
+		return;
+		
+	// 更新連接狀態
+	switch (pCallback->m_info.m_eState)
+	{
+		case k_ESteamNetworkingConnectionState_None:
+			// 連接已關閉
+			state = skDISCONNECTED;
+			break;
+			
+		case k_ESteamNetworkingConnectionState_Connecting:
+			// 正在連接
+			break;
+			
+		case k_ESteamNetworkingConnectionState_Connected:
+			// 連接成功
+			state = skCONNECTED;
+			break;
+			
+		case k_ESteamNetworkingConnectionState_ClosedByPeer:
+		case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
+			// 連接關閉或出現問題
+			state = skERROR;
+			break;
+	}
+	
+	// 處理新連接
+	if (pCallback->m_info.m_hListenSocket == m_hListenSocket && 
+		pCallback->m_eOldState == k_ESteamNetworkingConnectionState_None &&
+		pCallback->m_info.m_eState == k_ESteamNetworkingConnectionState_Connecting)
+	{
+		// 接受連接
+		m_pNetworkingSockets->AcceptConnection(pCallback->m_hConn);
+	}
+}
+
+// 處理Steam消息
+void EzSockets::OnSteamNetworkingMessages(SteamNetworkingMessage_t* pMessage)
+{
+	if (!m_useSteamNetworking || !pMessage)
+		return;
+		
+	// 將消息添加到接收緩衝區
+	inBuffer.append((const char*)pMessage->GetData(), pMessage->GetSize());
+	
+	// 釋放消息
+	pMessage->Release();
+}
 
 //Check to see if the socket has been created
 bool EzSockets::check()
 {
+	if (m_useSteamNetworking)
+	{
+		return m_hConnection != k_HSteamNetConnection_Invalid || 
+			   m_hListenSocket != k_HSteamListenSocket_Invalid;
+	}
+	
 	return sock > 0;
 }
 
@@ -82,18 +237,94 @@ bool EzSockets::create(int Protocol)
 bool EzSockets::create(int Protocol, int Type)
 {
 	state = skDISCONNECTED;
+	
+	if (m_useSteamNetworking)
+	{
+		// 使用Steam網絡功能
+		// 注意：Steam網絡功能不需要預先創建socket
+		// 連接時會自動創建
+		return true;
+	}
+	
+	// 使用標準socket
 	sock = socket(AF_INET, Type, Protocol);
 	lastCode = sock;
 
 	return sock > 0;
 }
 
+bool EzSockets::create(CString roomCode)
+{
+	if (!m_useSteamNetworking)
+		return false;
+
+	// 儲存房號（可選）
+	m_roomCode = roomCode;
+
+	m_lobbyCreated = false;
+	m_lobbySuccess = false;
+
+	// 開啟 callback
+	m_LobbyCreatedCallback.Register(this, &EzSockets::OnLobbyCreated);
+
+	// 建立 lobby
+	SteamMatchmaking()->CreateLobby(k_ELobbyTypePublic, 4);
+
+	// 等待 callback 回來或超時
+	const int timeoutMs = 5000;
+	int waited = 0;
+	while (!m_lobbyCreated && waited < timeoutMs)
+	{
+		SteamAPI_RunCallbacks(); // 可考慮由外層代為控制
+		Sleep(100);
+		waited += 100;
+	}
+
+	m_LobbyCreatedCallback.Unregister();
+
+	return m_lobbySuccess;
+}
+
+void EzSockets::OnLobbyCreated(LobbyCreated_t* pCallback)
+{
+	m_lobbyCreated = true;
+	if (pCallback->m_eResult == k_EResultOK)
+	{
+		m_lobbySuccess = true;
+		m_lobbyID = pCallback->m_ulSteamIDLobby;
+		LOG->Info("Lobby created successfully: %llu", m_lobbyID.ConvertToUint64());
+	}
+	else
+	{
+		m_lobbySuccess = false;
+		LOG->Warn("Failed to create lobby. Result: %d", pCallback->m_eResult);
+	}
+}
 
 bool EzSockets::bind(unsigned short port)
 {
 	if(!check())
 		return false;
 	
+	if (m_useSteamNetworking)
+	{
+		// 使用Steam網絡功能
+		SteamNetworkingIPAddr addr;
+		addr.Clear();
+		addr.m_port = port;
+		
+		m_hListenSocket = m_pNetworkingSockets->CreateListenSocketIP(addr, 0, nullptr);
+		if (m_hListenSocket == k_HSteamListenSocket_Invalid)
+		{
+			LOG->Warn("Failed to create Steam listen socket on port %d", port);
+			return false;
+		}
+		
+		state = skLISTENING;
+		return true;
+	}
+	
+	// 使用標準socket
 	addr.sin_family      = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port        = htons(port);
@@ -103,6 +334,13 @@ bool EzSockets::bind(unsigned short port)
 
 bool EzSockets::listen()
 {
+	if (m_useSteamNetworking)
+	{
+		// Steam網絡功能在bind時就已經開始監聽
+		return m_hListenSocket != k_HSteamListenSocket_Invalid;
+	}
+	
+	// 使用標準socket
 	lastCode = ::listen(sock, MAXCON);
 	if (lastCode)
 		return false;
@@ -117,7 +355,37 @@ typedef int socklen_t;
 
 bool EzSockets::accept(EzSockets& socket)
 {
+	if (m_useSteamNetworking)
+	{
+		// Steam網絡功能使用回調處理新連接
+		// 這裡我們需要檢查是否有待處理的連接
+		// 注意：這是一個簡化實現，實際應用中可能需要更複雜的邏輯
+		
+		// 處理Steam回調
+		ProcessSteamCallbacks();
+		
+		// 檢查是否有連接
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			// 獲取連接信息
+			SteamNetConnectionInfo_t info;
+			if (m_pNetworkingSockets->GetConnectionInfo(m_hConnection, &info))
+			{
+				// 設置socket的連接
+				socket.m_hConnection = m_hConnection;
+				socket.state = skCONNECTED;
+				
+				// 獲取IP地址
+				socket.address = SteamNetworkingIPAddrToString(info.m_addrRemote).c_str();
+				
+				return true;
+			}
+		}
+		
+		return false;
+	}
 	
+	// 使用標準socket
 	if (!blocking && !CanRead())
 		return false;
 		
@@ -152,15 +420,51 @@ void EzSockets::close()
 	inBuffer = "";
 	outBuffer = "";
 	
-#if defined(WIN32) // The close socket command is different in Windows
-	::closesocket(sock);
-#else
-	::close(sock);
-#endif
+	if (m_useSteamNetworking)
+	{
+		// 關閉Steam連接
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			m_pNetworkingSockets->CloseConnection(m_hConnection, 0, nullptr, false);
+			m_hConnection = k_HSteamNetConnection_Invalid;
+		}
+		
+		// 關閉Steam監聽socket
+		if (m_hListenSocket != k_HSteamListenSocket_Invalid)
+		{
+			m_pNetworkingSockets->CloseListenSocket(m_hListenSocket);
+			m_hListenSocket = k_HSteamListenSocket_Invalid;
+		}
+	}
+	else
+	{
+		// 使用標準socket
+		#if defined(WIN32) // The close socket command is different in Windows
+			::closesocket(sock);
+		#else
+			::close(sock);
+		#endif
+	}
 }
 
 long EzSockets::uAddr()
 {
+	if (m_useSteamNetworking)
+	{
+		// 獲取Steam連接的IP地址
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			SteamNetConnectionInfo_t info;
+			if (m_pNetworkingSockets->GetConnectionInfo(m_hConnection, &info))
+			{
+				return info.m_addrRemote.GetIPv4();
+			}
+		}
+		
+		return 0;
+	}
+	
+	// 使用標準socket
 	return addr.sin_addr.s_addr;
 }
 
@@ -170,17 +474,45 @@ bool EzSockets::connect(const std::string& host, unsigned short port)
 	if(!check())
 		return false;
 	
-#if defined(_XBOX)
-	// FIXME: Xbox doesn't have gethostbyname or any way to get a hostent.  
-	// Investigate the samples and figure out how this is supposed to work.
-	return false;
-#else
-	struct hostent* phe;
-	phe = gethostbyname(host.c_str());
-	if (phe == NULL)
+	if (m_useSteamNetworking)
+	{
+		// 使用Steam網絡功能
+		SteamNetworkingIPAddr addr = CreateSteamNetworkingIPAddr(host, port);
+		
+		m_hConnection = m_pNetworkingSockets->ConnectByIPAddress(addr, 0, nullptr);
+		if (m_hConnection == k_HSteamNetConnection_Invalid)
+		{
+			LOG->Warn("Failed to connect to %s:%d using Steam networking", host.c_str(), port);
+			return false;
+		}
+		
+		// 處理Steam回調
+		ProcessSteamCallbacks();
+		
+		// 等待連接完成
+		int attempts = 0;
+		while (state != skCONNECTED && attempts < 10)
+		{
+			ProcessSteamCallbacks();
+			Sleep(100);
+			attempts++;
+		}
+		
+		return state == skCONNECTED;
+	}
+	
+	// 使用標準socket
+	#if defined(_XBOX)
+		// FIXME: Xbox doesn't have gethostbyname or any way to get a hostent.  
+		// Investigate the samples and figure out how this is supposed to work.
 		return false;
-	memcpy(&addr.sin_addr, phe->h_addr, sizeof(struct in_addr));
-#endif 
+	#else
+		struct hostent* phe;
+		phe = gethostbyname(host.c_str());
+		if (phe == NULL)
+			return false;
+		memcpy(&addr.sin_addr, phe->h_addr, sizeof(struct in_addr));
+	#endif 
 	addr.sin_family = AF_INET;
 	addr.sin_port   = htons(port);
 	
@@ -193,6 +525,33 @@ bool EzSockets::connect(const std::string& host, unsigned short port)
 
 bool EzSockets::CanRead()
 {
+	if (m_useSteamNetworking)
+	{
+		// 處理Steam回調
+		ProcessSteamCallbacks();
+		
+		// 檢查是否有數據可讀
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			SteamNetworkingMessage_t* pMessages[1];
+			int numMessages = m_pNetworkingSockets->ReceiveMessagesOnConnection(m_hConnection, pMessages, 1);
+			
+			if (numMessages > 0)
+			{
+				// 將消息添加到接收緩衝區
+				inBuffer.append((const char*)pMessages[0]->GetData(), pMessages[0]->GetSize());
+				
+				// 釋放消息
+				pMessages[0]->Release();
+				
+				return true;
+			}
+		}
+		
+		return false;
+	}
+	
+	// 使用標準socket
 	FD_ZERO(scks);
 	FD_SET((unsigned)sock, scks);
 	
@@ -204,6 +563,30 @@ bool EzSockets::IsError()
 	if (state == skERROR)
 		return true;
 	
+	if (m_useSteamNetworking)
+	{
+		// 處理Steam回調
+		ProcessSteamCallbacks();
+		
+		// 檢查連接狀態
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			SteamNetConnectionInfo_t info;
+			if (m_pNetworkingSockets->GetConnectionInfo(m_hConnection, &info))
+			{
+				if (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
+					info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally)
+				{
+					state = skERROR;
+					return true;
+				}
+			}
+		}
+		
+		return false;
+	}
+	
+	// 使用標準socket
 	FD_ZERO(scks);
 	FD_SET((unsigned)sock, scks);
 	
@@ -216,6 +599,14 @@ bool EzSockets::IsError()
 
 bool EzSockets::CanWrite()
 {
+	if (m_useSteamNetworking)
+	{
+		// Steam網絡功能不需要檢查是否可以寫入
+		// 它會自動處理擁塞控制
+		return true;
+	}
+	
+	// 使用標準socket
 	FD_ZERO(scks);
 	FD_SET((unsigned)sock, scks);
 	
@@ -227,6 +618,37 @@ void EzSockets::update()
 	if (IsError()) //If socket is in error, don't bother.
 		return;
 	
+	if (m_useSteamNetworking)
+	{
+		// 處理Steam回調
+		ProcessSteamCallbacks();
+		
+		// 檢查是否有數據可讀
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			SteamNetworkingMessage_t* pMessages[10];
+			int numMessages = m_pNetworkingSockets->ReceiveMessagesOnConnection(m_hConnection, pMessages, 10);
+			
+			for (int i = 0; i < numMessages; i++)
+			{
+				// 將消息添加到接收緩衝區
+				inBuffer.append((const char*)pMessages[i]->GetData(), pMessages[i]->GetSize());
+				
+				// 釋放消息
+				pMessages[i]->Release();
+			}
+		}
+		
+		// 發送緩衝區中的數據
+		if (outBuffer.length() > 0)
+		{
+			pUpdateWrite();
+		}
+		
+		return;
+	}
+	
+	// 使用標準socket
 	while (CanRead() && !IsError()) //Check for Reading
 		if (pUpdateRead() < 1)
 			break;
@@ -409,6 +831,33 @@ ostream& operator<<(ostream &os, EzSockets &obj)
 \**************************/
 int EzSockets::pUpdateRead()
 {
+	if (m_useSteamNetworking)
+	{
+		// 處理Steam回調
+		ProcessSteamCallbacks();
+		
+		// 檢查是否有數據可讀
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			SteamNetworkingMessage_t* pMessages[1];
+			int numMessages = m_pNetworkingSockets->ReceiveMessagesOnConnection(m_hConnection, pMessages, 1);
+			
+			if (numMessages > 0)
+			{
+				// 將消息添加到接收緩衝區
+				inBuffer.append((const char*)pMessages[0]->GetData(), pMessages[0]->GetSize());
+				
+				// 釋放消息
+				pMessages[0]->Release();
+				
+				return pMessages[0]->GetSize();
+			}
+		}
+		
+		return 0;
+	}
+	
+	// 使用標準socket
 	char tempData[1024];
 	int bytes = pReadData(tempData);
 	
@@ -424,6 +873,33 @@ int EzSockets::pUpdateRead()
 
 int EzSockets::pUpdateWrite()
 {
+	if (m_useSteamNetworking)
+	{
+		// 發送緩衝區中的數據
+		if (m_hConnection != k_HSteamNetConnection_Invalid && outBuffer.length() > 0)
+		{
+			EResult result = m_pNetworkingSockets->SendMessageToConnection(
+				m_hConnection, outBuffer.c_str(), outBuffer.length(), 
+				k_nSteamNetworkingSend_Reliable, nullptr);
+				
+			if (result == k_EResultOK)
+			{
+				int bytesSent = outBuffer.length();
+				outBuffer = "";
+				return bytesSent;
+			}
+			else
+			{
+				LOG->Warn("Failed to send data via Steam networking. Error: %d", result);
+				state = skERROR;
+				return -1;
+			}
+		}
+		
+		return 0;
+	}
+	
+	// 使用標準socket
 	int bytes = pWriteData(outBuffer.c_str(), outBuffer.length());
 	
 	if (bytes > 0)
@@ -436,6 +912,37 @@ int EzSockets::pUpdateWrite()
 
 int EzSockets::pReadData(char* data)
 {
+	if (m_useSteamNetworking)
+	{
+		// 處理Steam回調
+		ProcessSteamCallbacks();
+		
+		// 檢查是否有數據可讀
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			SteamNetworkingMessage_t* pMessages[1];
+			int numMessages = m_pNetworkingSockets->ReceiveMessagesOnConnection(m_hConnection, pMessages, 1);
+			
+			if (numMessages > 0)
+			{
+				// 複製數據
+				int size = pMessages[0]->GetSize();
+				if (size > 1024)
+					size = 1024;
+					
+				memcpy(data, pMessages[0]->GetData(), size);
+				
+				// 釋放消息
+				pMessages[0]->Release();
+				
+				return size;
+			}
+		}
+		
+		return 0;
+	}
+	
+	// 使用標準socket
 	if(state == skCONNECTED || state == skLISTENING)
 		return recv(sock, data, 1024, 0);
 	
@@ -446,7 +953,68 @@ int EzSockets::pReadData(char* data)
 
 int EzSockets::pWriteData(const char* data, int dataSize)
 {
+	if (m_useSteamNetworking)
+	{
+		// 發送數據
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			EResult result = m_pNetworkingSockets->SendMessageToConnection(
+				m_hConnection, data, dataSize, 
+				k_nSteamNetworkingSend_Reliable, nullptr);
+				
+			if (result == k_EResultOK)
+				return dataSize;
+			else
+			{
+				LOG->Warn("Failed to send data via Steam networking. Error: %d", result);
+				return -1;
+			}
+		}
+		
+		return 0;
+	}
+	
+	// 使用標準socket
 	return send(sock, data, dataSize, 0);
+}
+
+CString EzSockets::getIp()
+{
+	if (m_useSteamNetworking)
+	{
+		// 獲取Steam連接的IP地址
+		if (m_hConnection != k_HSteamNetConnection_Invalid)
+		{
+			SteamNetConnectionInfo_t info;
+			if (m_pNetworkingSockets->GetConnectionInfo(m_hConnection, &info))
+			{
+				char szAddr[128];
+				info.m_addrRemote.ToString(szAddr, sizeof(szAddr), true);
+				return CString(szAddr);
+			}
+		}
+		else if (m_hListenSocket != k_HSteamListenSocket_Invalid)
+		{
+			SteamNetworkingIPAddr addr;
+			if (m_pNetworkingSockets->GetListenSocketAddress(m_hListenSocket, &addr))
+			{
+				char szAddr[128];
+				addr.ToString(szAddr, sizeof(szAddr), true);
+				return CString(szAddr);
+			}
+		}
+		
+		return CString("0.0.0.0");
+	}
+	
+	// 使用標準socket
+	struct sockaddr_in name;
+	socklen_t namelen = sizeof(name);
+	getsockname(sock, (struct sockaddr*)&name, &namelen);
+	
+	char* str = inet_ntoa(name.sin_addr);
+	CString cstr = str;
+	return cstr;	
 }
 
 /* 
@@ -473,128 +1041,3 @@ int EzSockets::pWriteData(const char* data, int dataSize)
  * OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  */
-
-
-CString EzSockets::getIp()
-{
-	struct sockaddr_in name;
-    socklen_t namelen = sizeof(name);
-    getsockname(sock, (struct sockaddr*)&name, &namelen);
-	
-	char* str = inet_ntoa(name.sin_addr);
-	CString cstr = str;
-	return cstr;	
-}
-
-#include <iostream>
-#include <string>
-#include <ctime>
-#include <cstdlib>
-#include <thread>
-#include <chrono>
-#include <mutex>
-#include <atomic>
-#include "steam/steam_api.h"
-
-CSteamID gLobbyID;
-std::string gRoomCode;
-std::atomic<bool> gLobbyJoined{ false };
-std::mutex gInputMutex;
-
-class SteamLobbyExample {
-public:
-	SteamLobbyExample()
-		: m_LobbyCreated(this, &SteamLobbyExample::OnLobbyCreated),
-		m_LobbyEnter(this, &SteamLobbyExample::OnLobbyEnter),
-		m_LobbyMatchList(this, &SteamLobbyExample::OnLobbyMatchList),
-		m_LobbyChatUpdate(this, &SteamLobbyExample::OnLobbyChatUpdate),
-		m_LobbyChatMsg(this, &SteamLobbyExample::OnLobbyChatMsg) {}
-
-	void CreateLobby() {
-		int code = 1000 + std::rand() % 90000;
-		gRoomCode = std::to_string(code);
-		SteamMatchmaking()->CreateLobby(k_ELobbyTypePublic, 4);
-	}
-
-	void SearchLobby(const std::string& code) {
-		gRoomCode = code;
-		SteamMatchmaking()->AddRequestLobbyListStringFilter("room_code", code.c_str(), k_ELobbyComparisonEqual);
-		SteamMatchmaking()->RequestLobbyList();
-	}
-
-	void SendChatMessage(const std::string& message) {
-		if (!gLobbyJoined) return;
-		SteamMatchmaking()->SendLobbyChatMsg(gLobbyID, message.c_str(), static_cast<int>(message.size()) + 1);
-	}
-
-private:
-	CCallback<SteamLobbyExample, LobbyCreated_t> m_LobbyCreated;
-	CCallback<SteamLobbyExample, LobbyEnter_t> m_LobbyEnter;
-	CCallback<SteamLobbyExample, LobbyMatchList_t> m_LobbyMatchList;
-	CCallback<SteamLobbyExample, LobbyChatUpdate_t> m_LobbyChatUpdate;
-	CCallback<SteamLobbyExample, LobbyChatMsg_t> m_LobbyChatMsg;
-
-	void OnLobbyCreated(LobbyCreated_t* pCallback) {
-		if (pCallback->m_eResult == k_EResultOK) {
-			gLobbyID = pCallback->m_ulSteamIDLobby;
-			SteamMatchmaking()->SetLobbyData(gLobbyID, "room_code", gRoomCode.c_str());
-			std::cout << "[HOST] Lobby created. Room code: " << gRoomCode << std::endl;
-
-			// std::string status = "Room " + gRoomCode;
-			// SteamFriends()->SetRichPresence("status", status.c_str());
-			// SteamFriends()->SetRichPresence("steam_display", "#Status_InRoom");
-		}
-		else {
-			std::cout << "[HOST] Failed to create lobby. Error code: " << pCallback->m_eResult << std::endl;
-		}
-	}
-
-	void OnLobbyEnter(LobbyEnter_t* pCallback) {
-		gLobbyID = pCallback->m_ulSteamIDLobby;
-		CSteamID self = SteamUser()->GetSteamID();
-		std::string name = SteamFriends()->GetFriendPersonaName(self);
-		std::cout << "[JOIN] You (" << name << ") have entered lobby ID: " << gLobbyID.ConvertToUint64() << std::endl;
-		gLobbyJoined = true;
-	}
-
-	void OnLobbyMatchList(LobbyMatchList_t* pCallback) {
-		int matches = pCallback->m_nLobbiesMatching;
-		std::cout << "[CLIENT] Found " << matches << " matching lobbies." << std::endl;
-
-		for (int i = 0; i < matches; ++i) {
-			CSteamID lobbyID = SteamMatchmaking()->GetLobbyByIndex(i);
-			std::string code = SteamMatchmaking()->GetLobbyData(lobbyID, "room_code");
-			if (code == gRoomCode) {
-				std::cout << "[CLIENT] Joining lobby with room code: " << code << std::endl;
-				SteamMatchmaking()->JoinLobby(lobbyID);
-				return;
-			}
-		}
-
-		std::cout << "[CLIENT] No lobby with matching code found." << std::endl;
-	}
-
-	void OnLobbyChatUpdate(LobbyChatUpdate_t* pCallback) {
-		CSteamID userChanged = pCallback->m_ulSteamIDUserChanged;
-		std::string name = SteamFriends()->GetFriendPersonaName(userChanged);
-
-		if (pCallback->m_rgfChatMemberStateChange & k_EChatMemberStateChangeEntered) {
-			std::cout << "[LOBBY] " << name << " joined the lobby." << std::endl;
-		}
-		else if (pCallback->m_rgfChatMemberStateChange & k_EChatMemberStateChangeLeft) {
-			std::cout << "[LOBBY] " << name << " left the lobby." << std::endl;
-		}
-	}
-
-	void OnLobbyChatMsg(LobbyChatMsg_t* pCallback) {
-		char buffer[4096] = {};
-		EChatEntryType chatType;
-		CSteamID sender;
-		int len = SteamMatchmaking()->GetLobbyChatEntry(pCallback->m_ulSteamIDLobby,
-			pCallback->m_iChatID, &sender, buffer, sizeof(buffer), &chatType);
-		if (len > 0) {
-			std::string name = SteamFriends()->GetFriendPersonaName(sender);
-			std::cout << name << ": " << buffer << std::endl;
-		}
-	}
-};

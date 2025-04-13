@@ -58,6 +58,12 @@ StepManiaLanServer::~StepManiaLanServer()
 	ServerStop();
 }
 
+std::string StepManiaLanServer::GenerateRoomCode()
+{
+    int code = 1000 + std::rand() % 90000;
+    return std::to_string(code);
+}
+
 bool StepManiaLanServer::ServerStart()
 {
 	server.blocking = 0; /* Turn off blocking */
@@ -79,6 +85,11 @@ bool StepManiaLanServer::ServerStart()
 	lastErrorCode = server.lastCode;
 	//Hopefully we will not get here. If we did, something went wrong above.
 	return false;
+}
+
+bool StepManiaLanServer::ServerStart(CString roomCode)
+{
+	return server.create(roomCode);
 }
 
 void StepManiaLanServer::ServerStop()

@@ -1168,7 +1168,7 @@
       <Filter>Crypto\crypto++</Filter>
     </ClCompile>
     <ClCompile Include="WaveformDisplay.cpp">
-      <Filter>Screens</Filter>
+      <Filter>Data Structures</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -2370,7 +2370,7 @@
       <Filter>Crypto\crypto++</Filter>
     </ClInclude>
     <ClInclude Include="WaveformDisplay.h">
-      <Filter>Screens</Filter>
+      <Filter>Data Structures</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
