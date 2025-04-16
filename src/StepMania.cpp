@@ -59,7 +59,8 @@
 #include "ModelManager.h"
 #include "CryptManager.h"
 #include "NetworkSyncManager.h"
-
+#include "steam/steam_api.h"
+#include "steam/steamnetworkingtypes.h"
 #if defined(_XBOX)
 	#ifdef _DEBUG
 		#pragma comment(lib, "../ThirdParty/SDL-1.2.6/lib/xboxSDLmaind.lib")
@@ -1583,6 +1584,7 @@ static void GameLoop()
 	}
 
 	GAMESTATE->EndGame();
+	SteamAPI_Shutdown();
 }
 
 /*

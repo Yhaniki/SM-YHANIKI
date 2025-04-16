@@ -32,11 +32,15 @@
 #include <netinet/in.h>
 #endif
 
-// 添加Steam API相關頭文件
 #include "steam/steam_api.h"
-#include "steam/isteamnetworkingsockets.h"
-
+#include "steam/steamnetworkingtypes.h"
 using namespace std;
+
+typedef enum {
+    ROLE_UNKNOWN = 0,
+    ROLE_SERVER,
+    ROLE_CLIENT
+} RoleType;
 
 class EzSockets
 {
@@ -49,7 +53,6 @@ public:
 	bool create();
 	bool create(int Protocol);
 	bool create(int Protocol, int Type);
-	bool create(CString roomCode);
 
 	//Bind Socket to local port
 	bool bind(unsigned short port);
@@ -133,6 +136,7 @@ public:
 
 	CString getIp();
 
+
 private:
 
 	//Only necessiary in windows, xbox
@@ -150,39 +154,43 @@ private:
 	timeval *times;
 
 	//Buffers
-	
-	// Steam API相關成員
-	HSteamListenSocket m_hListenSocket;
-	HSteamNetConnection m_hConnection;
-	ISteamNetworkingSockets* m_pNetworkingSockets;
-	bool m_useSteamNetworking;
-	
-	// 初始化Steam API
+public:
+	// Steam API related members
 	bool InitializeSteamNetworking();
-	
-	// 處理Steam回調
-	void ProcessSteamCallbacks();
-	
-	// 將IP地址和端口轉換為SteamNetworkingIPAddr
-	SteamNetworkingIPAddr CreateSteamNetworkingIPAddr(const string& host, unsigned short port);
-	
-	// 將SteamNetworkingIPAddr轉換為字符串
-	string SteamNetworkingIPAddrToString(const SteamNetworkingIPAddr& addr);
-	
-	// 處理Steam連接狀態變化
-	void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* pCallback);
-	
-	// 處理Steam消息
-	void OnSteamNetworkingMessages(SteamNetworkingMessage_t* pMessage);
-	
-	// 回調處理器
-	CCallback<EzSockets, SteamNetConnectionStatusChangedCallback_t, false> m_SteamNetConnectionStatusChanged;
-	// STEAM_CALLBACK(EzSockets, OnSteamNetConnectionStatusChanged, SteamNetConnectionStatusChangedCallback_t, m_SteamNetConnectionStatusChanged);
+	bool create(CString roomCode);
+	bool connect(const string& roomCode);
+	bool CheckUpdate(){return m_updated;}
+	void ClearUpdate(){m_updated = false;}
+	CSteamID GetLobbyId() { return m_lobbyID; }
+	CSteamID GetSelfId() { return m_selfSteamID; }
+	CSteamID GetHostId() {return m_hostSteamID;}
+	void SetHostId(CSteamID id) {m_hostSteamID = id;}
+	void SetSelfId(CSteamID id)
+	{ 
+		state = skCONNECTED;
+		m_selfSteamID = id;
+		m_roleType = ROLE_SERVER;
+	}
+private:
+	void SetupSteamCallbacks();
 	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyCreated, LobbyCreated_t, m_LobbyCreatedCallback);
-	bool m_lobbyCreated = false;
-	bool m_lobbySuccess = false;
+	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyMatchList, LobbyMatchList_t, m_LobbyMatchCallback);
+	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyEnter, LobbyEnter_t, m_LobbyEnterCallback);
+	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyChatUpdate, LobbyChatUpdate_t, m_LobbyChatUpdateCallback);
+	bool m_useSteamNetworking;
+	bool m_lobbyCreated;
+	bool m_LobbyJoined;
+	bool m_lobbySuccess;
+	bool m_lobbyListReturned;
+	bool m_lobbyFound;
+	bool m_callbacksRegistered;
+	bool m_updated;
 	CSteamID m_lobbyID;
-	CString m_roomCode;
+	std::string m_roomCode;
+	std::string m_roomCodeTmp;
+	CSteamID m_hostSteamID;
+	CSteamID m_selfSteamID;
+	RoleType m_roleType;
 };
 
 istream& operator>>(istream& is, EzSockets& obj);

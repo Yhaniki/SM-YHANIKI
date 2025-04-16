@@ -39,7 +39,8 @@ void NetworkSyncManager::SelectUserSong() { }
 #include "ScreenMessage.h"
 #include "GameManager.h"
 #include "arch/LoadingWindow/LoadingWindow.h"
-
+#include "steam/steam_api.h"
+#include "steam/steamnetworkingtypes.h"
 HANDLE g_hMutex = NULL;
 const ScreenMessage	SM_AddToChat	= ScreenMessage(SM_User+4);
 const ScreenMessage SM_ChangeSong	= ScreenMessage(SM_User+5);
@@ -124,25 +125,26 @@ void NetworkSyncManager::CloseConnection()
 void NetworkSyncManager::PostStartUp(const CString& ServerIP)
 {
 	CloseConnection();
-	if( ServerIP!="LISTEN" )
-	{
-		if( !Connect(ServerIP.c_str(), 8765) )
-		{
-			m_startupStatus = 2;
-			LOG->Warn( "Network Sync Manager failed to connect" );
-			return;
-		}
+	// if( ServerIP!="LISTEN" )
+	// {
+	// 	if( !Connect(ServerIP.c_str(), 8765) )
+	// 	{
+	// 		m_startupStatus = 2;
+	// 		LOG->Warn( "Network Sync Manager failed to connect" );
+	// 		return;
+	// 	}
 
-	}
-	else
-	{
-		if( !Listen(8765) )
-		{
-			m_startupStatus = 2;
-			LOG->Warn( "Listen() failed" );
-			return;
-		}
-	}
+	// }
+	// else
+	// {
+	// 	if( !Listen(8765) )
+	// 	{
+	// 		m_startupStatus = 2;
+	// 		LOG->Warn( "Listen() failed" );
+	// 		return;
+	// 	}
+	// }
+	if(!Connect(ServerIP.c_str())) return;
 
 	useSMserver = true;
 
@@ -236,6 +238,13 @@ bool NetworkSyncManager::Connect(const CString& addy, unsigned short port)
 
 	m_packet.fromIp = NetPlayerClient->getIp();
 
+	return useSMserver;
+}
+
+bool NetworkSyncManager::Connect(const CString& roomCode)
+{
+	LOG->Info("Beginning to connect");
+	useSMserver = NetPlayerClient->connect(roomCode);
 	return useSMserver;
 }
 
@@ -514,6 +523,8 @@ void NetworkSyncManager::Update(float fDeltaTime)
 
 	if (useSMserver)
 		ProcessInput();
+
+	SteamAPI_RunCallbacks();
 }
 
 CString GetSongDirPath(std::string &songDir,

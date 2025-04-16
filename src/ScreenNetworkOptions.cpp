@@ -84,8 +84,7 @@ void ScreenNetworkOptions::HandleScreenMessage( const ScreenMessage SM )
 	case SM_ServerNameEnter:
 		if( !ScreenTextEntry::s_bCancelledLast )
 		{
-			if ( NSMAN->LANserver == NULL)
-				NSMAN->LANserver = new StepManiaLanServer;
+			if ( NSMAN->LANserver == NULL) NSMAN->LANserver = new StepManiaLanServer;
 			NSMAN->LANserver->servername = ScreenTextEntry::s_sLastAnswer;
 			NSMAN->LANserver->roomCode = NSMAN->LANserver->GenerateRoomCode();
 			if (NSMAN->LANserver->ServerStart(NSMAN->LANserver->roomCode))
@@ -102,7 +101,6 @@ void ScreenNetworkOptions::HandleScreenMessage( const ScreenMessage SM )
 
 	ScreenOptions::HandleScreenMessage( SM );
 }
-
 
 void ScreenNetworkOptions::MenuStart( PlayerNumber pn, const InputEventType type )
 {

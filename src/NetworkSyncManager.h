@@ -111,7 +111,7 @@ public:
 	void ReportNSSOnOff(int i);	//Report song selection screen on/off
 	void StartRequest(short position);	//Request a start.  Block until granted.
 	bool Connect(const CString& addy, unsigned short port); // Connect to SM Server
-
+	bool Connect(const CString& roomCode);
 	void PostStartUp(const CString& ServerIP);
 
 	void CloseConnection();

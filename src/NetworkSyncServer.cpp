@@ -58,10 +58,11 @@ StepManiaLanServer::~StepManiaLanServer()
 	ServerStop();
 }
 
+//Generate a five-digit room number
 std::string StepManiaLanServer::GenerateRoomCode()
 {
-    int code = 1000 + std::rand() % 90000;
-    return std::to_string(code);
+	int code = 1000 + std::rand() % 90000;
+	return std::string(5 - std::to_string(code).length(), '0') + std::to_string(code);
 }
 
 bool StepManiaLanServer::ServerStart()
@@ -89,7 +90,13 @@ bool StepManiaLanServer::ServerStart()
 
 bool StepManiaLanServer::ServerStart(CString roomCode)
 {
-	return server.create(roomCode);
+	if(server.create(roomCode))
+	{
+		stop = false;
+		statsTime = time(NULL);
+		return true;
+	}
+	return false;
 }
 
 void StepManiaLanServer::ServerStop()
@@ -721,26 +728,67 @@ void StepManiaLanServer::NewClientCheck()
 {
 	//Make a new client and accept a connection to it.
 	//If no connection is accepted, delete the client.
+	//todo mike
+	// GameClient *tmp = new GameClient;
 
-	GameClient *tmp = new GameClient;
+	// if (server.accept(tmp->clientSocket) == 1)
+	// {
+	// 	if (!IsBanned(tmp->clientSocket.address))
+	// 	{
+	// 		Client.push_back(tmp);
+	// 		AssignPlayerIDs();
+	// 	}
+	// 	else
+	// 	{
+	// 		delete tmp;
+	// 		tmp = NULL;
+	// 	}
+	// }
+	// else
+	// {
+	// 	delete tmp;
+	// 	tmp = NULL;
+	// }
+	if (server.CheckUpdate())
+	{
+		CSteamID lobbyId = server.GetLobbyId();
+		int lobbyCount = SteamMatchmaking()->GetNumLobbyMembers(lobbyId);
 
-	if (server.accept(tmp->clientSocket) == 1)
-	{
-		if (!IsBanned(tmp->clientSocket.address))
-		{
-			Client.push_back(tmp);
-			AssignPlayerIDs();
+		// Collect all member IDs in Lobby
+		std::vector<CSteamID> lobbyMembers;
+		for (int i = 0; i < lobbyCount; ++i) {
+			lobbyMembers.push_back(SteamMatchmaking()->GetLobbyMemberByIndex(lobbyId, i));
 		}
-		else
-		{
-			delete tmp;
-			tmp = NULL;
+
+		// === Remove Clients that are not in Lobby ===
+		for (int i = static_cast<int>(Client.size()) - 1; i >= 0; --i) {
+			CSteamID id = Client[i]->clientSocket.GetSelfId();
+			auto it = std::find(lobbyMembers.begin(), lobbyMembers.end(), id);
+			if (it == lobbyMembers.end()) {
+				Disconnect(i);  // Pass in the client index
+			}
 		}
-	}
-	else
-	{
-		delete tmp;
-		tmp = NULL;
+
+		//=== Join New Lobby Members ===
+		for (const auto& id : lobbyMembers) {
+			bool found = false;
+			for (const auto& client : Client) {
+				if (client->clientSocket.GetSelfId() == id) {
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
+				GameClient* tmp = new GameClient();
+				tmp->clientSocket.SetSelfId(id);
+				tmp->clientSocket.SetHostId(server.GetHostId());
+				Client.push_back(tmp);
+				AssignPlayerIDs();  // Every time someone is added, the ID is reassigned
+			}
+		}
+
+		server.ClearUpdate();
 	}
 }
 
