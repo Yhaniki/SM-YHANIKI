@@ -524,7 +524,11 @@ void NetworkSyncManager::Update(float fDeltaTime)
 	if (useSMserver)
 		ProcessInput();
 
-	SteamAPI_RunCallbacks();
+	if(SteamReady())
+	{
+		SteamAPI_RunCallbacks();
+		SteamNetworkingSockets()->RunCallbacks();
+	}
 }
 
 CString GetSongDirPath(std::string &songDir,

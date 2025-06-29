@@ -26,81 +26,148 @@
 
 #include <queue>
 #include <mutex>
+#include <unordered_map>
 
 std::mutex g_clientToServerMutex;
 std::mutex g_serverToClientMutex;
 
 std::queue<SteamNetworkingMessage_t*> g_clientToServerQueue;
 std::queue<SteamNetworkingMessage_t*> g_serverToClientQueue;
+static std::unordered_map<HSteamNetConnection, EzSockets*> g_connToInstanceMap;
+static std::mutex g_connMapMutex;
+bool g_steamReady = false;
+EzSockets* g_serverEzSocketsInstance = nullptr;
 
-bool SendMessageWithLoopbackSupport(RoleType role, const SteamNetworkingIdentity& id, const void* data, uint32 size, int sendType = k_nSteamNetworkingSend_Reliable, int channel = 0)
+bool SendMessageWithLoopbackSupport(RoleType role,
+									const SteamNetworkingIdentity &id,
+									const void *data,
+									uint32 size,
+									HSteamNetConnection conn,
+									int sendType = k_nSteamNetworkingSend_Reliable,
+									int channel = 0)
 {
-    ISteamNetworkingMessages* net = SteamNetworkingMessages();
-    if (!net) return false;
+	ISteamNetworkingMessages *net = SteamNetworkingMessages();
+	if (!net) return false;
 
-    CSteamID selfID = SteamUser()->GetSteamID();
+	CSteamID selfID = SteamUser()->GetSteamID();
 
-    if (id.GetSteamID() == selfID)
-    {
-        // Create simulated message
-        SteamNetworkingMessage_t* fakeMsg = SteamNetworkingUtils()->AllocateMessage(size);
-        memcpy(fakeMsg->m_pData, data, size);
-        fakeMsg->m_cbSize = size;
-        fakeMsg->m_nChannel = channel;
-        fakeMsg->m_identityPeer.SetSteamID(selfID);
+	if (id.GetSteamID() == selfID)
+	{
+		// Create simulated message
+		SteamNetworkingMessage_t *fakeMsg = SteamNetworkingUtils()->AllocateMessage(size);
+		memcpy(fakeMsg->m_pData, data, size);
+		fakeMsg->m_cbSize = size;
+		fakeMsg->m_nChannel = channel;
+		fakeMsg->m_identityPeer.SetSteamID(selfID);
 
-        // Push into loopback queue
-        // std::lock_guard<std::mutex> lock(g_loopbackMutex);
-        // g_loopbackQueue.push(fakeMsg);
-		if (role == ROLE_CLIENT) {
-            std::lock_guard<std::mutex> lock(g_clientToServerMutex);
-            g_clientToServerQueue.push(fakeMsg);
-        } else if (role == ROLE_SERVER) {
-            std::lock_guard<std::mutex> lock(g_serverToClientMutex);
-            g_serverToClientQueue.push(fakeMsg);
-        } else {
-            // No role presets are set client -> server
-            std::lock_guard<std::mutex> lock(g_clientToServerMutex);
-            g_clientToServerQueue.push(fakeMsg);
-        }
+		// Push into loopback queue
+		// std::lock_guard<std::mutex> lock(g_loopbackMutex);
+		// g_loopbackQueue.push(fakeMsg);
+		if (role == ROLE_CLIENT)
+		{
+			std::lock_guard<std::mutex> lock(g_clientToServerMutex);
+			g_clientToServerQueue.push(fakeMsg);
+		}
+		else if (role == ROLE_SERVER)
+		{
+			std::lock_guard<std::mutex> lock(g_serverToClientMutex);
+			g_serverToClientQueue.push(fakeMsg);
+		}
+		else
+		{
+			// No role presets are set client -> server
+			std::lock_guard<std::mutex> lock(g_clientToServerMutex);
+			g_clientToServerQueue.push(fakeMsg);
+		}
 
-        return true;
-    }
+		return true;
+	}
 
-    return net->SendMessageToUser(id, data, size, sendType, channel);
+	SteamNetConnectionInfo_t info;
+	if (SteamNetworkingSockets()->GetConnectionInfo(conn, &info))
+	{
+		CSteamID remoteSteamId = info.m_identityRemote.GetSteamID();
+		LOG->Info("Sending to SteamID: %llu\n", remoteSteamId.ConvertToUint64());
+	}
+	else
+	{
+		LOG->Info("Failed to get connection info for conn: %d\n", conn);
+	}
+	// return net->SendMessageToUser(id, data, size, sendType, channel);
+	EResult result = SteamNetworkingSockets()->SendMessageToConnection(
+		conn, data, size, sendType, nullptr);
+
+	if (result == k_EResultOK)
+	{
+		return true;
+	}
+	else
+	{
+		// std::cerr << "[Error] SendMessageToConnection failed with code: " << result << "\n";
+		LOG->Warn("[Error] SendMessageToConnection failed with code: %d",result);
+		return false;
+	}
+
+	// const char* ping = "PING";
+	// size_t len = strlen(ping);
+
+	// SteamNetworkingMessage_t* msg = SteamNetworkingUtils()->AllocateMessage(len);
+	// memcpy(msg->m_pData, ping, len);
+	// msg->m_cbSize = len;
+	// msg->m_conn = conn;
+	// msg->m_nChannel = channel;
+	// msg->m_nFlags = k_nSteamNetworkingSend_Unreliable;
+
+	// SteamNetworkingSockets()->SendMessages(1, &msg, nullptr);
 }
 
-int ReceiveMessageWithLoopbackSupport(RoleType role, int channel, SteamNetworkingMessage_t** ppOutMessage)
+int ReceiveMessageWithLoopbackSupport(RoleType role,
+									  const SteamNetworkingIdentity &id,
+									  int channel,
+									  HSteamNetConnection conn,
+									  SteamNetworkingMessage_t **ppOutMessage)
 {
-    std::queue<SteamNetworkingMessage_t*>* targetQueue = nullptr;
-    std::mutex* targetMutex = nullptr;
+	CSteamID selfID = SteamUser()->GetSteamID();
+	if (id.GetSteamID() == selfID)
+	{
+		std::queue<SteamNetworkingMessage_t *> *targetQueue = nullptr;
+		std::mutex *targetMutex = nullptr;
 
-    // Select queue according to role
-    if (role == ROLE_SERVER) {
-        targetQueue = &g_clientToServerQueue;
-        targetMutex = &g_clientToServerMutex;
-    } else if (role == ROLE_CLIENT) {
-        targetQueue = &g_serverToClientQueue;
-        targetMutex = &g_serverToClientMutex;
-    }
+		// Select queue according to role
+		if (role == ROLE_SERVER)
+		{
+			targetQueue = &g_clientToServerQueue;
+			targetMutex = &g_clientToServerMutex;
+		}
+		else if (role == ROLE_CLIENT)
+		{
+			targetQueue = &g_serverToClientQueue;
+			targetMutex = &g_serverToClientMutex;
+		}
 
-    if (targetQueue && targetMutex) {
-        std::lock_guard<std::mutex> lock(*targetMutex);
-        if (!targetQueue->empty()) {
-            SteamNetworkingMessage_t* msg = targetQueue->front();
-            if (msg->m_nChannel == channel) {
-                targetQueue->pop();
-                *ppOutMessage = msg;
-                return 1;
-            }
-        }
-    }
+		if (targetQueue && targetMutex)
+		{
+			std::lock_guard<std::mutex> lock(*targetMutex);
+			if (!targetQueue->empty())
+			{
+				SteamNetworkingMessage_t *msg = targetQueue->front();
+				if (msg->m_nChannel == channel)
+				{
+					targetQueue->pop();
+					*ppOutMessage = msg;
+					return 1;
+				}
+			}
+		}
+	}
 
-    // If it's not loopback, get it from Steam
-    ISteamNetworkingMessages* net = SteamNetworkingMessages();
-    if (!net) return 0;
-
-    return net->ReceiveMessagesOnChannel(channel, ppOutMessage, 1);
+	// // If it's not loopback, get it from Steam
+	// ISteamNetworkingMessages *net = SteamNetworkingMessages();
+	// if (!net)
+	// 	return 0;
+	
+	// return net->ReceiveMessagesOnChannel(channel, ppOutMessage, 1);
+	return SteamNetworkingSockets()->ReceiveMessagesOnConnection(conn, ppOutMessage, 1);
 }
 
 EzSockets::EzSockets()
@@ -292,19 +359,17 @@ bool EzSockets::CanRead()
 		bool hasData = false;
 
 		// Loop and receive multiple messages at once
-		while (true)
-		{
-			SteamNetworkingMessage_t* msg = nullptr;
-			// int count = SteamNetworkingMessages()->ReceiveMessagesOnChannel(0, &msg, 1);
-			int count = ReceiveMessageWithLoopbackSupport(m_roleType, 0, &msg);
-			if (count <= 0 || !msg)
-				break;
+		SteamNetworkingIdentity id;
+		id.SetSteamID(m_hostSteamID);
+		SteamNetworkingMessage_t* msg = nullptr;
+		// int count = SteamNetworkingMessages()->ReceiveMessagesOnChannel(0, &msg, 1);
+		int count = ReceiveMessageWithLoopbackSupport(m_roleType, id, m_conn, 0, &msg);
+		if (count <= 0 || !msg) return false;
 
-			// Append to input buffer
-			inBuffer.append((const char*)msg->m_pData, msg->m_cbSize);
-			msg->Release();
-			hasData = true;
-		}
+		// Append to input buffer
+		inBuffer.append((const char*)msg->m_pData, msg->m_cbSize);
+		msg->Release();
+		hasData = true;
 
 		// Also handle loopback to self
 		return hasData || !inBuffer.empty();
@@ -428,6 +493,7 @@ void EzSockets::SendData(const char *data, unsigned int bytes)
 			id,
 			fullPacket.data(),
 			static_cast<uint32>(fullPacket.size()),
+			m_conn,
 			k_nSteamNetworkingSend_Reliable,
 			0
 		);
@@ -683,29 +749,91 @@ CString EzSockets::getIp()
 	return cstr;	
 }
 
-// Initialize Steam network functions
-bool EzSockets::InitializeSteamNetworking()
+static void OnSteamNetConnectionStatusChangedForwarder(SteamNetConnectionStatusChangedCallback_t* pInfo)
 {
-	m_useSteamNetworking = false;
+	std::lock_guard<std::mutex> lock(g_connMapMutex);
+
+	// 如果這個連線尚未登記，就嘗試幫忙找對應 EzSockets
+	auto it = g_connToInstanceMap.find(pInfo->m_hConn);
+	if (it != g_connToInstanceMap.end()) {
+		it->second->OnSteamNetConnectionStatusChanged(pInfo);
+	}
+	else {
+		// 新連線進來但尚未註冊，這裡你可以手動指定 server 實例來接管，例如：
+		if (g_serverEzSocketsInstance) {
+			g_connToInstanceMap[pInfo->m_hConn] = g_serverEzSocketsInstance;
+			g_serverEzSocketsInstance->OnSteamNetConnectionStatusChanged(pInfo);
+		}
+	}
+}
+
+const char* GetStateName(ESteamNetworkingConnectionState state) {
+	switch (state) {
+	case k_ESteamNetworkingConnectionState_None: return "None";
+	case k_ESteamNetworkingConnectionState_Connecting: return "Connecting";
+	case k_ESteamNetworkingConnectionState_FindingRoute: return "FindingRoute";
+	case k_ESteamNetworkingConnectionState_Connected: return "Connected";
+	case k_ESteamNetworkingConnectionState_ClosedByPeer: return "ClosedByPeer";
+	case k_ESteamNetworkingConnectionState_ProblemDetectedLocally: return "ProblemDetectedLocally";
+	case k_ESteamNetworkingConnectionState_FinWait: return "FinWait";
+	case k_ESteamNetworkingConnectionState_Linger: return "Linger";
+	case k_ESteamNetworkingConnectionState_Dead: return "Dead";
+	default: return "Unknown";
+	}
+}
+
+void EzSockets::InitStatusChanged()
+{
+	// if (!m_isInitialized)
+	// {
+	// 	g_ezSocketsInstance = this;
+	// 	SteamNetworkingUtils()->SetGlobalCallback_SteamNetConnectionStatusChanged(OnSteamNetConnectionStatusChangedForwarder);
+	// 	m_isInitialized = true;
+	// }
+}
+
+void EzSockets::Reset()
+{
 	m_lobbyCreated = false;
 	m_LobbyJoined = false;
 	m_lobbySuccess = false;
 	m_lobbyListReturned = false;
 	m_callbacksRegistered = true;
 	m_updated = false;
+	m_listenSock = k_HSteamListenSocket_Invalid;
+	m_conn = k_HSteamNetConnection_Invalid;
+	m_conns.clear();
+}
 
+// Initialize Steam network functions
+bool EzSockets::InitializeSteamNetworking()
+{
+	Reset();
+	m_useSteamNetworking = false;
 	// Check if the Steam API is available
 	if (!SteamAPI_Init())
 	{
 		LOG->Warn("Steam API not initialized. Falling back to standard sockets.");
 		return false;
+	}else
+	{
+		g_steamReady = true;
 	}
+
 	SteamNetworkingUtils()->InitRelayNetworkAccess();
+	SteamNetworkingUtils()->SetGlobalCallback_SteamNetConnectionStatusChanged(OnSteamNetConnectionStatusChangedForwarder);
 	m_useSteamNetworking = true;
 
 	SetupSteamCallbacks();
 	LOG->Info("Steam networking initialized successfully.");
 	return true;
+}
+
+void  EzSockets::SetSelfId(CSteamID id)
+{ 
+	state = skCONNECTED;
+	m_selfSteamID = id;
+	m_roleType = ROLE_SERVER;
 }
 
 void EzSockets::SetupSteamCallbacks()
@@ -718,11 +846,62 @@ void EzSockets::SetupSteamCallbacks()
 	m_LobbyChatUpdateCallback.Register(this, &EzSockets::OnLobbyChatUpdate);
 }
 
+void EzSockets::OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo)
+{
+	const auto &info = pInfo->m_info;
+
+    LOG->Info(">>> OnSteamNetConnectionStatusChanged triggered!");
+    LOG->Info("  Conn: %d", pInfo->m_hConn);
+    LOG->Info("  New state: (%d) %s", (int)info.m_eState, GetStateName(info.m_eState));
+    LOG->Info("  Reason: %d - %s", info.m_eEndReason, info.m_szEndDebug);
+
+    switch (info.m_eState)
+    {
+    case k_ESteamNetworkingConnectionState_Connecting:
+        if (m_roleType == ROLE_SERVER) {
+            if (SteamNetworkingSockets()->AcceptConnection(pInfo->m_hConn) == k_EResultOK)
+            {
+                m_conns.push_back(pInfo->m_hConn);
+                m_updated = true;
+                LOG->Info("[Server] First client accepted.");
+            }
+            else
+            {
+                LOG->Warn("[Server] Failed to accept first client.");
+            }
+        }
+        break;
+
+    case k_ESteamNetworkingConnectionState_Connected:
+        if (m_roleType == ROLE_CLIENT) {
+            m_connected = true;
+            m_conn = pInfo->m_hConn;
+        }
+        LOG->Info("[Server] Client fully connected.");
+        break;
+
+    case k_ESteamNetworkingConnectionState_ClosedByPeer:
+    case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
+        LOG->Info("[Server] Connection closed.");
+        break;
+    }
+
+    if (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
+        info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally)
+    {
+        std::lock_guard<std::mutex> lock(g_connMapMutex);
+        g_connToInstanceMap.erase(pInfo->m_hConn);
+    }
+}
+
 bool EzSockets::create(CString roomCode)
 {
+	Reset();
 	const int timeoutMs = 5000;
-	if (!m_useSteamNetworking)
+	if (!m_useSteamNetworking && !InitializeSteamNetworking())
 		return false;
+	InitStatusChanged();
+	g_serverEzSocketsInstance = this;
 
 	// Storage room number (optional)
 	m_roomCode = std::string(roomCode);
@@ -742,18 +921,28 @@ bool EzSockets::create(CString roomCode)
 		Sleep(100);
 		waited += 100;
 	}
+
+	m_listenSock = SteamNetworkingSockets()->CreateListenSocketP2P(0, 0, nullptr);
+	if (m_listenSock == k_HSteamListenSocket_Invalid)
+	{
+		std::cerr << "[Server] Failed to create listen socket.\n";
+		m_lobbySuccess = false;
+		return m_lobbySuccess;
+	}
 	state = skCONNECTED;
 	return m_lobbySuccess;
 }
 
 bool EzSockets::connect(const string& roomCode)
 {
-	if (!m_useSteamNetworking)
-		return false;
-
+	Reset();
+	if (!m_useSteamNetworking) 
+		InitializeSteamNetworking();
+	InitStatusChanged();
 	m_roomCodeTmp = roomCode;
 	m_lobbyFound = false;
 	m_roleType = ROLE_CLIENT;
+	m_connected = false;
 	// If you are already in the correct room, return true directly
 	if (m_lobbyID.IsValid())
 	{
@@ -787,8 +976,34 @@ bool EzSockets::connect(const string& roomCode)
 		Sleep(100);
 		waited += 100;
 	}
-	state = skCONNECTED;
-	return m_LobbyJoined;
+
+	if(m_LobbyJoined)
+	{
+		const int waitTimeoutMs = 15000;
+		SteamNetworkingIdentity id;
+		id.SetSteamID(m_hostSteamID);
+		HSteamNetConnection conn = SteamNetworkingSockets()->ConnectP2P(id, 0, 0, nullptr);
+		if (conn != k_HSteamNetConnection_Invalid) {
+			{
+				std::lock_guard<std::mutex> lock(g_connMapMutex);
+				g_connToInstanceMap[conn] = this;  // 註冊本 EzSockets 實例
+			}
+			// m_conns.push_back(conn);  // 可選：紀錄起來方便管理
+		}
+		int waitMs = 0;
+		if (!m_useSteamNetworking) return false;
+		while (m_conn == k_HSteamNetConnection_Invalid &&
+			   waitMs < waitTimeoutMs)
+		{
+			SteamAPI_RunCallbacks();
+			SteamNetworkingSockets()->RunCallbacks();
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			waitMs += 100;
+		}
+	}
+	
+	if(m_LobbyJoined && m_connected) state = skCONNECTED;
+	return m_LobbyJoined && m_connected;
 }
 
 void EzSockets::OnLobbyCreated(LobbyCreated_t* pCallback)
@@ -860,6 +1075,11 @@ void EzSockets::OnLobbyChatUpdate(LobbyChatUpdate_t* pCallback)
 {
 	m_updated = true;
 	// UpdateLobbyMembers();
+}
+
+bool SteamReady()
+{
+	return g_steamReady;
 }
 /* 
  * (c) 2003-2004 Josh Allen, Charles Lohr, and Adam Lowman

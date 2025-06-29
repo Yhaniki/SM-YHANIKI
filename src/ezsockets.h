@@ -157,6 +157,8 @@ private:
 public:
 	// Steam API related members
 	bool InitializeSteamNetworking();
+	void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo);
+	void InitStatusChanged();
 	bool create(CString roomCode);
 	bool connect(const string& roomCode);
 	bool CheckUpdate(){return m_updated;}
@@ -165,14 +167,13 @@ public:
 	CSteamID GetSelfId() { return m_selfSteamID; }
 	CSteamID GetHostId() {return m_hostSteamID;}
 	void SetHostId(CSteamID id) {m_hostSteamID = id;}
-	void SetSelfId(CSteamID id)
-	{ 
-		state = skCONNECTED;
-		m_selfSteamID = id;
-		m_roleType = ROLE_SERVER;
-	}
+	void SetSelfId(CSteamID id);
+	void SetHandle(HSteamNetConnection conn) {m_conn = conn;}
+	vector <HSteamNetConnection> m_conns;
 private:
+	void Reset();
 	void SetupSteamCallbacks();
+
 	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyCreated, LobbyCreated_t, m_LobbyCreatedCallback);
 	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyMatchList, LobbyMatchList_t, m_LobbyMatchCallback);
 	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyEnter, LobbyEnter_t, m_LobbyEnterCallback);
@@ -191,11 +192,16 @@ private:
 	CSteamID m_hostSteamID;
 	CSteamID m_selfSteamID;
 	RoleType m_roleType;
+	HSteamListenSocket m_listenSock;
+	HSteamNetConnection m_conn;
+	HSteamNetConnection m_connHdl;
+	bool m_connected;
+	bool m_isInitialized;
 };
 
 istream& operator>>(istream& is, EzSockets& obj);
 ostream& operator<<(ostream& os, EzSockets& obj);
-
+bool SteamReady();
 
 #endif
 

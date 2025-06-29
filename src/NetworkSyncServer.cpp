@@ -779,7 +779,7 @@ void StepManiaLanServer::NewClientCheck()
 				}
 			}
 
-			if (!found) {
+			if (!found && server.GetHostId() == id) {
 				GameClient* tmp = new GameClient();
 				tmp->clientSocket.SetSelfId(id);
 				tmp->clientSocket.SetHostId(server.GetHostId());
@@ -787,8 +787,46 @@ void StepManiaLanServer::NewClientCheck()
 				AssignPlayerIDs();  // Every time someone is added, the ID is reassigned
 			}
 		}
-
 		server.ClearUpdate();
+	}
+
+	for (size_t i = 0; i < server.m_conns.size(); /* no ++ here */)
+	{
+		HSteamNetConnection conn = server.m_conns[i];
+		SteamNetConnectionInfo_t info;
+
+		if (SteamNetworkingSockets()->GetConnectionInfo(conn, &info))
+		{
+			CSteamID remoteID = info.m_identityRemote.GetSteamID();
+
+			// Check if this remoteID already exists
+			bool exists = false;
+			for (const auto &client : Client)
+			{
+				if (client->clientSocket.GetSelfId() == remoteID)
+				{
+					exists = true;
+					break;
+				}
+			}
+
+			if (!exists)
+			{
+				GameClient *tmp = new GameClient();
+				tmp->clientSocket.SetSelfId(remoteID);
+				tmp->clientSocket.SetHostId(server.GetHostId());
+				tmp->clientSocket.SetHandle(conn);
+				Client.push_back(tmp);
+				AssignPlayerIDs();
+			}
+
+			// After processing this conn, remove it from m_conns
+			server.m_conns.erase(server.m_conns.begin() + i);
+		}
+		else
+		{
+			++i; // Invalid connection or query failed, skipping
+		}
 	}
 }
 
