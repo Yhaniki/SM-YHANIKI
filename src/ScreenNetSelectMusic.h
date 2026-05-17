@@ -1,4 +1,4 @@
-/* ScreenNetSelectMusic - A method for Online/Net song selection */
+﻿/* ScreenNetSelectMusic - A method for Online/Net song selection */
 
 #ifndef SCREENNETSELECTMUSIC_H
 #define SCREENNETSELECTMUSIC_H

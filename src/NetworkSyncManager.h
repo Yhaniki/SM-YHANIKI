@@ -1,4 +1,4 @@
-/* NetworkSyncManager - Uses ezsockets for primitive song syncing and score reporting. */
+﻿/* NetworkSyncManager - Uses ezsockets for primitive song syncing and score reporting. */
 
 #ifndef NetworkSyncManager_H
 #define NetworkSyncManager_H

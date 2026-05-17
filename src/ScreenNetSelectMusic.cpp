@@ -1,4 +1,4 @@
-#include "global.h"
+﻿#include "global.h"
 
 #if !defined(WITHOUT_NETWORKING)
 #include "ScreenNetSelectMusic.h"
@@ -91,12 +91,12 @@ const CString AllGroups			= "[ALL MUSIC]";
 
 ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithMenuElements( sName )
 {
-	
+
 	/* Finish any previous stage.  It's OK to call this when we havn't played a stage yet. */
 	GAMESTATE->FinishStage();
 
 	//ChatBox
-	m_rectChatInputBox.SetDiffuse( CHATINPUT_COLOR ); 
+	m_rectChatInputBox.SetDiffuse( CHATINPUT_COLOR );
 	m_rectChatInputBox.SetName( "ChatInputBox" );
 	m_rectChatInputBox.SetWidth( CHATINPUT_WIDTH );
 	m_rectChatInputBox.SetHeight( CHATINPUT_HEIGHT );
@@ -240,7 +240,7 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 		//SCREENMAN->SendMessageToTopScreen( SM_NoSongs );
 		return;
 	}
-	
+
 	//Make the last group the full list group.
 	//Must be last
 	m_vGroups.push_back( AllGroups );
@@ -260,7 +260,7 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 		for ( unsigned i = 0 ; i<m_vSongs.size() ; ++i )
 			if (m_vSongs[i]->GetFullDisplayTitle() == GAMESTATE->m_pCurSong->GetFullDisplayTitle())
 				m_iSongNum = i;
-				
+
 		CString GroupName =  m_vSongs[m_iSongNum]->m_sGroupName;
 		for(unsigned j = 0; j<m_vGroups.size(); ++j)
 		{
@@ -276,8 +276,8 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 				break;
 			}
 		}
-	}	
-	
+	}
+
 	UpdateSongsListPos();
 	CheckChangeSong();
 	//================
@@ -310,7 +310,7 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 	m_soundChangeSel.Load( THEME->GetPathToS("ScreenNetSelectMusic change sel"));
 	//=====user rect======
 	int ShowSide;
-	m_pActivePlayer = PLAYER_1;	
+	m_pActivePlayer = PLAYER_1;
 
 	FOREACH_PlayerNumber (pn)
 		if ( GAMESTATE->IsPlayerEnabled( pn ) )
@@ -325,16 +325,16 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 	m_rectUsersBG.SetDiffuse( USERSBG_COLOR );
 	m_rectUsersBG.SetName( "UsersBG" );
 	//ON_COMMAND( m_rectUsersBG );
-	
-	m_rectUsersBG.SetXY(
-		THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dX",ShowSide)),
-		THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dY",ShowSide)) );
+
+	float boxX = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dX",ShowSide));
+	float boxY = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("UsersBG%dY",ShowSide));
+	m_rectUsersBG.SetXY( boxX, boxY );
 
 	this->AddChild( &m_rectUsersBG );
 
 	float cx = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("User%dX",ShowSide));
 	float cy = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("User%dY",ShowSide));
-	
+
 	m_iActivePlayers = NETMAXPLAYERS;
 	m_iCurrentPlayer = 0;
 
@@ -347,7 +347,7 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 		m_textUsers[i].SetName( "User" );
 		m_textUsers[i].SetShadowLength( 1 );
 		m_textUsers[i].SetXY( cx+30, cy );
-		
+
 		m_textUsersNum[i].SetVertAlign(align_top);
 		// m_textUsersNum[i].SetHorizAlign( align_left );
 		m_textUsersNum[i].LoadFromFont( THEME->GetPathF(m_sName,"chat") );
@@ -355,29 +355,31 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 		m_textUsersNum[i].SetShadowLength( 1 );
 		m_textUsersNum[i].SetXY( cx-80, cy );
 
-		// 分享歌曲進度條：放在使用者名稱「正下方」，水平上以名字為中心對齊
-		const float kBarW = 140.f;
-		const float kBarH = 5.f;
-		const float kBarOffsetY = 18.f; // 名稱底下 18px (USERDY=25，仍留 7px 給下一列)
+		// Share-song progress bar: spans full user-box width with 8px padding on each side
+		const float kBarPadding = 8.f;
+		const float kBarW = USERSBG_WIDTH - 2.f * kBarPadding;
+		const float kBarH = 10.f;
+		const float kBarOffsetY = 18.f;      // below the name (USERDY=25)
 		m_rectShareBarBG[i].SetWidth( kBarW );
 		m_rectShareBarBG[i].SetHeight( kBarH );
-		// BG 中心 X 與名字中心 X 對齊 -> 整條 bar 會在名字下方
-		m_rectShareBarBG[i].SetXY( cx+30, cy+kBarOffsetY );
-		m_rectShareBarBG[i].SetDiffuse( RageColor(0.1f, 0.1f, 0.1f, 0.f) ); // 預設透明
+		// horizontal center = box center, vertical follows this row's cy
+		m_rectShareBarBG[i].SetXY( boxX, cy+kBarOffsetY );
+		m_rectShareBarBG[i].SetDiffuse( RageColor(0.1f, 0.1f, 0.1f, 0.f) );
 
 		m_rectShareBarFill[i].SetWidth( 1.f );
 		m_rectShareBarFill[i].SetHeight( kBarH );
-		// 填充條對齊 BG 的左邊緣：BG 左邊緣 = BG.GetX() - kBarW/2 = cx+30 - kBarW/2
-		m_rectShareBarFill[i].SetXY( cx+30-kBarW/2.f, cy+kBarOffsetY );
+		// fill bar anchored to BG's left edge
+		m_rectShareBarFill[i].SetXY( boxX-kBarW/2.f, cy+kBarOffsetY );
 		m_rectShareBarFill[i].SetDiffuse( RageColor(0.2f, 0.7f, 1.f, 0.f) );
 
+		// label overlays bar center
 		m_textShareLabel[i].LoadFromFont( THEME->GetPathF(m_sName,"chat") );
 		m_textShareLabel[i].SetName( "ShareLabel" );
-		m_textShareLabel[i].SetShadowLength( 0 );
-		m_textShareLabel[i].SetZoom( 0.45f );
-		m_textShareLabel[i].SetHorizAlign( align_left );
-		// 標籤放在 bar 右側 (BG 右邊緣 = cx+30+kBarW/2)
-		m_textShareLabel[i].SetXY( cx+30+kBarW/2.f+4.f, cy+kBarOffsetY-2.f );
+		m_textShareLabel[i].SetShadowLength( 1 );
+		m_textShareLabel[i].SetZoom( 0.4f );
+		m_textShareLabel[i].SetHorizAlign( align_center );
+		m_textShareLabel[i].SetVertAlign( align_middle );
+		m_textShareLabel[i].SetXY( boxX, cy+kBarOffsetY );
 		m_textShareLabel[i].SetDiffuse( RageColor(1,1,1,0) );
 
 		this->AddChild( &m_textUsers[i] );
@@ -408,7 +410,7 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 	if ((DeviceI.button == KEY_RIGHT || DeviceI.button == KEY_LEFT) ||
 		(MenuI.button == MENU_BUTTON_RIGHT || MenuI.button == MENU_BUTTON_LEFT))
 	{
-		// TRICKY:  There's lots of weirdness that can happen here when tapping 
+		// TRICKY:  There's lots of weirdness that can happen here when tapping
 		// Left and Right quickly, like when changing sort.
 		bool bLeftAndRightPressed =
 			(INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_LEFT)) &&
@@ -622,7 +624,7 @@ void ScreenNetSelectMusic::CheckChangeSong()
 					break;
 				}
 			}
-			
+
 	bool haveSong = i != m_vSongs.size();
 	if(haveSong)
 	{
@@ -713,7 +715,7 @@ void ScreenNetSelectMusic::ResetSongList()
 	UpdateSongsListPos();
 	GAMESTATE->m_pPreferredSong=NULL;
 	GAMESTATE->m_pPreferredCourse=NULL;
-	
+
 	CheckChangeSong();
 	//==================
 }
@@ -751,21 +753,21 @@ void ScreenNetSelectMusic::HandleScreenMessage( const ScreenMessage SM )
 	case SM_ChangeSong:
 		{
 			// //We always need to find the song
-			// m_iGroupNum=m_vGroups.size()-1;	//Alphabetical 
-			// //m_vGroups.size()-1allsongs? 
+			// m_iGroupNum=m_vGroups.size()-1;	//Alphabetical
+			// //m_vGroups.size()-1allsongs?
 			// //so we need to search the pack of the song
 
 			// UpdateGroupsListPos();
 			// UpdateSongsList();
-			
+
 			// unsigned i;
-	
+
 			// for ( i = 0; i < m_vSongs.size(); ++i)
 			// 	if ( ( !m_vSongs[i]->GetTranslitArtist().CompareNoCase( NSMAN->m_sArtist ) ) &&
 			// 		 ( !m_vSongs[i]->GetTranslitMainTitle().CompareNoCase( NSMAN->m_sMainTitle ) ) &&
 			// 		 ( !m_vSongs[i]->GetTranslitSubTitle().CompareNoCase( NSMAN->m_sSubTitle ) ) )
 			// 		 break;
-			
+
 			// bool haveSong = i != m_vSongs.size();//serch allsongs_group to the end
 			//==========================
 			m_iGroupNum=m_vGroups.size()-1;
@@ -897,7 +899,7 @@ void ScreenNetSelectMusic::HandleScreenMessage( const ScreenMessage SM )
 			GAMESTATE->m_bEditing = false;
 			NSMAN->ReportPlayerOptions();
 			ResetSongList();
-				
+
 			if ((strcmp(NSMAN->m_sCurMainTitle, NSMAN->m_sMainTitle) == 0) &&
 				(strcmp(NSMAN->m_sCurSubTitle, NSMAN->m_sSubTitle) == 0) &&
 				(strcmp(NSMAN->m_sCurArtist, NSMAN->m_sArtist) == 0))
@@ -907,13 +909,13 @@ void ScreenNetSelectMusic::HandleScreenMessage( const ScreenMessage SM )
 				{
 					CheckChangeSong();
 					break;
-				}	
+				}
 			}
 			NSMAN->SelectUserSong ();
 			NSMAN->SendAskSong();
 			break;
 		}
-		
+
 	case SM_ReloadConnectPack:
 		GAMESTATE->m_bLoadPackConnect=true;
 		NSMAN->ReportNSSOnOff(2);
@@ -936,7 +938,7 @@ vector <Steps *> ScreenNetSelectMusic::SortStep(vector <Steps *> MultiSteps)
 {
 	vector <Steps *> sort;
 	sort.assign(MultiSteps.begin(), MultiSteps.end());
-	
+
 	for ( int i=(int)sort.size()-1; i>0; --i )
 	{
 		for(int j=0; j<i; ++j)
@@ -979,7 +981,7 @@ void ScreenNetSelectMusic::MenuLeft( PlayerNumber pn, const InputEventType type 
 			else
 			{
 				MultiSteps = SortStep(MultiSteps);
-				
+
 				for ( i=0; i<(int)MultiSteps.size(); ++i )
 					if ( MultiSteps[i]->GetDifficulty() >= m_DC[pn] )
 						break;
@@ -1058,7 +1060,7 @@ void ScreenNetSelectMusic::MenuUp( PlayerNumber pn, const InputEventType type )
 {
 	m_soundChangeSel.Play();
 	m_SelectMode = (NetScreenSelectModes) ( ( (int)m_SelectMode - 1) % (int)SelectModes);
-	if ( (int) m_SelectMode < 0) 
+	if ( (int) m_SelectMode < 0)
 		m_SelectMode = (NetScreenSelectModes) (SelectModes - 1);
 	COMMAND( m_rectSelection,  ssprintf("To%d", m_SelectMode+1 ) );
 }
@@ -1151,7 +1153,7 @@ void ScreenNetSelectMusic::UpdateUsersStates()
 	{
 		m_textUsers[i].SetText("");
 		m_textUsersNum[i].SetText("");
-		// 預設隱藏分享進度條
+		// hide share progress bar by default
 		m_rectShareBarBG[i].SetDiffuse(RageColor(0,0,0,0));
 		m_rectShareBarFill[i].SetDiffuse(RageColor(0,0,0,0));
 		m_textShareLabel[i].SetText("");
@@ -1212,14 +1214,14 @@ void ScreenNetSelectMusic::UpdateUsersStates()
 		}
 		m_textUsers[i].SetText( temp_PlayerName );
 		// m_textUsers[i].SetDiffuse(RageColor(r,g,b,a));
-		
+
 		// if ( NSMAN->m_EvalPlayerData[i].grade < GRADE_TIER_3 )	//Yes, hardcoded (I'd like to leave it that way)
 		// 	m_textUsers[i].TurnRainbowOn();
 		// else
 		// 	m_textUsers[i].TurnRainbowOff();
 		// ON_COMMAND( m_textUsers[i] );
 
-		// === 分享歌曲進度條 (名字正下方) ===
+		// === Share-song progress bar (aligned to user-box edges) ===
 		if (i < (int)NSMAN->m_PlayerShareProgress.size() &&
 			NSMAN->m_PlayerShareProgress[i].active &&
 			NSMAN->m_PlayerShareProgress[i].totalBytes > 0)
@@ -1229,29 +1231,31 @@ void ScreenNetSelectMusic::UpdateUsersStates()
 			if (ratio < 0.f) ratio = 0.f;
 			if (ratio > 1.f) ratio = 1.f;
 
-			const float kBarW = 140.f;
-			m_rectShareBarBG[i].SetDiffuse(RageColor(0.15f, 0.15f, 0.15f, alpha * 0.8f));
+			// reuse BG's width (no hardcoded duplication)
+			float barW = m_rectShareBarBG[i].GetUnzoomedWidth();
+			m_rectShareBarBG[i].SetDiffuse(RageColor(0.15f, 0.15f, 0.15f, alpha * 0.85f));
 
-			float fillW = kBarW * ratio;
+			float fillW = barW * ratio;
 			if (fillW < 1.f) fillW = 1.f;
 			m_rectShareBarFill[i].SetWidth(fillW);
-			// 對齊 BG 左邊緣：BG 中心 X = cx+30 -> 左邊緣 = cx+30 - kBarW/2
-			// 填充條中心 X = 左邊緣 + fillW/2
+			// fill bar center X = BG left edge + fillW/2
 			float bgCenterX = m_rectShareBarBG[i].GetX();
 			float barY      = m_rectShareBarBG[i].GetY();
-			m_rectShareBarFill[i].SetXY(bgCenterX - kBarW/2.f + fillW/2.f, barY);
+			m_rectShareBarFill[i].SetXY(bgCenterX - barW/2.f + fillW/2.f, barY);
 
 			if (sp.uploading)
-				m_rectShareBarFill[i].SetDiffuse(RageColor(0.2f, 0.9f, 0.3f, alpha)); // 綠色：上傳
+				m_rectShareBarFill[i].SetDiffuse(RageColor(0.2f, 0.9f, 0.3f, alpha)); // green = uploading
 			else
-				m_rectShareBarFill[i].SetDiffuse(RageColor(0.3f, 0.6f, 1.f, alpha));  // 藍色：下載
+				m_rectShareBarFill[i].SetDiffuse(RageColor(0.3f, 0.6f, 1.f, alpha));  // blue  = downloading
 
+			// label centered on bar; file size shown in MB with 2 decimals
 			CString label;
-			label.Format("%s %d%%  %dKB/%dKB",
+			float curMB = (float)sp.currentBytes / (1024.f * 1024.f);
+			float totMB = (float)sp.totalBytes  / (1024.f * 1024.f);
+			label.Format("%s %d%% %.2f/%.2fMB",
 				sp.uploading ? "UP" : "DN",
 				(int)(ratio * 100.f),
-				sp.currentBytes / 1024,
-				sp.totalBytes / 1024);
+				curMB, totMB);
 			m_textShareLabel[i].SetText(label);
 			m_textShareLabel[i].SetDiffuse(RageColor(1,1,1,alpha));
 		}
@@ -1265,7 +1269,7 @@ void ScreenNetSelectMusic::DrawPrimitives()
 void ScreenNetSelectMusic::UpdateTextInput()
 {
 	// m_textChatInput.SetText2( m_sTextInput );
-	m_textChatInput.SetText( m_sTextInput );  
+	m_textChatInput.SetText( m_sTextInput );
 }
 
 void ScreenNetSelectMusic::StartSelectedSong()
@@ -1278,7 +1282,7 @@ void ScreenNetSelectMusic::StartSelectedSong()
 		Steps * pSteps = pSong->GetStepsByDifficulty(st,m_DC[pn]);
 		GAMESTATE->m_pCurSteps[pn] = pSteps;
 	}
-	
+
 	TweenOffScreen();
 	StartTransitioning( SM_GoToNextScreen );
 }
@@ -1288,14 +1292,14 @@ void ScreenNetSelectMusic::UpdateDifficulties( PlayerNumber pn )
 	if ( ( m_DC[pn] < DIFFICULTY_EDIT ) && ( m_DC[pn] >= DIFFICULTY_BEGINNER ) )
 		m_DifficultyIcon[pn].SetFromDifficulty( pn, m_DC[pn] );
 	else
-		m_DifficultyIcon[pn].SetFromSteps( pn, NULL );	//It will blank it out 
+		m_DifficultyIcon[pn].SetFromSteps( pn, NULL );	//It will blank it out
 
 	StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType;
 
 	if ( ( m_DC[pn] < NUM_DIFFICULTIES ) && ( m_DC[pn] >= DIFFICULTY_BEGINNER ) )
 		m_DifficultyMeters[pn].SetFromSteps( GAMESTATE->m_pCurSong->GetStepsByDifficulty( st, m_DC[pn] ) );
 	else
-		m_DifficultyMeters[pn].SetFromMeterAndDifficulty( 0, DIFFICULTY_BEGINNER ); 
+		m_DifficultyMeters[pn].SetFromMeterAndDifficulty( 0, DIFFICULTY_BEGINNER );
 }
 
 void ScreenNetSelectMusic::UpdateSongsListPos()
@@ -1327,7 +1331,7 @@ void ScreenNetSelectMusic::UpdateSongsListPos()
 		StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType;
 		vector <Steps *> MultiSteps;
 		MultiSteps = m_vSongs[j]->GetAllSteps( st );
-		
+
 		MultiSteps = SortStep(MultiSteps);
 
 		if (MultiSteps.size() == 0)
@@ -1386,7 +1390,7 @@ void ScreenNetSelectMusic::UpdateGroupsListPos()
 		GroupsDisplay+=m_vGroups[j];
 		if (i<m_iGroupNum+m_iShowGroups)
 			GroupsDisplay+='\n';
-	}	
+	}
 	m_textGroups.SetText( GroupsDisplay );
 }
 
@@ -1411,7 +1415,7 @@ void ScreenNetSelectMusic::UpdateSongsList()
  * All rights reserved.
  *		Based off of ScreenEz2SelectMusic by Frieza
  *      Elements from ScreenTextEntry
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
@@ -1421,7 +1425,7 @@ void ScreenNetSelectMusic::UpdateSongsList()
  * copyright notice(s) and this permission notice appear in all copies of
  * the Software and that both the above copyright notice(s) and this
  * permission notice appear in supporting documentation.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF

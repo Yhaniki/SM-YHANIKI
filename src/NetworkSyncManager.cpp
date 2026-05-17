@@ -1,4 +1,4 @@
-#include "global.h"
+﻿#include "global.h"
 #include "NetworkSyncManager.h"
 #include "NetworkSyncServer.h"
 #include "LuaFunctions.h"

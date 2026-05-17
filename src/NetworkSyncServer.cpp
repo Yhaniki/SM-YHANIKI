@@ -1,4 +1,4 @@
-#include "global.h"
+﻿#include "global.h"
 #include "NetworkSyncServer.h"
 #include "RageLog.h"
 #include "PrefsManager.h"
@@ -14,18 +14,49 @@ StepManiaLanServer::StepManiaLanServer() { }
 StepManiaLanServer::~StepManiaLanServer() { }
 #else
 
+// ============================================================
+// 指令字串集中定義 (改字串只要改這裡，避免散落各處 typo)
+// ============================================================
+#define CMD_SHARE      "share"
+#define CMD_SHAREFULL  "sharefull"
+#define CMD_LIST       "list"
+#define CMD_HAVE       "have"
+#define CMD_CANCEL     "cancel"
+#define CMD_HELP       "help"
+#define CMD_CODE       "code"
+#define CMD_START      "start"
+#define CMD_KICK       "kick"
+#define CMD_BAN        "ban"
+#define CMD_HOST       "host"
+
+// 指令說明表，給 /help 用；新增指令時記得在這裡補一筆
+struct ServerCommandInfo
+{
+	const char* name;        // 指令字串 (不含斜線)
+	bool        hostOnly;    // 是否限 host (clientNum == 0) 才能執行
+	const char* description; // /help 顯示的說明
+};
+
+static const ServerCommandInfo g_serverCommands[] =
+{
+	{ CMD_SHARE,     false, "/share - share current song to one player" },
+	{ CMD_SHAREFULL, false, "/sharefull - share current song to all players" },
+	{ CMD_LIST,      false, "/list - list players in the room" },
+	{ CMD_HAVE,      false, "/have - mark you have the song" },
+	{ CMD_CANCEL,    false, "/cancel - cancel ongoing share transfer" },
+	{ CMD_HELP,      false, "/help - show this help" },
+	{ CMD_CODE,      false, "/code - show the room code" },
+	{ CMD_START,     true,  "/start (host) - force start the game" },
+	{ CMD_KICK,      true,  "/kick <name> (host) - kick a player" },
+	{ CMD_BAN,       true,  "/ban <name> (host) - ban a player" },
+	{ CMD_HOST,      true,  "/host <name> (host) - transfer host" },
+};
+
 std::unordered_set<std::string> cmdList =
-	{"share",
-	 "sharefull",
-	 "list",
-	 "have",
-	 "cancel"};
+	{ CMD_SHARE, CMD_SHAREFULL, CMD_LIST, CMD_HAVE, CMD_CANCEL, CMD_HELP, CMD_CODE };
 
 std::unordered_set<std::string> hostCmdList =
-	{"start",
-	 "kick",
-	 "ban",
-	 "host"};
+	{ CMD_START, CMD_KICK, CMD_BAN, CMD_HOST };
 
 // 簡單把整個 packet 直接 forward 給某個 client，不重新 parse。
 // 注意：呼叫前必須先把 cmd byte 寫進 newPacket (加上 NSServerOffset 區別 server 端發出)。
@@ -1113,39 +1144,47 @@ void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int
 		CString command = message.substr(1, message.find(" ")-1);
 		if(IsCmd(command) || IsHostCmd(command))
 		{
-			if ((command.compare("share") == 0) ||
-			(command.compare("sharefull") == 0))
+			if ((command.compare(CMD_SHARE) == 0) ||
+			(command.compare(CMD_SHAREFULL) == 0))
 			{
 				CommandShare(command, clientNum);
 			}
-			else if ((command.compare("list") == 0))
+			else if (command.compare(CMD_LIST) == 0)
 			{
 				ServerChatOne(ListPlayers(), clientNum);
 			}
-			else if ((command.compare("have") == 0))
+			else if (command.compare(CMD_HAVE) == 0)
 			{
 				Have(clientNum);
 			}
-			else if ((command.compare("cancel") == 0))
+			else if (command.compare(CMD_CANCEL) == 0)
 			{
 				CommandCancel(clientNum);
+			}
+			else if (command.compare(CMD_HELP) == 0)
+			{
+				CommandHelp(clientNum);
+			}
+			else if (command.compare(CMD_CODE) == 0)
+			{
+				CommandCode(clientNum);
 			}
 			else if (clientNum == 0)
 			{
 				CString arg = GetArg(command);
-				if (command.compare("start") == 0)
+				if (command.compare(CMD_START) == 0)
 				{
 					ForceStart();
 				}
-				else if (command.compare("kick") == 0)
+				else if (command.compare(CMD_KICK) == 0)
 				{
 					Kick(arg);
 				}
-				else if (command.compare("ban") == 0)
+				else if (command.compare(CMD_BAN) == 0)
 				{
 					Ban(arg);
 				}
-				else if (command.compare("host") == 0)
+				else if (command.compare(CMD_HOST) == 0)
 				{
 					Host(arg, Packet, clientNum);
 				}
@@ -1165,6 +1204,29 @@ void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int
 	else
 		RelayChat(message, clientNum); //normal chat
 }
+
+// 把所有指令一條一條送回給發起者；host (clientNum==0) 才會看到 host-only 指令
+void StepManiaLanServer::CommandHelp(const unsigned int clientNum)
+{
+	ServerChatOne("Available commands:", clientNum);
+	const int n = sizeof(g_serverCommands) / sizeof(g_serverCommands[0]);
+	for (int i = 0; i < n; ++i)
+	{
+		const ServerCommandInfo& c = g_serverCommands[i];
+		if (c.hostOnly && clientNum != 0) continue;
+		ServerChatOne(c.description, clientNum);
+	}
+}
+
+// 顯示目前房間代碼，沒有設定的話顯示 N/A
+void StepManiaLanServer::CommandCode(const unsigned int clientNum)
+{
+	if (roomCode.empty())
+		ServerChatOne("Room code: (LAN mode, no code)", clientNum);
+	else
+		ServerChatOne(CString("Room code: ") + roomCode, clientNum);
+}
+
 void StepManiaLanServer::ShareSong(unsigned int ShareSongServerNum, unsigned int ShareSongClientNum, CString ServerIp)
 {
 	int clientNum = ShareSongServerNum;

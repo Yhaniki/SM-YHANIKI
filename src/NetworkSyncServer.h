@@ -1,4 +1,4 @@
-#ifndef NetworkSyncServer_H
+﻿#ifndef NetworkSyncServer_H
 #define NetworkSyncServer_H
 
 #include "NetworkSyncManager.h"
@@ -164,6 +164,10 @@ protected:
 	void BroadcastShareProgress(unsigned int senderClient, int curBytes, int totalBytes);
 	// /cancel 指令處理
 	void CommandCancel(const unsigned int clientNum);
+	// /help 列出所有指令
+	void CommandHelp(const unsigned int clientNum);
+	// /code 顯示房間代碼
+	void CommandCode(const unsigned int clientNum);
 	// 取消目前的分享 (server-initiated)，會通知雙方
 	void DoServerCancelShare(const CString& reason);
 	// 每個 server tick 偵測是否 timeout
