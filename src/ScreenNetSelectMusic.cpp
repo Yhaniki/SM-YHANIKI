@@ -849,7 +849,7 @@ void ScreenNetSelectMusic::HandleScreenMessage( const ScreenMessage SM )
 		break;
 	case SM_BackFromOpts:
 		//XXX: HACK: This will causes ScreenSelectOptions to go back here.
-		NSMAN->ReportNSSOnOff(3);
+			NSMAN->ReportNSSOnOff(3);
 		GAMESTATE->m_bEditing = false;
 		NSMAN->ReportPlayerOptions();
 		NSMAN->SendAskSong();

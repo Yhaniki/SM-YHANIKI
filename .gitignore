@@ -27,3 +27,5 @@ src/crypto51/d2utmpwOSSWZ
 crashinfo.txt
 BlueSocket/**
 Screenshots/
+bak*
+.vscode/
