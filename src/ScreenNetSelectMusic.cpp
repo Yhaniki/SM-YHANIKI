@@ -354,9 +354,37 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 		m_textUsersNum[i].SetName( "UserNum" );
 		m_textUsersNum[i].SetShadowLength( 1 );
 		m_textUsersNum[i].SetXY( cx-80, cy );
-		
+
+		// 分享歌曲進度條：放在使用者名稱「正下方」，水平上以名字為中心對齊
+		const float kBarW = 140.f;
+		const float kBarH = 5.f;
+		const float kBarOffsetY = 18.f; // 名稱底下 18px (USERDY=25，仍留 7px 給下一列)
+		m_rectShareBarBG[i].SetWidth( kBarW );
+		m_rectShareBarBG[i].SetHeight( kBarH );
+		// BG 中心 X 與名字中心 X 對齊 -> 整條 bar 會在名字下方
+		m_rectShareBarBG[i].SetXY( cx+30, cy+kBarOffsetY );
+		m_rectShareBarBG[i].SetDiffuse( RageColor(0.1f, 0.1f, 0.1f, 0.f) ); // 預設透明
+
+		m_rectShareBarFill[i].SetWidth( 1.f );
+		m_rectShareBarFill[i].SetHeight( kBarH );
+		// 填充條對齊 BG 的左邊緣：BG 左邊緣 = BG.GetX() - kBarW/2 = cx+30 - kBarW/2
+		m_rectShareBarFill[i].SetXY( cx+30-kBarW/2.f, cy+kBarOffsetY );
+		m_rectShareBarFill[i].SetDiffuse( RageColor(0.2f, 0.7f, 1.f, 0.f) );
+
+		m_textShareLabel[i].LoadFromFont( THEME->GetPathF(m_sName,"chat") );
+		m_textShareLabel[i].SetName( "ShareLabel" );
+		m_textShareLabel[i].SetShadowLength( 0 );
+		m_textShareLabel[i].SetZoom( 0.45f );
+		m_textShareLabel[i].SetHorizAlign( align_left );
+		// 標籤放在 bar 右側 (BG 右邊緣 = cx+30+kBarW/2)
+		m_textShareLabel[i].SetXY( cx+30+kBarW/2.f+4.f, cy+kBarOffsetY-2.f );
+		m_textShareLabel[i].SetDiffuse( RageColor(1,1,1,0) );
+
 		this->AddChild( &m_textUsers[i] );
 		this->AddChild( &m_textUsersNum[i] );
+		this->AddChild( &m_rectShareBarBG[i] );
+		this->AddChild( &m_rectShareBarFill[i] );
+		this->AddChild( &m_textShareLabel[i] );
 		cx+=USERDX;
 		cy+=USERDY;
 	}
@@ -849,7 +877,7 @@ void ScreenNetSelectMusic::HandleScreenMessage( const ScreenMessage SM )
 		break;
 	case SM_BackFromOpts:
 		//XXX: HACK: This will causes ScreenSelectOptions to go back here.
-			NSMAN->ReportNSSOnOff(3);
+		NSMAN->ReportNSSOnOff(3);
 		GAMESTATE->m_bEditing = false;
 		NSMAN->ReportPlayerOptions();
 		NSMAN->SendAskSong();
@@ -1123,6 +1151,11 @@ void ScreenNetSelectMusic::UpdateUsersStates()
 	{
 		m_textUsers[i].SetText("");
 		m_textUsersNum[i].SetText("");
+		// 預設隱藏分享進度條
+		m_rectShareBarBG[i].SetDiffuse(RageColor(0,0,0,0));
+		m_rectShareBarFill[i].SetDiffuse(RageColor(0,0,0,0));
+		m_textShareLabel[i].SetText("");
+		m_textShareLabel[i].SetDiffuse(RageColor(1,1,1,0));
 	}
 	//RageColor(R,G,B,A)
 	for (int i = 0; i < NSMAN->m_PlayerNames.size() / 2; ++i)
@@ -1185,6 +1218,43 @@ void ScreenNetSelectMusic::UpdateUsersStates()
 		// else
 		// 	m_textUsers[i].TurnRainbowOff();
 		// ON_COMMAND( m_textUsers[i] );
+
+		// === 分享歌曲進度條 (名字正下方) ===
+		if (i < (int)NSMAN->m_PlayerShareProgress.size() &&
+			NSMAN->m_PlayerShareProgress[i].active &&
+			NSMAN->m_PlayerShareProgress[i].totalBytes > 0)
+		{
+			const ShareProgressInfo& sp = NSMAN->m_PlayerShareProgress[i];
+			float ratio = (float)sp.currentBytes / (float)sp.totalBytes;
+			if (ratio < 0.f) ratio = 0.f;
+			if (ratio > 1.f) ratio = 1.f;
+
+			const float kBarW = 140.f;
+			m_rectShareBarBG[i].SetDiffuse(RageColor(0.15f, 0.15f, 0.15f, alpha * 0.8f));
+
+			float fillW = kBarW * ratio;
+			if (fillW < 1.f) fillW = 1.f;
+			m_rectShareBarFill[i].SetWidth(fillW);
+			// 對齊 BG 左邊緣：BG 中心 X = cx+30 -> 左邊緣 = cx+30 - kBarW/2
+			// 填充條中心 X = 左邊緣 + fillW/2
+			float bgCenterX = m_rectShareBarBG[i].GetX();
+			float barY      = m_rectShareBarBG[i].GetY();
+			m_rectShareBarFill[i].SetXY(bgCenterX - kBarW/2.f + fillW/2.f, barY);
+
+			if (sp.uploading)
+				m_rectShareBarFill[i].SetDiffuse(RageColor(0.2f, 0.9f, 0.3f, alpha)); // 綠色：上傳
+			else
+				m_rectShareBarFill[i].SetDiffuse(RageColor(0.3f, 0.6f, 1.f, alpha));  // 藍色：下載
+
+			CString label;
+			label.Format("%s %d%%  %dKB/%dKB",
+				sp.uploading ? "UP" : "DN",
+				(int)(ratio * 100.f),
+				sp.currentBytes / 1024,
+				sp.totalBytes / 1024);
+			m_textShareLabel[i].SetText(label);
+			m_textShareLabel[i].SetDiffuse(RageColor(1,1,1,alpha));
+		}
 	}
 }
 void ScreenNetSelectMusic::DrawPrimitives()

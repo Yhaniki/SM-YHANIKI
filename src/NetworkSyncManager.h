@@ -14,6 +14,10 @@ const int NETPROTOCOLVERSION=1;
 const int NETMAXBUFFERSIZE=1020; //1024 - 4 bytes for EzSockets
 const int NETNUMTAPSCORES=8;
 const int NETGRAPHSIZE=100;
+
+// 分享歌曲時每個資料 chunk 的大小上限（其餘空間留給 packet header + 檔案路徑）
+const int NETSHARECHUNKSIZE = 800;
+
 enum NSCommand
 {
 	NSCPing = 0,
@@ -29,13 +33,18 @@ enum NSCommand
 	NSCSMS,			//10
 	NSCUPOpts,		//11
 	NSCUPPer,		//12
-	NSSSS,			//13 share song server
-	NSSSC,			//14
+	NSSSS,			//13 share song server (legacy 觸發訊息，仍用來通知 sender 開始)
+	NSSSC,			//14 share song client (legacy 通知 receiver 對方要傳檔)
 	NSCGraph,		//15
 	NSCPC,			//16 player conditions //is the data size enough to use 16?
 	NSCCHS,			//17 checkhassong
 	NSCAS,			//18 ask song
 	NSRSSF,			//19 share song finish
+	NSSMeta,		//20 share song: 一次傳輸的 metadata (檔案數/總 bytes)
+	NSSData,		//21 share song: 單一檔案資料 chunk
+	NSSDone,		//22 share song: 全部檔案傳輸完成
+	NSSCancel,		//23 share song: 中止傳輸
+	NSSProgress,	//24 share song: server 回傳給所有 client 的進度
 	NUM_NS_COMMANDS
 };
 
@@ -78,21 +87,37 @@ class PacketFunctions
 public:
 	unsigned char Data[NETMAXBUFFERSIZE];	//Data
 	int Position;				//Other info (Used for following functions)
+	int PayloadLength;          //收到 packet 時記錄實際長度，方便 server 轉發時知道有效範圍
 
 	//Commands used to operate on NetPackets
 	uint8_t Read1();
 	uint16_t Read2();
 	uint32_t Read4();
 	CString ReadNT();
+	// 讀取原始 bytes (回傳實際讀到的數量)
+	int ReadBytes(char *out, int bytes);
 
 	void Write1(uint8_t Data);
 	void Write2(uint16_t Data);
 	void Write4(uint32_t Data);
 	void WriteNT(const CString& Data);
+	// 寫入原始 bytes (不附 length，呼叫者需自己先寫長度)
+	void WriteBytes(const char *src, int bytes);
 
 	void ClearPacket();
 
 	CString fromIp;
+};
+
+// 分享歌曲時，UI 端需要的進度資訊 (server 端會廣播給所有 client)
+struct ShareProgressInfo
+{
+	bool active;          // 是否正在傳送
+	bool uploading;       // true: 此玩家為發送端, false: 此玩家為接收端
+	int  peerIndex;       // 對方在 m_PlayerNames 中的 index
+	int  currentBytes;    // 目前已傳輸 bytes
+	int  totalBytes;      // 總 bytes
+	ShareProgressInfo() : active(false), uploading(false), peerIndex(-1), currentBytes(0), totalBytes(0) {}
 };
 
 class NetworkSyncManager 
@@ -129,7 +154,16 @@ public:
 	vector <int> m_ActivePlayer;
 	vector <CString> m_PlayerNames;
 	vector <int> m_PlayerCondition;
+	// 每位玩家的分享歌曲進度 (由 server 廣播更新；index 對應 m_PlayerNames 的 player index)
+	vector <ShareProgressInfo> m_PlayerShareProgress;
 	int ClientNum;
+
+	// 由 UI 或 server 命令發起：嘗試取消目前進行中的分享 (若本機是 sender 會中止 thread；
+	// 不論身份都會廣播 NSSCancel 給 server)
+	void CancelShareSong();
+	// 由 server 端透過 chat command (/cancel) 觸發，直接送 NSSCancel
+	void SendShareCancel();
+	bool IsShareSongActive() const;
 
 	//Used for ScreenNetEvaluation
 	EndOfGame_PlayerData m_EvalPlayerData[NETMAXPLAYERS];
@@ -197,19 +231,42 @@ private:
 		NetworkSyncManager *This = (NetworkSyncManager *)Param;
 		return This->ThreadProcNSSSS();
 	}
-	static DWORD WINAPI StaticThreadStartNSSSC(void *Param)
-	{
-		NetworkSyncManager *This = (NetworkSyncManager *)Param;
-		return This->ThreadProcNSSSC();
-	}
 	DWORD ThreadProcNSSSS(void);
-	DWORD ThreadProcNSSSC(void);
 
 	CString server_ip;
 	int file_size;
 	int player_num;
 	bool video_file_filter;
 	bool usingShareSongSystem;
+
+	// === Share-song：sender 端使用 ===
+	volatile bool m_shareCancelRequested; // 由 UI/server 設成 true 來通知 sender thread 退出
+	volatile int  m_shareSentBytes;       // 給 UI 觀察用
+	volatile int  m_shareTotalBytes;
+	int m_shareReceiverIndex;             // sender 要傳給誰
+
+	// === Share-song：receiver 端使用 (由 main thread 在 ProcessInput 中操作) ===
+	struct RecvState
+	{
+		bool active;
+		int  senderIndex;
+		int  totalBytes;
+		int  receivedBytes;
+		int  fileCount;
+		CString rootDir;       // 接收後解開後的最頂層資料夾 (歌曲名)
+		CString currentRelPath;
+		FILE *currentFile;
+		int  currentFileSize;
+		int  currentFileWritten;
+	};
+	RecvState m_recv;
+
+	// 內部 helper
+	void ResetRecvState();
+	void OpenRecvFile(const CString& relPath, int fileSize);
+	void CloseRecvFile();
+	void RemovePartialRecv();
+	void SendShareProgress(); // sender 端呼叫，回報目前進度給 server
 #endif
 };
 

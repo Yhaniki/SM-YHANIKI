@@ -18,13 +18,25 @@ std::unordered_set<std::string> cmdList =
 	{"share",
 	 "sharefull",
 	 "list",
-	 "have"};
+	 "have",
+	 "cancel"};
 
 std::unordered_set<std::string> hostCmdList =
 	{"start",
 	 "kick",
 	 "ban",
 	 "host"};
+
+// 簡單把整個 packet 直接 forward 給某個 client，不重新 parse。
+// 注意：呼叫前必須先把 cmd byte 寫進 newPacket (加上 NSServerOffset 區別 server 端發出)。
+static void ForwardPacketBytes(PacketFunctions& out, const unsigned char* data, int bytes)
+{
+	for (int i = 0; i < bytes; ++i)
+	{
+		if (out.Position >= NETMAXBUFFERSIZE) break;
+		out.Data[out.Position++] = data[i];
+	}
+}
 
 LanPlayer::LanPlayer()
 {
@@ -50,6 +62,12 @@ StepManiaLanServer::StepManiaLanServer()
 	stop = true;
 	SecondSameSelect = false;
 	ChangeHost = false;
+	ClientHost = -1; // [NETDBG] 原本沒初始化，會是垃圾值
+	m_shareSenderIdx = -1;
+	m_shareReceiverIdx = -1;
+	m_shareCurBytes = 0;
+	m_shareTotalBytes = 0;
+	m_shareLastActivityMs = 0;
 	AssignPlayerIDs();
 }
 
@@ -123,6 +141,7 @@ void StepManiaLanServer::ServerUpdate()
 			SendStatsToClients();
 			statsTime = time(NULL);
 		}
+		CheckShareTimeout();
 	}
 }
 
@@ -130,9 +149,29 @@ void StepManiaLanServer::UpdateClients()
 {
 	//Go through all the clients and check to see if it is being used.
 	//If so then try to get a backet and parse the data.
-	for (unsigned int x = 0; x < Client.size(); ++x)
-		if (CheckConnection(x) && (Client[x]->GetData(Packet) >= 0))
-			ParseData(Packet, x);
+	const size_t clientCount = Client.size();
+	for (unsigned int x = 0; x < clientCount; ++x)
+	{
+		if (x >= Client.size())
+		{
+			LOG->Warn("[NETDBG] SRV::UpdateClients#1 index x=%u >= size=%u, aborting loop", x, (unsigned)Client.size());
+			break;
+		}
+		if (Client[x] == nullptr)
+		{
+			LOG->Warn("[NETDBG] SRV::UpdateClients#2 Client[%u] is null, skipping", x);
+			continue;
+		}
+		if (CheckConnection(x))
+		{
+			int got = Client[x]->GetData(Packet);
+			if (got >= 0)
+			{
+				LOG->Info("[NETDBG] SRV::UpdateClients#3 client=%u got %d bytes -> ParseData", x, got);
+				ParseData(Packet, x);
+			}
+		}
+	}
 }
 
 GameClient::GameClient()
@@ -156,8 +195,18 @@ GameClient::GameClient()
 
 void StepManiaLanServer::Disconnect(const unsigned int clientNum)
 {
+	LOG->Info("[NETDBG] SRV::Disconnect#1 begin clientNum=%u size=%u",
+		clientNum, (unsigned)Client.size());
+	if (Client.empty() || clientNum >= Client.size())
+	{
+		LOG->Warn("[NETDBG] SRV::Disconnect#2 invalid clientNum=%u (size=%u), abort",
+			clientNum, (unsigned)Client.size());
+		return;
+	}
+
 	if (clientNum == (Client.size()-1))//host leave
 	{
+		LOG->Info("[NETDBG] SRV::Disconnect#3 last index path (host leave)");
 		delete Client[Client.size()-1];
 		Client[Client.size()-1] = NULL;
 		Client.pop_back();
@@ -165,6 +214,7 @@ void StepManiaLanServer::Disconnect(const unsigned int clientNum)
 	}
 	else
 	{
+		LOG->Info("[NETDBG] SRV::Disconnect#4 erase via iterator");
 		vector<GameClient*>::iterator Iterator;
 		Iterator = Client.begin();
 		for (unsigned int x = 0; x < Client.size(); ++x)
@@ -174,12 +224,16 @@ void StepManiaLanServer::Disconnect(const unsigned int clientNum)
 				delete Client[x];
 				Client[x] = NULL;
 				Client.erase(Iterator);
+				break; // [NETDBG] safer: stop after erase to avoid invalidated iterator
 			}
 			++Iterator;
 		}
 	}
+	LOG->Info("[NETDBG] SRV::Disconnect#5 erased, new size=%u, sending UserList+Cond",
+		(unsigned)Client.size());
 	SendUserList();
 	SendPlayerCondition();
+	LOG->Info("[NETDBG] SRV::Disconnect#6 done");
 }
 
 int GameClient::GetData(PacketFunctions& Packet)
@@ -187,12 +241,22 @@ int GameClient::GetData(PacketFunctions& Packet)
 	int length = -1;
 	Packet.ClearPacket();
 	length = clientSocket.ReadPack((char*)Packet.Data, NETMAXBUFFERSIZE);
+	Packet.PayloadLength = (length > 0) ? length : 0;
+	if (length > 0)
+		LOG->Info("[NETDBG] SRV::GetData got %d bytes from a client", length);
 	return length;
 }
 
 void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int clientNum)
 {
+	if (clientNum >= Client.size() || Client[clientNum] == nullptr)
+	{
+		LOG->Warn("[NETDBG] SRV::ParseData#0 invalid clientNum=%u (size=%u), abort",
+			clientNum, (unsigned)Client.size());
+		return;
+	}
 	int command = Packet.Read1();
+	LOG->Info("[NETDBG] SRV::ParseData#1 client=%u cmd=%d", clientNum, command);
 	switch (command)
 	{
 	case NSCPing:
@@ -287,9 +351,43 @@ void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int c
 		break;
 	case NSRSSF:
 		Client[clientNum]->usingShareSongSystem = false;
+		// 若這個 client 是目前 active 的 sender/receiver 就清掉 server-side state
+		if ((int)clientNum == m_shareSenderIdx || (int)clientNum == m_shareReceiverIdx)
+		{
+			m_shareSenderIdx = -1;
+			m_shareReceiverIdx = -1;
+			m_shareCurBytes = 0;
+			m_shareTotalBytes = 0;
+			m_shareLastActivityMs = 0;
+		}
 		if(Client[clientNum]->shareAll)
 		{
 			ShareAll(clientNum, Packet.fromIp);
+		}
+		break;
+	case NSSMeta:
+	case NSSData:
+	case NSSDone:
+		// sender 送來的檔案資料/控制訊息，server 直接轉發給 receiver
+		ForwardShareToReceiver(Packet, command, clientNum);
+		break;
+	case NSSCancel:
+		{
+			// 任何一方都可以送 cancel 過來。server 兩邊都轉發、並清自己的狀態
+			ForwardShareToReceiver(Packet, command, clientNum);
+			if (m_shareSenderIdx == (int)clientNum || m_shareReceiverIdx == (int)clientNum)
+			{
+				DoServerCancelShare("cancelled by client");
+			}
+		}
+		break;
+	case NSSProgress:
+		{
+			int receiverIdx = Packet.Read1();
+			int curBytes = (int)Packet.Read4();
+			int totBytes = (int)Packet.Read4();
+			(void)receiverIdx; // sender 自己回報，receiver index 同時也記在 server 自己的 state
+			BroadcastShareProgress(clientNum, curBytes, totBytes);
 		}
 		break;
 	default:
@@ -301,7 +399,14 @@ void StepManiaLanServer::Hello(PacketFunctions& Packet, const unsigned int clien
 {
 	int ClientVersion = Packet.Read1();
 	CString build = Packet.ReadNT();
+	LOG->Info("[NETDBG] SRV::Hello#1 client=%u version=%d build='%s'",
+		clientNum, ClientVersion, build.c_str());
 
+	if (clientNum >= Client.size() || Client[clientNum] == nullptr)
+	{
+		LOG->Warn("[NETDBG] SRV::Hello#2 invalid clientNum=%u, abort", clientNum);
+		return;
+	}
 	Client[clientNum]->SetClientVersion(ClientVersion, build);
 
 	Reply.ClearPacket();
@@ -309,11 +414,12 @@ void StepManiaLanServer::Hello(PacketFunctions& Packet, const unsigned int clien
 	Reply.Write1(1);
 	Reply.WriteNT(servername);
 
+	LOG->Info("[NETDBG] SRV::Hello#3 reply NSCHello to client=%u", clientNum);
 	SendNetPacket(clientNum, Reply);
 
 	if (ClientHost == -1)
 		ClientHost = clientNum;
-
+	LOG->Info("[NETDBG] SRV::Hello#4 done, ClientHost=%d", ClientHost);
 }
 
 void GameClient::StyleUpdate(PacketFunctions& Packet)
@@ -673,8 +779,19 @@ void StepManiaLanServer::SendStatsToClients()
 
 void StepManiaLanServer::SendNetPacket(const unsigned int client, PacketFunctions& Packet)
 {
-	if ( client < Client.size() )
-		Client[client]->clientSocket.SendPack((char*)Packet.Data, Packet.Position);
+	if ( client >= Client.size() )
+	{
+		LOG->Warn("[NETDBG] SRV::SendNetPacket#1 client=%u >= size=%u, abort",
+			client, (unsigned)Client.size());
+		return;
+	}
+	if (Client[client] == nullptr)
+	{
+		LOG->Warn("[NETDBG] SRV::SendNetPacket#2 Client[%u] is null, abort", client);
+		return;
+	}
+	LOG->Info("[NETDBG] SRV::SendNetPacket#3 client=%u bytes=%d", client, Packet.Position);
+	Client[client]->clientSocket.SendPack((char*)Packet.Data, Packet.Position);
 }
 
 void StepManiaLanServer::StatsNameColumn(PacketFunctions &data, vector<LanPlayer*> &playersPtr)
@@ -751,44 +868,79 @@ void StepManiaLanServer::NewClientCheck()
 	// }
 	if (server.CheckUpdate())
 	{
+		LOG->Info("[NETDBG] SRV::NewClientCheck#1 lobby updated, refreshing member list");
 		CSteamID lobbyId = server.GetLobbyId();
-		int lobbyCount = SteamMatchmaking()->GetNumLobbyMembers(lobbyId);
-
-		// Collect all member IDs in Lobby
-		std::vector<CSteamID> lobbyMembers;
-		for (int i = 0; i < lobbyCount; ++i) {
-			lobbyMembers.push_back(SteamMatchmaking()->GetLobbyMemberByIndex(lobbyId, i));
+		if (!lobbyId.IsValid())
+		{
+			LOG->Warn("[NETDBG] SRV::NewClientCheck#2 lobbyId INVALID, skipping refresh");
+			server.ClearUpdate();
 		}
-
-		// === Remove Clients that are not in Lobby ===
-		for (int i = static_cast<int>(Client.size()) - 1; i >= 0; --i) {
-			CSteamID id = Client[i]->clientSocket.GetSelfId();
-			auto it = std::find(lobbyMembers.begin(), lobbyMembers.end(), id);
-			if (it == lobbyMembers.end()) {
-				Disconnect(i);  // Pass in the client index
+		else
+		{
+			ISteamMatchmaking* matchmaking = SteamMatchmaking();
+			if (matchmaking == nullptr)
+			{
+				LOG->Warn("[NETDBG] SRV::NewClientCheck#3 SteamMatchmaking() returned null!");
+				server.ClearUpdate();
+				return;
 			}
-		}
+			int lobbyCount = matchmaking->GetNumLobbyMembers(lobbyId);
+			LOG->Info("[NETDBG] SRV::NewClientCheck#4 lobby=%llu memberCount=%d existingClientCount=%u",
+				lobbyId.ConvertToUint64(), lobbyCount, (unsigned)Client.size());
 
-		//=== Join New Lobby Members ===
-		for (const auto& id : lobbyMembers) {
-			bool found = false;
-			for (const auto& client : Client) {
-				if (client->clientSocket.GetSelfId() == id) {
-					found = true;
-					break;
+			// Collect all member IDs in Lobby
+			std::vector<CSteamID> lobbyMembers;
+			for (int i = 0; i < lobbyCount; ++i) {
+				CSteamID m = matchmaking->GetLobbyMemberByIndex(lobbyId, i);
+				LOG->Info("[NETDBG] SRV::NewClientCheck#5 lobby member[%d]=%llu", i, m.ConvertToUint64());
+				lobbyMembers.push_back(m);
+			}
+
+			// === Remove Clients that are not in Lobby ===
+			for (int i = static_cast<int>(Client.size()) - 1; i >= 0; --i) {
+				if (Client[i] == nullptr)
+				{
+					LOG->Warn("[NETDBG] SRV::NewClientCheck#6 Client[%d] null when scanning for removal", i);
+					continue;
+				}
+				CSteamID id = Client[i]->clientSocket.GetSelfId();
+				auto it = std::find(lobbyMembers.begin(), lobbyMembers.end(), id);
+				if (it == lobbyMembers.end()) {
+					LOG->Info("[NETDBG] SRV::NewClientCheck#7 client idx=%d (steamID=%llu) not in lobby, Disconnect()",
+						i, id.ConvertToUint64());
+					Disconnect(i);  // Pass in the client index
 				}
 			}
 
-			if (!found && server.GetHostId() == id) {
-				GameClient* tmp = new GameClient();
-				tmp->clientSocket.SetSelfId(id);
-				tmp->clientSocket.SetHostId(server.GetHostId());
-				Client.push_back(tmp);
-				AssignPlayerIDs();  // Every time someone is added, the ID is reassigned
+			//=== Join New Lobby Members ===
+			for (const auto& id : lobbyMembers) {
+				bool found = false;
+				for (const auto& client : Client) {
+					if (client && client->clientSocket.GetSelfId() == id) {
+						found = true;
+						break;
+					}
+				}
+
+				if (!found && server.GetHostId() == id) {
+					LOG->Info("[NETDBG] SRV::NewClientCheck#8 add HOST client steamID=%llu", id.ConvertToUint64());
+					GameClient* tmp = new GameClient();
+					tmp->clientSocket.SetSelfId(id);
+					// [NETDBG] host 自己作為 client：對方就是自己，走 loopback
+					tmp->clientSocket.SetHostId(id);
+					Client.push_back(tmp);
+					AssignPlayerIDs();  // Every time someone is added, the ID is reassigned
+					LOG->Info("[NETDBG] SRV::NewClientCheck#9 HOST client added, Client.size()=%u",
+						(unsigned)Client.size());
+				}
 			}
+			server.ClearUpdate();
 		}
-		server.ClearUpdate();
 	}
+
+	const size_t connCount = server.m_conns.size();
+	if (connCount > 0)
+		LOG->Info("[NETDBG] SRV::NewClientCheck#10 m_conns has %u pending entries", (unsigned)connCount);
 
 	for (size_t i = 0; i < server.m_conns.size(); /* no ++ here */)
 	{
@@ -798,12 +950,14 @@ void StepManiaLanServer::NewClientCheck()
 		if (SteamNetworkingSockets()->GetConnectionInfo(conn, &info))
 		{
 			CSteamID remoteID = info.m_identityRemote.GetSteamID();
+			LOG->Info("[NETDBG] SRV::NewClientCheck#11 m_conns[%u] conn=%u remoteID=%llu state=%d",
+				(unsigned)i, (unsigned)conn, remoteID.ConvertToUint64(), (int)info.m_eState);
 
 			// Check if this remoteID already exists
 			bool exists = false;
 			for (const auto &client : Client)
 			{
-				if (client->clientSocket.GetSelfId() == remoteID)
+				if (client && client->clientSocket.GetSelfId() == remoteID)
 				{
 					exists = true;
 					break;
@@ -812,12 +966,23 @@ void StepManiaLanServer::NewClientCheck()
 
 			if (!exists)
 			{
+				LOG->Info("[NETDBG] SRV::NewClientCheck#12 NEW remote client, creating GameClient (remoteID=%llu)",
+					remoteID.ConvertToUint64());
 				GameClient *tmp = new GameClient();
 				tmp->clientSocket.SetSelfId(remoteID);
-				tmp->clientSocket.SetHostId(server.GetHostId());
+				// [NETDBG] BUG FIX：server 端對該 client 的「對方 Steam ID」=該 client 自己，
+				// 不能設為 server.GetHostId()（server 自己），否則 Send/Recv 會走 loopback queue，
+				// 永遠收不到真正的 P2P 訊息也送不出去。
+				tmp->clientSocket.SetHostId(remoteID);
 				tmp->clientSocket.SetHandle(conn);
 				Client.push_back(tmp);
 				AssignPlayerIDs();
+				LOG->Info("[NETDBG] SRV::NewClientCheck#13 GameClient pushed, Client.size()=%u host=%llu",
+					(unsigned)Client.size(), server.GetHostId().ConvertToUint64());
+			}
+			else
+			{
+				LOG->Info("[NETDBG] SRV::NewClientCheck#14 remoteID already has GameClient, skip create");
 			}
 
 			// After processing this conn, remove it from m_conns
@@ -825,6 +990,8 @@ void StepManiaLanServer::NewClientCheck()
 		}
 		else
 		{
+			LOG->Warn("[NETDBG] SRV::NewClientCheck#15 GetConnectionInfo failed for conn=%u, skipping",
+				(unsigned)conn);
 			++i; // Invalid connection or query failed, skipping
 		}
 	}
@@ -959,6 +1126,10 @@ void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int
 			{
 				Have(clientNum);
 			}
+			else if ((command.compare("cancel") == 0))
+			{
+				CommandCancel(clientNum);
+			}
 			else if (clientNum == 0)
 			{
 				CString arg = GetArg(command);
@@ -1020,6 +1191,162 @@ void StepManiaLanServer::ShareSong(unsigned int ShareSongServerNum, unsigned int
 		}
 		SendNetPacket(clientNum, Reply);
 		Client[clientNum]->usingShareSongSystem=true;
+
+		// 記錄目前正在進行中的分享，並重置進度
+		m_shareSenderIdx = clientNum;
+		m_shareReceiverIdx = client_index;
+		m_shareCurBytes = 0;
+		m_shareTotalBytes = 0;
+		m_shareLastActivityMs = GetTickCount();
+		LOG->Info("[SHARE-SRV] register active share sender=%d receiver=%d",
+			m_shareSenderIdx, m_shareReceiverIdx);
+	}
+}
+
+void StepManiaLanServer::ForwardShareToReceiver(PacketFunctions& origPacket, int cmd, unsigned int senderClient)
+{
+	// origPacket 是 sender 端送來的：[cmd (1byte 已被消化)][receiver_idx (1byte)] + payload...
+	// 把 server-side cmd byte 寫好，然後把剩下的 raw bytes (從目前 Position 到 PayloadLength) 塞進新 packet。
+	if (origPacket.PayloadLength < origPacket.Position + 1)
+	{
+		LOG->Warn("[SHARE-SRV] forward: malformed packet (no receiver idx) payload=%d pos=%d",
+			origPacket.PayloadLength, origPacket.Position);
+		return;
+	}
+	int receiverIdx = origPacket.Data[origPacket.Position]; // peek，不前進 Position
+	if (receiverIdx < 0 || receiverIdx >= (int)Client.size())
+	{
+		LOG->Warn("[SHARE-SRV] forward: invalid receiverIdx=%d", receiverIdx);
+		return;
+	}
+
+	Reply.ClearPacket();
+	Reply.Write1((uint8_t)(cmd + NSServerOffset));
+	// 第二個 byte 在 sender 寫入時是 receiver 的 index (給 server 路由用)；
+	// 在 forward 給 receiver 時要換成 sender 的 client index，方便 receiver 端紀錄/UI 顯示
+	Reply.Write1((uint8_t)senderClient);
+	// 其餘 payload 直接複製
+	int payloadStart = origPacket.Position + 1; // 跳過原本的 receiver_idx byte
+	int forwardBytes = origPacket.PayloadLength - payloadStart;
+	if (forwardBytes > 0)
+	{
+		if (forwardBytes > NETMAXBUFFERSIZE - Reply.Position)
+			forwardBytes = NETMAXBUFFERSIZE - Reply.Position;
+		ForwardPacketBytes(Reply, origPacket.Data + payloadStart, forwardBytes);
+	}
+
+	SendNetPacket((unsigned int)receiverIdx, Reply);
+	m_shareLastActivityMs = GetTickCount();
+}
+
+void StepManiaLanServer::BroadcastShareProgress(unsigned int senderClient, int curBytes, int totalBytes)
+{
+	// 找出 receiver；若 senderClient 跟我們記錄的 m_shareSenderIdx 一致就直接用
+	int senderIdx = (int)senderClient;
+	int receiverIdx = m_shareReceiverIdx;
+	if (m_shareSenderIdx != senderIdx)
+	{
+		// sender 沒有透過 /share 啟動就送 progress；忽略以免影響 UI
+		LOG->Warn("[SHARE-SRV] progress from %u but expected sender=%d, ignore",
+			senderClient, m_shareSenderIdx);
+		return;
+	}
+	m_shareCurBytes = curBytes;
+	m_shareTotalBytes = totalBytes;
+	m_shareLastActivityMs = GetTickCount();
+
+	Reply.ClearPacket();
+	Reply.Write1(NSSProgress + NSServerOffset);
+	Reply.Write1((uint8_t)senderIdx);
+	Reply.Write1((uint8_t)receiverIdx);
+	Reply.Write4((uint32_t)curBytes);
+	Reply.Write4((uint32_t)totalBytes);
+	SendToAllClients(Reply);
+
+	if (totalBytes <= 0 || curBytes >= totalBytes)
+	{
+		LOG->Info("[SHARE-SRV] transfer complete sender=%d receiver=%d %d/%d",
+			senderIdx, receiverIdx, curBytes, totalBytes);
+		m_shareSenderIdx = -1;
+		m_shareReceiverIdx = -1;
+		m_shareCurBytes = 0;
+		m_shareTotalBytes = 0;
+	}
+}
+
+void StepManiaLanServer::CommandCancel(const unsigned int clientNum)
+{
+	// 只有 host (clientNum 0) 或目前 sender/receiver 可以發 /cancel
+	if (clientNum != 0 &&
+		(int)clientNum != m_shareSenderIdx &&
+		(int)clientNum != m_shareReceiverIdx)
+	{
+		ServerChatOne("Only host or transfer parties can cancel.", clientNum);
+		return;
+	}
+	if (m_shareSenderIdx < 0)
+	{
+		ServerChatOne("No share-song transfer in progress.", clientNum);
+		return;
+	}
+	DoServerCancelShare("/cancel by client " + std::to_string(clientNum));
+}
+
+void StepManiaLanServer::DoServerCancelShare(const CString& reason)
+{
+	if (m_shareSenderIdx < 0 && m_shareReceiverIdx < 0) return;
+	LOG->Info("[SHARE-SRV] cancel share sender=%d receiver=%d reason='%s'",
+		m_shareSenderIdx, m_shareReceiverIdx, reason.c_str());
+
+	// 通知雙方
+	Reply.ClearPacket();
+	Reply.Write1(NSSCancel + NSServerOffset);
+	Reply.Write1((uint8_t)(m_shareReceiverIdx >= 0 ? m_shareReceiverIdx : 0));
+	if (m_shareSenderIdx >= 0 && m_shareSenderIdx < (int)Client.size())
+	{
+		SendNetPacket((unsigned int)m_shareSenderIdx, Reply);
+		Client[m_shareSenderIdx]->usingShareSongSystem = false;
+		Client[m_shareSenderIdx]->shareAll = false;
+		Client[m_shareSenderIdx]->ShareNum = 0;
+	}
+	if (m_shareReceiverIdx >= 0 && m_shareReceiverIdx < (int)Client.size())
+	{
+		SendNetPacket((unsigned int)m_shareReceiverIdx, Reply);
+		Client[m_shareReceiverIdx]->usingShareSongSystem = false;
+	}
+
+	// 廣播一個「達成 total」的 progress，讓 UI 收掉進度條
+	if (m_shareTotalBytes > 0)
+	{
+		Reply.ClearPacket();
+		Reply.Write1(NSSProgress + NSServerOffset);
+		Reply.Write1((uint8_t)m_shareSenderIdx);
+		Reply.Write1((uint8_t)m_shareReceiverIdx);
+		Reply.Write4((uint32_t)m_shareTotalBytes);
+		Reply.Write4((uint32_t)m_shareTotalBytes);
+		SendToAllClients(Reply);
+	}
+
+	ServerChat("Share-song transfer cancelled (" + reason + ").");
+
+	m_shareSenderIdx = -1;
+	m_shareReceiverIdx = -1;
+	m_shareCurBytes = 0;
+	m_shareTotalBytes = 0;
+	m_shareLastActivityMs = 0;
+}
+
+void StepManiaLanServer::CheckShareTimeout()
+{
+	if (m_shareSenderIdx < 0) return;
+	// 30 秒沒有任何活動 -> 視為卡住，強制中止
+	const DWORD timeoutMs = 30000;
+	DWORD now = GetTickCount();
+	if (m_shareLastActivityMs == 0) m_shareLastActivityMs = now;
+	if (now - m_shareLastActivityMs >= timeoutMs)
+	{
+		LOG->Warn("[SHARE-SRV] timeout detected (%u ms idle) -> force cancel", now - m_shareLastActivityMs);
+		DoServerCancelShare("timeout");
 	}
 }
 void StepManiaLanServer::ShareAll(unsigned int ShareSongServerNum, CString ServerIp)
@@ -1252,13 +1579,21 @@ bool StepManiaLanServer::CheckConnection(const unsigned int clientNum)
 	
 	if ( clientNum >= Client.size() )
 	{
+		LOG->Warn("[NETDBG] SRV::CheckConnection#1 OOB clientNum=%u size=%u",
+			clientNum, (unsigned)Client.size());
 		AssignPlayerIDs();
 		SendUserList();
 		SendPlayerCondition();
 		return false;
 	}
+	if (Client[clientNum] == nullptr)
+	{
+		LOG->Warn("[NETDBG] SRV::CheckConnection#2 Client[%u] null", clientNum);
+		return false;
+	}
 	if (Client[clientNum]->clientSocket.IsError())
 	{
+		LOG->Warn("[NETDBG] SRV::CheckConnection#3 client=%u IsError, Disconnect", clientNum);
 		Disconnect(clientNum);
 		return false;
 	}
@@ -1267,12 +1602,21 @@ bool StepManiaLanServer::CheckConnection(const unsigned int clientNum)
 
 void StepManiaLanServer::SendUserList()
 {
+	LOG->Info("[NETDBG] SRV::SendUserList#1 size=%u", (unsigned)Client.size());
 	Reply.ClearPacket();
 	Reply.Write1(NSCUUL + NSServerOffset);
 	Reply.Write1( (uint8_t) Client.size()*2 );
 	Reply.Write1( (uint8_t) Client.size()*2 );
 
 	for (unsigned int x = 0; x < Client.size(); ++x)
+	{
+		if (Client[x] == nullptr)
+		{
+			LOG->Warn("[NETDBG] SRV::SendUserList#2 Client[%u] null, write empty", x);
+			Reply.Write1(0); Reply.WriteNT("");
+			Reply.Write1(0); Reply.WriteNT("");
+			continue;
+		}
 		for (int y = 0; y < 2; ++y)
 		{
 			if (Client[x]->Player[y].name.length() == 0)
@@ -1281,11 +1625,20 @@ void StepManiaLanServer::SendUserList()
 				Reply.Write1(1);
 			Reply.WriteNT(Client[x]->Player[y].name);
 		}
+	}
 
+	LOG->Info("[NETDBG] SRV::SendUserList#3 broadcast");
 	SendToAllClients(Reply);
+	LOG->Info("[NETDBG] SRV::SendUserList#4 done");
 }
 void StepManiaLanServer::SendPlayerCondition()
 {
+	LOG->Info("[NETDBG] SRV::SendPlayerCondition#1 size=%u", (unsigned)Client.size());
+	if (Client.empty())
+	{
+		LOG->Info("[NETDBG] SRV::SendPlayerCondition#2 empty Client, skip");
+		return;
+	}
 	Reply.ClearPacket();
 	Reply.Write1(NSCPC + NSServerOffset);
 	Reply.Write1( (uint8_t) Client.size() );
@@ -1294,6 +1647,11 @@ void StepManiaLanServer::SendPlayerCondition()
 	//2 = leave room
 	for (unsigned int x = 0; x < Client.size(); ++x)
 	{
+		if (Client[x] == nullptr)
+		{
+			LOG->Warn("[NETDBG] SRV::SendPlayerCondition#3 Client[%u] null, skip", x);
+			continue;
+		}
 		for (int y = 0; y < 2; ++y)
 		{
 			if (Client[x]->Player[y].name.empty())
@@ -1304,7 +1662,7 @@ void StepManiaLanServer::SendPlayerCondition()
 			PLAYER_CONDITION status = CONDITION_NORMAL;
 
 			if (!Client[x]->inNetMusicSelect) status = CONDITION_LEAVE_ROOM;
-			else if (!Client[0]->hasSong) status = CONDITION_NORMAL;
+			else if (Client[0] == nullptr || !Client[0]->hasSong) status = CONDITION_NORMAL;
 			else if (!Client[x]->hasSong) status = CONDITION_LACK_SONG;
 
 			Reply.Write1((int)status);
@@ -1318,7 +1676,7 @@ void StepManiaLanServer::SendPlayerCondition()
 		tmp.Write1(x);
 		SendNetPacket(x, tmp);
 	}
-		
+	LOG->Info("[NETDBG] SRV::SendPlayerCondition#4 done");
 	// SendToAllClients(Reply);
 }
 

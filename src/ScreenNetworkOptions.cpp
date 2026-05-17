@@ -90,7 +90,7 @@ void ScreenNetworkOptions::HandleScreenMessage( const ScreenMessage SM )
 			if (NSMAN->LANserver->ServerStart(NSMAN->LANserver->roomCode))
 			{
 				NSMAN->isLanServer = true;
-				// SCREENMAN->SystemMessage( "Server Started." );
+				ImportOptions();
 				std::string msg = "Server Started. Room Code: " + NSMAN->LANserver->roomCode;
 				SCREENMAN->SystemMessage(CString(msg.c_str())); // std::string → CString
 			}
@@ -110,7 +110,9 @@ void ScreenNetworkOptions::MenuStart( PlayerNumber pn, const InputEventType type
 		switch (m_Rows[GetCurrentRow()]->GetOneSharedSelection())
 		{
 		case NO_CONNECT:
-			SCREENMAN->TextEntry( SM_DoneConnecting, "Enter a Network Address\n127.0.0.1 to connect to yourself", "", NULL );
+			SCREENMAN->TextEntry( SM_DoneConnecting,
+				"Enter Room Code to join\n(or 127.0.0.1 for self-host)",
+				"", NULL );
 			break;
 		case NO_DISCONNECT:
 			NSMAN->CloseConnection();
@@ -126,10 +128,15 @@ void ScreenNetworkOptions::MenuStart( PlayerNumber pn, const InputEventType type
 				SCREENMAN->TextEntry( SM_ServerNameEnter, "Enter a server name...", "", NULL );
 			break;
 		case NO_STOP_SERVER:
-			if ( NSMAN->LANserver != NULL )
+			if (!NSMAN->isLanServer)
+				break;
+			if (NSMAN->LANserver != NULL)
 				NSMAN->LANserver->ServerStop();
-			SCREENMAN->SystemMessage( "Server Stopped." );
+			if (NSMAN->useSMserver)
+				NSMAN->CloseConnection();
 			NSMAN->isLanServer = false;
+			ImportOptions();
+			SCREENMAN->SystemMessage("Server Stopped.");
 			break;
 		}
 		break;
@@ -140,7 +147,10 @@ void ScreenNetworkOptions::MenuStart( PlayerNumber pn, const InputEventType type
 
 void ScreenNetworkOptions::ImportOptions()
 {
-
+	m_Rows[PO_CONNECTION]->SetOneSharedSelection(
+		NSMAN->useSMserver ? NO_DISCONNECT : NO_CONNECT);
+	m_Rows[PO_SERVER]->SetOneSharedSelection(
+		NSMAN->isLanServer ? NO_STOP_SERVER : NO_START_SERVER);
 }
 void ScreenNetworkOptions::ExportOptions()
 {

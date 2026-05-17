@@ -87,6 +87,9 @@ public:
 	CString lastError;
 	CString roomCode;
 	int lastErrorCode;
+#if !defined(WITHOUT_NETWORKING)
+	CSteamID GetLobbyId() { return server.GetLobbyId(); }
+#endif
 protected:
 #if !defined(WITHOUT_NETWORKING)
 	bool stop;
@@ -102,6 +105,12 @@ protected:
 	bool SecondSameSelect;
 	vector<CString> bannedIPs;
 	bool ChangeHost;
+	// === 分享歌曲傳輸狀態（同時間只允許一個 active 傳輸） ===
+	int m_shareSenderIdx;     // -1 表示沒有進行中的分享
+	int m_shareReceiverIdx;
+	int m_shareCurBytes;
+	int m_shareTotalBytes;
+	DWORD m_shareLastActivityMs; // 用 GetTickCount() 記錄最近一次活動，用來偵測 timeout
 	void Hello(PacketFunctions& Packet, const unsigned int clientNum);
 	void UpdateClients();
 	void NewClientCheck();
@@ -149,6 +158,16 @@ protected:
 	void ShareSong(unsigned int ShareSongServerNum, unsigned int ShareSongClientNum, CString ServerIp);
 	void ShareAll(unsigned int ShareSongServerNum, CString ServerIp);
 	bool CheckShare(unsigned int hostIdx, unsigned int clientIdx, bool shareAll);
+	// 分享傳輸：轉發 NSSMeta/NSSData/NSSDone/NSSCancel 給 receiver
+	void ForwardShareToReceiver(PacketFunctions& origPacket, int cmd, unsigned int senderClient);
+	// 收到 NSSProgress -> 廣播給所有 client
+	void BroadcastShareProgress(unsigned int senderClient, int curBytes, int totalBytes);
+	// /cancel 指令處理
+	void CommandCancel(const unsigned int clientNum);
+	// 取消目前的分享 (server-initiated)，會通知雙方
+	void DoServerCancelShare(const CString& reason);
+	// 每個 server tick 偵測是否 timeout
+	void CheckShareTimeout();
 #endif
 };
 

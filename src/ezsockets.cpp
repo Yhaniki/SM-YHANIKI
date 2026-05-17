@@ -38,6 +38,26 @@ static std::mutex g_connMapMutex;
 bool g_steamReady = false;
 EzSockets* g_serverEzSocketsInstance = nullptr;
 
+static void ClearSteamLoopbackQueues()
+{
+	{
+		std::lock_guard<std::mutex> lock(g_clientToServerMutex);
+		while (!g_clientToServerQueue.empty())
+		{
+			g_clientToServerQueue.front()->Release();
+			g_clientToServerQueue.pop();
+		}
+	}
+	{
+		std::lock_guard<std::mutex> lock(g_serverToClientMutex);
+		while (!g_serverToClientQueue.empty())
+		{
+			g_serverToClientQueue.front()->Release();
+			g_serverToClientQueue.pop();
+		}
+	}
+}
+
 bool SendMessageWithLoopbackSupport(RoleType role,
 									const SteamNetworkingIdentity &id,
 									const void *data,
@@ -295,30 +315,106 @@ bool EzSockets::accept(EzSockets& socket)
 
 void EzSockets::close()
 {
-	if (m_lobbyID.IsValid())
+	LOG->Info("[NETDBG] EZ::close#1 this=%p useSteam=%d role=%d m_conn=%u m_conns.size=%u listenSock=%llu lobbyID=%llu",
+		(void*)this, (int)m_useSteamNetworking, (int)m_roleType,
+		(unsigned)m_conn, (unsigned)m_conns.size(),
+		(unsigned long long)m_listenSock,
+		m_lobbyID.ConvertToUint64());
+
+	if (m_useSteamNetworking)
 	{
-		ISteamMatchmaking* matchmaking = SteamMatchmaking();
-		if (matchmaking != nullptr)
+		ISteamNetworkingSockets* pSockets = SteamNetworkingSockets();
+		if (pSockets != nullptr)
 		{
-			matchmaking->LeaveLobby(m_lobbyID);
-			m_lobbyID.Clear();
-			m_LobbyJoined = false;
-			LOG->Info("Left Steam Lobby during close().");
+			for (HSteamNetConnection conn : m_conns)
+			{
+				if (conn != k_HSteamNetConnection_Invalid)
+				{
+					LOG->Info("[NETDBG] EZ::close#2 closing m_conns conn=%u", (unsigned)conn);
+					pSockets->CloseConnection(conn, k_ESteamNetConnectionEnd_App_Generic, "Room closed", false);
+					std::lock_guard<std::mutex> lock(g_connMapMutex);
+					g_connToInstanceMap.erase(conn);
+				}
+			}
+			m_conns.clear();
+
+			if (m_conn != k_HSteamNetConnection_Invalid)
+			{
+				LOG->Info("[NETDBG] EZ::close#3 closing m_conn=%u", (unsigned)m_conn);
+				pSockets->CloseConnection(m_conn, k_ESteamNetConnectionEnd_App_Generic, "Room closed", false);
+				std::lock_guard<std::mutex> lock(g_connMapMutex);
+				g_connToInstanceMap.erase(m_conn);
+				m_conn = k_HSteamNetConnection_Invalid;
+			}
+
+			if (m_listenSock != k_HSteamListenSocket_Invalid)
+			{
+				LOG->Info("[NETDBG] EZ::close#4 closing listen socket=%llu", (unsigned long long)m_listenSock);
+				pSockets->CloseListenSocket(m_listenSock);
+				m_listenSock = k_HSteamListenSocket_Invalid;
+			}
+
+			SteamAPI_RunCallbacks();
+			pSockets->RunCallbacks();
 		}
-		else
+
+		const bool wasServerInstance = (g_serverEzSocketsInstance == this);
+		if (wasServerInstance)
 		{
-			LOG->Warn("SteamMatchmaking() returned null in EzSockets::close()");
+			LOG->Info("[NETDBG] EZ::close#5 clearing g_serverEzSocketsInstance");
+			g_serverEzSocketsInstance = nullptr;
 		}
+
+		// [NETDBG] BUG FIX：只有真正的 server EzSockets 物件（持有 listen socket、g_serverEzSocketsInstance）
+		// 才 clear loopback queue。否則 GameClient::clientSocket 被 delete 時會把 host 自己 self-host 的
+		// loopback queue 全部清掉，造成 self-host 通訊中斷。
+		if (wasServerInstance)
+		{
+			LOG->Info("[NETDBG] EZ::close#6 clearing loopback queues (real server)");
+			ClearSteamLoopbackQueues();
+		}
+
+		if (m_lobbyID.IsValid())
+		{
+			ISteamMatchmaking* matchmaking = SteamMatchmaking();
+			if (matchmaking != nullptr)
+			{
+				LOG->Info("[NETDBG] EZ::close#7 LeaveLobby=%llu", m_lobbyID.ConvertToUint64());
+				matchmaking->LeaveLobby(m_lobbyID);
+				m_lobbyID.Clear();
+				m_LobbyJoined = false;
+			}
+			else
+			{
+				LOG->Warn("[NETDBG] EZ::close#8 SteamMatchmaking() returned null");
+			}
+		}
+
+		m_connected = false;
+		m_lobbyCreated = false;
+		m_lobbySuccess = false;
+		m_lobbyListReturned = false;
+		m_lobbyFound = false;
+		m_hostSteamID.Clear();
+		m_selfSteamID.Clear();
+		m_roleType = ROLE_UNKNOWN;
+		m_roomCode.clear();
+		m_roomCodeTmp.clear();
+		m_lobbySearchAwaitingSerial = 0;
 	}
+
 	state = skDISCONNECTED;
 	inBuffer = "";
 	outBuffer = "";
-	
+
 #if defined(WIN32) // The close socket command is different in Windows
-	::closesocket(sock);
+	if (sock > 0)
+		::closesocket(sock);
 #else
-	::close(sock);
+	if (sock > 0)
+		::close(sock);
 #endif
+	sock = -1;
 }
 
 long EzSockets::uAddr()
@@ -363,8 +459,18 @@ bool EzSockets::CanRead()
 		id.SetSteamID(m_hostSteamID);
 		SteamNetworkingMessage_t* msg = nullptr;
 		// int count = SteamNetworkingMessages()->ReceiveMessagesOnChannel(0, &msg, 1);
-		int count = ReceiveMessageWithLoopbackSupport(m_roleType, id, m_conn, 0, &msg);
+		// [NETDBG] BUG FIX：原本呼叫順序錯誤 (m_roleType, id, m_conn, 0, &msg)
+		// signature 是 (role, id, channel, conn, ppOutMessage)
+		// 等於把 m_conn 當成 channel，把 0 (invalid handle) 當成 conn
+		// self-host 時 m_conn==0 巧合下走 loopback queue 看起來正常
+		// 但 remote client (m_conn=3608401646) 會走 ReceiveMessagesOnConnection(conn=0)
+		// → invalid handle 永遠收不到資料！這就是 server 端收不到 remote client 訊息的真正原因
+		int count = ReceiveMessageWithLoopbackSupport(m_roleType, id, 0, m_conn, &msg);
 		if (count <= 0 || !msg) return false;
+
+		LOG->Info("[NETDBG] EZ::CanRead#1 got %d bytes role=%d host=%llu conn=%u",
+			(int)msg->m_cbSize, (int)m_roleType,
+			m_hostSteamID.ConvertToUint64(), (unsigned)m_conn);
 
 		// Append to input buffer
 		inBuffer.append((const char*)msg->m_pData, msg->m_cbSize);
@@ -459,6 +565,13 @@ void EzSockets::SendData(const char *data, unsigned int bytes)
 {
 	if (m_useSteamNetworking && m_hostSteamID.IsValid())
 	{
+		LOG->Info("[NETDBG] EZ::SendData#1 steam mode role=%d host=%llu self=%llu bytes=%u conn=%u",
+			(int)m_roleType,
+			m_hostSteamID.ConvertToUint64(),
+			m_selfSteamID.ConvertToUint64(),
+			bytes,
+			(unsigned)m_conn);
+
 		// Always assemble [header][payload] if outBuffer has pending header
 		std::vector<char> fullPacket;
 
@@ -499,7 +612,9 @@ void EzSockets::SendData(const char *data, unsigned int bytes)
 		);
 
 		if (!ok)
-			LOG->Warn("SendMessageToUser failed in SendData");
+			LOG->Warn("[NETDBG] EZ::SendData#2 SendMessageToUser failed");
+		else
+			LOG->Info("[NETDBG] EZ::SendData#3 sent OK");
 
 		return;
 	}
@@ -751,19 +866,47 @@ CString EzSockets::getIp()
 
 static void OnSteamNetConnectionStatusChangedForwarder(SteamNetConnectionStatusChangedCallback_t* pInfo)
 {
-	std::lock_guard<std::mutex> lock(g_connMapMutex);
+	LOG->Info("[NETDBG] EZ::Forwarder#1 enter conn=%u state=%d",
+		(unsigned)pInfo->m_hConn, (int)pInfo->m_info.m_eState);
 
-	// 如果這個連線尚未登記，就嘗試幫忙找對應 EzSockets
-	auto it = g_connToInstanceMap.find(pInfo->m_hConn);
-	if (it != g_connToInstanceMap.end()) {
-		it->second->OnSteamNetConnectionStatusChanged(pInfo);
-	}
-	else {
-		// 新連線進來但尚未註冊，這裡你可以手動指定 server 實例來接管，例如：
-		if (g_serverEzSocketsInstance) {
-			g_connToInstanceMap[pInfo->m_hConn] = g_serverEzSocketsInstance;
-			g_serverEzSocketsInstance->OnSteamNetConnectionStatusChanged(pInfo);
+	// [NETDBG] BUG FIX：原本在持有 g_connMapMutex 的情況下直接 dispatch 到
+	// OnSteamNetConnectionStatusChanged，而後者內部又會嘗試 lock 同一個 mutex
+	// → Windows std::mutex 不是 recursive，重複 lock 會 throw std::system_error
+	// "device or resource busy"（EBUSY），這就是兩邊閃退的真正原因！
+	// 修法：先在 lock 內查/補 map，記下要 dispatch 的物件，釋放 lock 後再 dispatch。
+	EzSockets* targetInstance = nullptr;
+	{
+		std::lock_guard<std::mutex> lock(g_connMapMutex);
+
+		auto it = g_connToInstanceMap.find(pInfo->m_hConn);
+		if (it != g_connToInstanceMap.end()) {
+			LOG->Info("[NETDBG] EZ::Forwarder#2 conn=%u mapped to instance=%p, dispatching",
+				(unsigned)pInfo->m_hConn, (void*)it->second);
+			if (it->second == nullptr)
+			{
+				LOG->Warn("[NETDBG] EZ::Forwarder#3 mapped instance is NULL! Skipping dispatch");
+				return;
+			}
+			targetInstance = it->second;
 		}
+		else {
+			LOG->Info("[NETDBG] EZ::Forwarder#4 conn=%u not mapped, server instance=%p",
+				(unsigned)pInfo->m_hConn, (void*)g_serverEzSocketsInstance);
+			if (g_serverEzSocketsInstance) {
+				g_connToInstanceMap[pInfo->m_hConn] = g_serverEzSocketsInstance;
+				targetInstance = g_serverEzSocketsInstance;
+			}
+			else
+			{
+				LOG->Warn("[NETDBG] EZ::Forwarder#5 no server instance to receive conn=%u",
+					(unsigned)pInfo->m_hConn);
+			}
+		}
+	}
+
+	if (targetInstance)
+	{
+		targetInstance->OnSteamNetConnectionStatusChanged(pInfo);
 	}
 }
 
@@ -803,6 +946,139 @@ void EzSockets::Reset()
 	m_listenSock = k_HSteamListenSocket_Invalid;
 	m_conn = k_HSteamNetConnection_Invalid;
 	m_conns.clear();
+	m_lobbySearchSerial = 0;
+	m_lobbySearchAwaitingSerial = 0;
+	m_targetLobbyID.Clear();
+}
+
+static std::string TrimRoomCode(const std::string& code)
+{
+	const char* ws = " \t\r\n";
+	const size_t start = code.find_first_not_of(ws);
+	if (start == std::string::npos)
+		return "";
+	const size_t end = code.find_last_not_of(ws);
+	return code.substr(start, end - start + 1);
+}
+
+bool EzSockets::establishP2PConnection()
+{
+	LOG->Info("[NETDBG] EZ::P2P#1 begin host=%llu valid=%d",
+		m_hostSteamID.ConvertToUint64(), (int)m_hostSteamID.IsValid());
+	if (!m_hostSteamID.IsValid())
+	{
+		LOG->Warn("[NETDBG] EZ::P2P#2 hostSteamID invalid, abort");
+		return false;
+	}
+
+	m_connected = false;
+	m_conn = k_HSteamNetConnection_Invalid;
+
+	SteamNetworkingIdentity id;
+	id.SetSteamID(m_hostSteamID);
+	HSteamNetConnection conn = SteamNetworkingSockets()->ConnectP2P(id, 0, 0, nullptr);
+	LOG->Info("[NETDBG] EZ::P2P#3 ConnectP2P returned conn=%u", (unsigned)conn);
+	if (conn != k_HSteamNetConnection_Invalid)
+	{
+		std::lock_guard<std::mutex> lock(g_connMapMutex);
+		g_connToInstanceMap[conn] = this;
+		LOG->Info("[NETDBG] EZ::P2P#4 mapped conn->this");
+	}
+
+	const int waitTimeoutMs = 15000;
+	int waitMs = 0;
+	while (m_conn == k_HSteamNetConnection_Invalid && waitMs < waitTimeoutMs)
+	{
+		SteamAPI_RunCallbacks();
+		SteamNetworkingSockets()->RunCallbacks();
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		waitMs += 100;
+		if ((waitMs % 2000) == 0)
+			LOG->Info("[NETDBG] EZ::P2P#5 waiting connection... %dms (LobbyJoined=%d connected=%d)",
+				waitMs, (int)m_LobbyJoined, (int)m_connected);
+	}
+
+	LOG->Info("[NETDBG] EZ::P2P#6 wait done LobbyJoined=%d connected=%d m_conn=%u (waited %dms)",
+		(int)m_LobbyJoined, (int)m_connected, (unsigned)m_conn, waitMs);
+
+	if (m_LobbyJoined && m_connected)
+		state = skCONNECTED;
+	return m_LobbyJoined && m_connected;
+}
+
+void EzSockets::tryMarkAlreadyInLobby(CSteamID lobbyID)
+{
+	if (!lobbyID.IsValid() || m_LobbyJoined)
+		return;
+
+	const int count = SteamMatchmaking()->GetNumLobbyMembers(lobbyID);
+	const CSteamID self = SteamUser()->GetSteamID();
+	for (int i = 0; i < count; ++i)
+	{
+		if (SteamMatchmaking()->GetLobbyMemberByIndex(lobbyID, i) == self)
+		{
+			m_lobbyID = lobbyID;
+			m_LobbyJoined = true;
+			m_hostSteamID = SteamMatchmaking()->GetLobbyOwner(lobbyID);
+			m_selfSteamID = self;
+			if (m_roomCode.empty())
+				m_roomCode = SteamMatchmaking()->GetLobbyData(lobbyID, "room_code");
+			LOG->Info("Already in lobby, skipping JoinLobby.");
+			return;
+		}
+	}
+}
+
+bool EzSockets::attachToLobby(CSteamID lobbyID)
+{
+	LOG->Info("[NETDBG] EZ::attachToLobby#1 lobbyID=%llu valid=%d",
+		lobbyID.ConvertToUint64(), (int)lobbyID.IsValid());
+	if (!lobbyID.IsValid())
+		return false;
+	if (!m_useSteamNetworking && !InitializeSteamNetworking())
+	{
+		LOG->Warn("[NETDBG] EZ::attachToLobby#2 Steam not ready");
+		return false;
+	}
+
+	InitStatusChanged();
+	ClearSteamLoopbackQueues();
+
+	m_roleType = ROLE_CLIENT;
+	m_connected = false;
+	m_conn = k_HSteamNetConnection_Invalid;
+	m_lobbyID = lobbyID;
+	m_LobbyJoined = true;
+	m_hostSteamID = SteamMatchmaking()->GetLobbyOwner(lobbyID);
+	m_selfSteamID = SteamUser()->GetSteamID();
+	m_roomCode = SteamMatchmaking()->GetLobbyData(lobbyID, "room_code");
+	m_roomCodeTmp = m_roomCode;
+	m_targetLobbyID = lobbyID;
+
+	LOG->Info("[NETDBG] EZ::attachToLobby#3 host=%llu self=%llu room_code=%s",
+		m_hostSteamID.ConvertToUint64(), m_selfSteamID.ConvertToUint64(), m_roomCode.c_str());
+
+	// Self-host: data flows through loopback queues, no real Steam P2P needed.
+	if (m_hostSteamID == m_selfSteamID)
+	{
+		LOG->Info("[NETDBG] EZ::attachToLobby#4 self-host loopback path");
+		m_connected = true;
+		state = skCONNECTED;
+		// Drive a few callback ticks so the server side sees the lobby member
+		for (int i = 0; i < 4; ++i)
+		{
+			SteamAPI_RunCallbacks();
+			SteamNetworkingSockets()->RunCallbacks();
+			Sleep(25);
+		}
+		LOG->Info("[NETDBG] EZ::attachToLobby#5 self-host done");
+		return true;
+	}
+
+	LOG->Info("[NETDBG] EZ::attachToLobby#6 remote host -> establishP2PConnection");
+	bool ok = establishP2PConnection();
+	LOG->Info("[NETDBG] EZ::attachToLobby#7 P2P result=%d", (int)ok);
+	return ok;
 }
 
 // Initialize Steam network functions
@@ -850,24 +1126,31 @@ void EzSockets::OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChange
 {
 	const auto &info = pInfo->m_info;
 
-    LOG->Info(">>> OnSteamNetConnectionStatusChanged triggered!");
-    LOG->Info("  Conn: %d", pInfo->m_hConn);
-    LOG->Info("  New state: (%d) %s", (int)info.m_eState, GetStateName(info.m_eState));
-    LOG->Info("  Reason: %d - %s", info.m_eEndReason, info.m_szEndDebug);
+    LOG->Info("[NETDBG] EZ::ConnStatus#1 conn=%u role=%d newState=(%d)%s reason=%d debug=%s remoteID=%llu",
+        (unsigned)pInfo->m_hConn,
+        (int)m_roleType,
+        (int)info.m_eState,
+        GetStateName(info.m_eState),
+        info.m_eEndReason,
+        info.m_szEndDebug,
+        (unsigned long long)info.m_identityRemote.GetSteamID().ConvertToUint64());
 
     switch (info.m_eState)
     {
     case k_ESteamNetworkingConnectionState_Connecting:
         if (m_roleType == ROLE_SERVER) {
-            if (SteamNetworkingSockets()->AcceptConnection(pInfo->m_hConn) == k_EResultOK)
+            EResult ar = SteamNetworkingSockets()->AcceptConnection(pInfo->m_hConn);
+            LOG->Info("[NETDBG] EZ::ConnStatus#2 server AcceptConnection result=%d", (int)ar);
+            if (ar == k_EResultOK)
             {
                 m_conns.push_back(pInfo->m_hConn);
                 m_updated = true;
-                LOG->Info("[Server] First client accepted.");
+                LOG->Info("[NETDBG] EZ::ConnStatus#3 server accepted, m_conns.size=%u",
+                    (unsigned)m_conns.size());
             }
             else
             {
-                LOG->Warn("[Server] Failed to accept first client.");
+                LOG->Warn("[NETDBG] EZ::ConnStatus#4 server FAILED to accept");
             }
         }
         break;
@@ -876,13 +1159,17 @@ void EzSockets::OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChange
         if (m_roleType == ROLE_CLIENT) {
             m_connected = true;
             m_conn = pInfo->m_hConn;
+            LOG->Info("[NETDBG] EZ::ConnStatus#5 client connected, m_conn=%u", (unsigned)m_conn);
         }
-        LOG->Info("[Server] Client fully connected.");
+        else
+        {
+            LOG->Info("[NETDBG] EZ::ConnStatus#6 server side, peer connected conn=%u", (unsigned)pInfo->m_hConn);
+        }
         break;
 
     case k_ESteamNetworkingConnectionState_ClosedByPeer:
     case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
-        LOG->Info("[Server] Connection closed.");
+        LOG->Info("[NETDBG] EZ::ConnStatus#7 connection closed/problem conn=%u", (unsigned)pInfo->m_hConn);
         break;
     }
 
@@ -891,6 +1178,7 @@ void EzSockets::OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChange
     {
         std::lock_guard<std::mutex> lock(g_connMapMutex);
         g_connToInstanceMap.erase(pInfo->m_hConn);
+        LOG->Info("[NETDBG] EZ::ConnStatus#8 erased conn=%u from g_connToInstanceMap", (unsigned)pInfo->m_hConn);
     }
 }
 
@@ -913,7 +1201,6 @@ bool EzSockets::create(CString roomCode)
 	// Create lobby
 	SteamMatchmaking()->CreateLobby(k_ELobbyTypePublic, 4);
 
-	// Wait for callback to return or timeout
 	int waited = 0;
 	while (!m_lobbyCreated && waited < timeoutMs)
 	{
@@ -935,75 +1222,91 @@ bool EzSockets::create(CString roomCode)
 
 bool EzSockets::connect(const string& roomCode)
 {
+	LOG->Info("[NETDBG] EZ::connect#1 begin roomCode='%s'", roomCode.c_str());
 	Reset();
 	if (!m_useSteamNetworking) 
 		InitializeSteamNetworking();
 	InitStatusChanged();
-	m_roomCodeTmp = roomCode;
+	m_roomCodeTmp = TrimRoomCode(roomCode);
+	if (m_roomCodeTmp.empty())
+	{
+		LOG->Warn("[NETDBG] EZ::connect#2 empty room code");
+		return false;
+	}
 	m_lobbyFound = false;
 	m_roleType = ROLE_CLIENT;
 	m_connected = false;
-	// If you are already in the correct room, return true directly
-	if (m_lobbyID.IsValid())
+	m_lobbyListReturned = false;
+	m_lobbySearchAwaitingSerial = 0;
+	m_targetLobbyID.Clear();
+
+	// Drain stale Steam lobby callbacks from a previous session
+	for (int i = 0; i < 10; ++i)
 	{
-		std::string currentCode = SteamMatchmaking()->GetLobbyData(m_lobbyID, "room_code");
-		if (currentCode == m_roomCodeTmp)
-		{
-			LOG->Info("Already in target lobby with room code: %s", m_roomCodeTmp.c_str());
-			state = skCONNECTED;
-			return true;
-		}
+		SteamAPI_RunCallbacks();
+		SteamNetworkingSockets()->RunCallbacks();
+		Sleep(25);
 	}
+
+	m_lobbySearchSerial++;
+	m_lobbyListReturned = false;
+	m_lobbyFound = false;
+	m_lobbySearchAwaitingSerial = m_lobbySearchSerial;
+
+	LOG->Info("Searching Steam lobby with room_code=%s", m_roomCodeTmp.c_str());
 	SteamMatchmaking()->AddRequestLobbyListStringFilter("room_code", m_roomCodeTmp.c_str(), k_ELobbyComparisonEqual);
 	SteamMatchmaking()->RequestLobbyList();
 
-	// Wait for OnLobbyMatchList callback to return
-	const int timeoutMs = 5000;
+	const int timeoutMs = 10000;
 	int waited = 0;
 	while (!m_lobbyListReturned && waited < timeoutMs)
 	{
 		SteamAPI_RunCallbacks();
+		SteamNetworkingSockets()->RunCallbacks();
 		Sleep(100);
 		waited += 100;
 	}
-	if (!m_lobbyListReturned || !m_lobbyFound) return false;
-	// If a lobby is found and successfully joined, OnLobbyMatchList will trigger JoinLobby
-	// Now continue to wait for OnLobbyEnter to successfully enter the room
+	m_lobbySearchAwaitingSerial = 0;
+
+	if (!m_lobbyListReturned || !m_lobbyFound)
+	{
+		LOG->Warn("[NETDBG] EZ::connect#3 Lobby search failed (returned=%d found=%d)",
+			m_lobbyListReturned ? 1 : 0, m_lobbyFound ? 1 : 0);
+		return false;
+	}
+	LOG->Info("[NETDBG] EZ::connect#4 lobby found, waiting JoinLobby callback");
+
 	waited = 0;
 	while (!m_LobbyJoined && waited < timeoutMs)
 	{
 		SteamAPI_RunCallbacks();
+		SteamNetworkingSockets()->RunCallbacks();
 		Sleep(100);
 		waited += 100;
 	}
 
-	if(m_LobbyJoined)
+	if (!m_LobbyJoined && m_targetLobbyID.IsValid())
 	{
-		const int waitTimeoutMs = 15000;
-		SteamNetworkingIdentity id;
-		id.SetSteamID(m_hostSteamID);
-		HSteamNetConnection conn = SteamNetworkingSockets()->ConnectP2P(id, 0, 0, nullptr);
-		if (conn != k_HSteamNetConnection_Invalid) {
-			{
-				std::lock_guard<std::mutex> lock(g_connMapMutex);
-				g_connToInstanceMap[conn] = this;  // 註冊本 EzSockets 實例
-			}
-			// m_conns.push_back(conn);  // 可選：紀錄起來方便管理
-		}
-		int waitMs = 0;
-		if (!m_useSteamNetworking) return false;
-		while (m_conn == k_HSteamNetConnection_Invalid &&
-			   waitMs < waitTimeoutMs)
-		{
-			SteamAPI_RunCallbacks();
-			SteamNetworkingSockets()->RunCallbacks();
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			waitMs += 100;
-		}
+		LOG->Info("[NETDBG] EZ::connect#5 tryMarkAlreadyInLobby");
+		tryMarkAlreadyInLobby(m_targetLobbyID);
 	}
-	
-	if(m_LobbyJoined && m_connected) state = skCONNECTED;
-	return m_LobbyJoined && m_connected;
+
+	if (!m_LobbyJoined)
+	{
+		LOG->Warn("[NETDBG] EZ::connect#6 Failed to enter lobby after match.");
+		return false;
+	}
+	LOG->Info("[NETDBG] EZ::connect#7 lobby joined, host=%llu",
+		m_hostSteamID.ConvertToUint64());
+
+	if (!establishP2PConnection())
+	{
+		LOG->Warn("[NETDBG] EZ::connect#8 Lobby joined but P2P connection failed.");
+		return false;
+	}
+	LOG->Info("[NETDBG] EZ::connect#9 done OK");
+
+	return true;
 }
 
 void EzSockets::OnLobbyCreated(LobbyCreated_t* pCallback)
@@ -1015,8 +1318,8 @@ void EzSockets::OnLobbyCreated(LobbyCreated_t* pCallback)
 		m_lobbySuccess = true;
 		m_lobbyID = pCallback->m_ulSteamIDLobby;
 
-		// Set custom lobby data for room code
-		// SteamMatchmaking()->SetLobbyData(m_lobbyID, "room_code", m_roomCode.c_str());
+		if (!m_roomCode.empty())
+			SteamMatchmaking()->SetLobbyData(m_lobbyID, "room_code", m_roomCode.c_str());
 
 		LOG->Info("Lobby created successfully: %llu", m_lobbyID.ConvertToUint64());
 	}
@@ -1029,21 +1332,37 @@ void EzSockets::OnLobbyCreated(LobbyCreated_t* pCallback)
 
 void EzSockets::OnLobbyMatchList(LobbyMatchList_t* pCallback)
 {
+	LOG->Info("[NETDBG] EZ::OnLobbyMatchList#1 role=%d roomCodeTmp='%s' matches=%u awaitingSerial=%u",
+		(int)m_roleType, m_roomCodeTmp.c_str(),
+		(unsigned)pCallback->m_nLobbiesMatching, (unsigned)m_lobbySearchAwaitingSerial);
+	if (m_roleType != ROLE_CLIENT || m_roomCodeTmp.empty())
+		return;
+	if (m_lobbySearchAwaitingSerial == 0)
+		return;
+
 	m_lobbyListReturned = true;
 	int matches = pCallback->m_nLobbiesMatching;
 	for (int i = 0; i < matches; ++i) {
 		CSteamID lobbyID = SteamMatchmaking()->GetLobbyByIndex(i);
 		std::string lobbyCode = SteamMatchmaking()->GetLobbyData(lobbyID, "room_code");
+		LOG->Info("[NETDBG] EZ::OnLobbyMatchList#2 candidate lobby=%llu code='%s'",
+			lobbyID.ConvertToUint64(), lobbyCode.c_str());
 		if (lobbyCode == m_roomCodeTmp) {
 			m_lobbyFound = true;
 			m_roomCode = lobbyCode;
-			// If you are already in the same lobby, don't join
+			m_targetLobbyID = lobbyID;
 			if (m_lobbyID.IsValid() && m_lobbyID == lobbyID)
+			{
+				LOG->Info("[NETDBG] EZ::OnLobbyMatchList#3 already in this lobby, tryMarkAlreadyInLobby");
+				tryMarkAlreadyInLobby(lobbyID);
 				return;
+			}
+			LOG->Info("[NETDBG] EZ::OnLobbyMatchList#4 calling JoinLobby");
 			SteamMatchmaking()->JoinLobby(lobbyID);
 			return;
 		}
 	}
+	LOG->Info("[NETDBG] EZ::OnLobbyMatchList#5 no matching code");
 }
 
 std::wstring Utf8ToWide(const std::string& str)
@@ -1056,10 +1375,16 @@ void EzSockets::OnLobbyEnter(LobbyEnter_t* pCallback)
 {
 	m_lobbyID = pCallback->m_ulSteamIDLobby;
 	m_LobbyJoined = true;
+	LOG->Info("[NETDBG] EZ::OnLobbyEnter#1 lobby=%llu response=%d",
+		m_lobbyID.ConvertToUint64(), (int)pCallback->m_EChatRoomEnterResponse);
+
+	if (m_roomCode.empty())
+		m_roomCode = SteamMatchmaking()->GetLobbyData(m_lobbyID, "room_code");
 
 	if (SteamMatchmaking()->GetLobbyOwner(m_lobbyID) == SteamUser()->GetSteamID())
 	{
-		SteamMatchmaking()->SetLobbyData(m_lobbyID, "room_code", m_roomCode.c_str());
+		if (!m_roomCode.empty())
+			SteamMatchmaking()->SetLobbyData(m_lobbyID, "room_code", m_roomCode.c_str());
 	}
 	CSteamID self = SteamUser()->GetSteamID();
 	std::string name = SteamFriends()->GetFriendPersonaName(self);
@@ -1068,11 +1393,17 @@ void EzSockets::OnLobbyEnter(LobbyEnter_t* pCallback)
 	m_hostSteamID = hostID;  // All clients send data to the host
 	m_selfSteamID = self;
 	m_updated = true;
+	LOG->Info("[NETDBG] EZ::OnLobbyEnter#2 host=%llu self=%llu role=%d",
+		m_hostSteamID.ConvertToUint64(), m_selfSteamID.ConvertToUint64(), (int)m_roleType);
 	// UpdateLobbyMembers();
 }
 
 void EzSockets::OnLobbyChatUpdate(LobbyChatUpdate_t* pCallback)
 {
+	LOG->Info("[NETDBG] EZ::OnLobbyChatUpdate#1 changedUser=%llu makingChange=%llu stateChange=%u",
+		(unsigned long long)pCallback->m_ulSteamIDUserChanged,
+		(unsigned long long)pCallback->m_ulSteamIDMakingChange,
+		(unsigned)pCallback->m_rgfChatMemberStateChange);
 	m_updated = true;
 	// UpdateLobbyMembers();
 }

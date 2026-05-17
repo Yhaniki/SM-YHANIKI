@@ -161,6 +161,7 @@ public:
 	void InitStatusChanged();
 	bool create(CString roomCode);
 	bool connect(const string& roomCode);
+	bool attachToLobby(CSteamID lobbyID);
 	bool CheckUpdate(){return m_updated;}
 	void ClearUpdate(){m_updated = false;}
 	CSteamID GetLobbyId() { return m_lobbyID; }
@@ -173,6 +174,8 @@ public:
 private:
 	void Reset();
 	void SetupSteamCallbacks();
+	bool establishP2PConnection();
+	void tryMarkAlreadyInLobby(CSteamID lobbyID);
 
 	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyCreated, LobbyCreated_t, m_LobbyCreatedCallback);
 	STEAM_CALLBACK_MANUAL(EzSockets, OnLobbyMatchList, LobbyMatchList_t, m_LobbyMatchCallback);
@@ -187,6 +190,7 @@ private:
 	bool m_callbacksRegistered;
 	bool m_updated;
 	CSteamID m_lobbyID;
+	CSteamID m_targetLobbyID;
 	std::string m_roomCode;
 	std::string m_roomCodeTmp;
 	CSteamID m_hostSteamID;
@@ -197,6 +201,8 @@ private:
 	HSteamNetConnection m_connHdl;
 	bool m_connected;
 	bool m_isInitialized;
+	uint32_t m_lobbySearchSerial;
+	uint32_t m_lobbySearchAwaitingSerial;
 };
 
 istream& operator>>(istream& is, EzSockets& obj);

@@ -77,6 +77,10 @@ private:
 	Quad			m_rectUsersBG;
 	BitmapText		m_textUsers[NETMAXPLAYERS];
 	BitmapText		m_textUsersNum[NETMAXPLAYERS];
+	// 分享歌曲進度條 (位於使用者名稱下方)。每位玩家一條，背景 + 填充。
+	Quad			m_rectShareBarBG[NETMAXPLAYERS];
+	Quad			m_rectShareBarFill[NETMAXPLAYERS];
+	BitmapText		m_textShareLabel[NETMAXPLAYERS];
 	int				m_iCurrentPlayer;
 	int				m_iActivePlayers;
 	
