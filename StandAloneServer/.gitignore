@@ -1,0 +1,14 @@
+# Build intermediates
+Debug/
+Release/
+*.tlog
+*.obj
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.lib
+*.recipe
+*.suo
+*.user
+.vs/

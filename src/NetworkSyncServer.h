@@ -5,7 +5,12 @@
 
 #if !defined(WITHOUT_NETWORKING)
 #include "ezsockets.h"
-#define NETMAXBUFFERSIZE 1020
+// 這裡原本有個重複 #define NETMAXBUFFERSIZE 1020，會覆蓋 NetworkSyncManager.h 的 const int。
+// 為了讓 share song 提速生效，這裡也必須一起放大到跟 NetworkSyncManager.h 同步的 65500。
+// 與其在兩處維護同一個常數，乾脆改用 NetworkSyncManager.h 已宣告的 const int 即可。
+#ifndef NETMAXBUFFERSIZE
+#define NETMAXBUFFERSIZE 65500
+#endif
 
 class LanPlayer
 {
@@ -162,6 +167,8 @@ protected:
 	void ForwardShareToReceiver(PacketFunctions& origPacket, int cmd, unsigned int senderClient);
 	// 收到 NSSProgress -> 廣播給所有 client
 	void BroadcastShareProgress(unsigned int senderClient, int curBytes, int totalBytes);
+	// 收到 NSSXferAck (receiver 端回報它真實收到的 bytes) -> 廣播 + 轉發給 sender
+	void HandleRecvAck(unsigned int receiverClient, int recvBytes, int totalBytes);
 	// /cancel 指令處理
 	void CommandCancel(const unsigned int clientNum);
 	// /help 列出所有指令

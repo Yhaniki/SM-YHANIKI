@@ -170,6 +170,7 @@ public:
 	void SetHostId(CSteamID id) {m_hostSteamID = id;}
 	void SetSelfId(CSteamID id);
 	void SetHandle(HSteamNetConnection conn) {m_conn = conn;}
+	HSteamNetConnection GetHandle() const { return m_conn; }
 	vector <HSteamNetConnection> m_conns;
 private:
 	void Reset();

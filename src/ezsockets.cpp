@@ -113,20 +113,40 @@ bool SendMessageWithLoopbackSupport(RoleType role,
 	{
 		LOG->Info("Failed to get connection info for conn: %d\n", conn);
 	}
-	// return net->SendMessageToUser(id, data, size, sendType, channel);
-	EResult result = SteamNetworkingSockets()->SendMessageToConnection(
-		conn, data, size, sendType, nullptr);
 
-	if (result == k_EResultOK)
+	// [FIX] Steam reliable send buffer 預設只有 512KB。如果上層連續送大量資料
+	//       (例如分享歌 thread 一次塞幾十顆 60KB chunk)，會撞到 k_EResultLimitExceeded。
+	//       原本只 log warning 就 return false → 資料直接被丟掉，這就是 receiver 大檔
+	//       中間 chunk 大量遺失、檔變 sparse 的根因。
+	//       修法：撞到 LimitExceeded 就 sleep 一下重試，最多等 5 秒。其它錯誤照舊 return false。
+	const int kMaxRetries = 500;       // 500 * 10ms = 最多等 5 秒讓 buffer 騰空
+	const int kRetrySleepMs = 10;
+	for (int retry = 0; retry < kMaxRetries; ++retry)
 	{
-		return true;
+		EResult result = SteamNetworkingSockets()->SendMessageToConnection(
+			conn, data, size, sendType, nullptr);
+
+		if (result == k_EResultOK)
+		{
+			if (retry > 0)
+				LOG->Info("[NETDBG] SendMessageToConnection OK after %d retries", retry);
+			return true;
+		}
+
+		if (result != k_EResultLimitExceeded)
+		{
+			LOG->Warn("[Error] SendMessageToConnection failed code=%d (not LimitExceeded, give up)", result);
+			return false;
+		}
+
+		// reliable buffer 滿了，sleep 一下讓 Steam 把 unacked 排出去再試
+		if (retry == 0)
+			LOG->Info("[NETDBG] SendMessageToConnection LimitExceeded, retrying...");
+
+		Sleep(kRetrySleepMs);
 	}
-	else
-	{
-		// std::cerr << "[Error] SendMessageToConnection failed with code: " << result << "\n";
-		LOG->Warn("[Error] SendMessageToConnection failed with code: %d",result);
-		return false;
-	}
+	LOG->Warn("[Error] SendMessageToConnection still LimitExceeded after 5s (data lost)");
+	return false;
 
 	// const char* ping = "PING";
 	// size_t len = strlen(ping);
@@ -468,7 +488,10 @@ bool EzSockets::CanRead()
 		int count = ReceiveMessageWithLoopbackSupport(m_roleType, id, 0, m_conn, &msg);
 		if (count <= 0 || !msg) return false;
 
-		LOG->Info("[NETDBG] EZ::CanRead#1 got %d bytes role=%d host=%llu conn=%u",
+		// [FPS] 原本是 LOG->Info，每收一個 Steam 訊息就會 fsync 一次 log.txt，
+		// 大檔分享 (~85k chunks) 時直接把 FPS 從 100+ 砸到個位數。改用 Trace
+		// (一樣寫 log.txt 但不 flush)，保留診斷價值又不卡 frame。
+		LOG->Trace("[NETDBG] EZ::CanRead#1 got %d bytes role=%d host=%llu conn=%u",
 			(int)msg->m_cbSize, (int)m_roleType,
 			m_hostSteamID.ConvertToUint64(), (unsigned)m_conn);
 
@@ -565,7 +588,8 @@ void EzSockets::SendData(const char *data, unsigned int bytes)
 {
 	if (m_useSteamNetworking && m_hostSteamID.IsValid())
 	{
-		LOG->Info("[NETDBG] EZ::SendData#1 steam mode role=%d host=%llu self=%llu bytes=%u conn=%u",
+		// [FPS] 同 CanRead#1 — 每送一個 chunk 就 fsync 會殺 FPS。降為 Trace。
+		LOG->Trace("[NETDBG] EZ::SendData#1 steam mode role=%d host=%llu self=%llu bytes=%u conn=%u",
 			(int)m_roleType,
 			m_hostSteamID.ConvertToUint64(),
 			m_selfSteamID.ConvertToUint64(),
@@ -601,6 +625,10 @@ void EzSockets::SendData(const char *data, unsigned int bytes)
 		// 	k_nSteamNetworkingSend_Reliable,
 		// 	0
 		// );
+		// 之前嘗試加 k_nSteamNetworkingSend_NoNagle 想去掉 ~5ms 批次延遲，
+		// 但實測 client 在收到一定量後會閃退 (可能與 receiver 主執行緒在 ProcessInput 內
+		// 高速 drain 大量訊息使 render 來不及 → Windows TDR 有關)。
+		// 退回單純的 Reliable 模式，行為與使用者已驗證能完整傳完的版本一致。
 		bool ok = SendMessageWithLoopbackSupport(
 			m_roleType,
 			id,
@@ -614,7 +642,7 @@ void EzSockets::SendData(const char *data, unsigned int bytes)
 		if (!ok)
 			LOG->Warn("[NETDBG] EZ::SendData#2 SendMessageToUser failed");
 		else
-			LOG->Info("[NETDBG] EZ::SendData#3 sent OK");
+			LOG->Trace("[NETDBG] EZ::SendData#3 sent OK"); // [FPS] 改 Trace 不 flush
 
 		return;
 	}
@@ -710,6 +738,19 @@ int EzSockets::PeekPack(char *data, unsigned int max)
 	unsigned int size;
 	PeekData((char*)&size, 4);
 	size = ntohl(size);
+
+	// [FIX] 防 buffer overrun：原本 (tBuff.substr(0, max)) 的回傳值沒被接住，
+	// 等於沒截斷；若 size > max，memcpy 會直接寫爆 caller 的 data buffer。
+	// 而且 size 是從遠端 4 bytes 讀來的，若 outBuffer 流亂掉或被雜訊汙染，
+	// size 可能變成天文數字 (例如 0xFFFFFFFF)，size+4 還會 wrap 成很小，
+	// 讓底下的 wait 直接通過，後面 substr 把整個 inBuffer 都讀去 memcpy。
+	// 一旦 size > max 我們無法把它放進 caller 的 buffer，
+	// 同時這也代表 stream 已不可信任 -- 整個 inBuffer 清掉強制重同步。
+	if (size > max)
+	{
+		inBuffer.clear();
+		return -1;
+	}
 	
 	if (blocking)
 		while (inBuffer.length()<(size+4) && !IsError())
@@ -721,13 +762,10 @@ int EzSockets::PeekPack(char *data, unsigned int max)
 	if (IsError())
 		return -1; 
 	//What if we get disconnected while waiting for data?
-	
-	string tBuff(inBuffer.substr(4, size));
-	if (tBuff.length() > max)
-		tBuff.substr(0, max);
-	
-	memcpy (data, tBuff.c_str(),tBuff.length());
-	return size;
+
+	// size <= max 已驗過，inBuffer 至少有 size+4 bytes，可以直接 memcpy
+	memcpy(data, inBuffer.data() + 4, size);
+	return (int)size;
 }
 
 

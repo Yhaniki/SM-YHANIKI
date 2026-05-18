@@ -198,7 +198,8 @@ void StepManiaLanServer::UpdateClients()
 			int got = Client[x]->GetData(Packet);
 			if (got >= 0)
 			{
-				LOG->Info("[NETDBG] SRV::UpdateClients#3 client=%u got %d bytes -> ParseData", x, got);
+				// [FPS] 大檔分享時 ~85k chunks，per-chunk fsync 會殺 FPS。Trace 不 flush。
+				LOG->Trace("[NETDBG] SRV::UpdateClients#3 client=%u got %d bytes -> ParseData", x, got);
 				ParseData(Packet, x);
 			}
 		}
@@ -274,7 +275,7 @@ int GameClient::GetData(PacketFunctions& Packet)
 	length = clientSocket.ReadPack((char*)Packet.Data, NETMAXBUFFERSIZE);
 	Packet.PayloadLength = (length > 0) ? length : 0;
 	if (length > 0)
-		LOG->Info("[NETDBG] SRV::GetData got %d bytes from a client", length);
+		LOG->Trace("[NETDBG] SRV::GetData got %d bytes from a client", length); // [FPS] 同上
 	return length;
 }
 
@@ -287,7 +288,8 @@ void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int c
 		return;
 	}
 	int command = Packet.Read1();
-	LOG->Info("[NETDBG] SRV::ParseData#1 client=%u cmd=%d", clientNum, command);
+	// [FPS] 每個 chunk 都會跑這條 + fsync 會卡 FPS。Trace 不 flush。
+	LOG->Trace("[NETDBG] SRV::ParseData#1 client=%u cmd=%d", clientNum, command);
 	switch (command)
 	{
 	case NSCPing:
@@ -402,6 +404,11 @@ void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int c
 		// sender 送來的檔案資料/控制訊息，server 直接轉發給 receiver
 		ForwardShareToReceiver(Packet, command, clientNum);
 		break;
+	case NSSShareLink:
+		// 新流程：sender 已把整個歌曲打包加密上傳到 temp.sh，
+		// 這個 packet 帶 URL+密碼+資料夾名+zipBytes 給 receiver；server 只做轉發。
+		ForwardShareToReceiver(Packet, command, clientNum);
+		break;
 	case NSSCancel:
 		{
 			// 任何一方都可以送 cancel 過來。server 兩邊都轉發、並清自己的狀態
@@ -419,6 +426,15 @@ void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int c
 			int totBytes = (int)Packet.Read4();
 			(void)receiverIdx; // sender 自己回報，receiver index 同時也記在 server 自己的 state
 			BroadcastShareProgress(clientNum, curBytes, totBytes);
+		}
+		break;
+	case NSSXferAck:
+		{
+			// 由 receiver 送來的「我真的收到 N bytes」回報
+			(void)Packet.Read1(); // senderIdx (在 client 那邊填的 receiver→sender，server 端不需要)
+			int recvBytes = (int)Packet.Read4();
+			int totBytes = (int)Packet.Read4();
+			HandleRecvAck(clientNum, recvBytes, totBytes);
 		}
 		break;
 	default:
@@ -821,7 +837,8 @@ void StepManiaLanServer::SendNetPacket(const unsigned int client, PacketFunction
 		LOG->Warn("[NETDBG] SRV::SendNetPacket#2 Client[%u] is null, abort", client);
 		return;
 	}
-	LOG->Info("[NETDBG] SRV::SendNetPacket#3 client=%u bytes=%d", client, Packet.Position);
+	// [FPS] forward NSSData 時每個 chunk 都會跑這條 + fsync 會卡 FPS。Trace 不 flush。
+	LOG->Trace("[NETDBG] SRV::SendNetPacket#3 client=%u bytes=%d", client, Packet.Position);
 	Client[client]->clientSocket.SendPack((char*)Packet.Data, Packet.Position);
 }
 
@@ -1333,6 +1350,54 @@ void StepManiaLanServer::BroadcastShareProgress(unsigned int senderClient, int c
 		m_shareReceiverIdx = -1;
 		m_shareCurBytes = 0;
 		m_shareTotalBytes = 0;
+	}
+}
+
+// receiver 回報它真的收到多少 bytes。server 做兩件事：
+//   1. 用 receiver 的 bytes 廣播成 NSSProgress -> 整個房間 UI 顯示「真實」進度
+//   2. 把 NSSXferAck 轉發給 sender，讓 sender thread 可以等收齊
+void StepManiaLanServer::HandleRecvAck(unsigned int receiverClient, int recvBytes, int totalBytes)
+{
+	if (m_shareSenderIdx < 0 || m_shareReceiverIdx < 0)
+	{
+		LOG->Warn("[SHARE-SRV] NSSXferAck from %u but no active share, ignore", receiverClient);
+		return;
+	}
+	if ((int)receiverClient != m_shareReceiverIdx)
+	{
+		LOG->Warn("[SHARE-SRV] NSSXferAck from %u but expected receiver=%d, ignore",
+			receiverClient, m_shareReceiverIdx);
+		return;
+	}
+
+	m_shareCurBytes = recvBytes;
+	m_shareTotalBytes = totalBytes;
+	m_shareLastActivityMs = GetTickCount();
+
+	// (1) 廣播成 NSSProgress，所有 UI 都會看到「真實」的 receiver 進度
+	Reply.ClearPacket();
+	Reply.Write1(NSSProgress + NSServerOffset);
+	Reply.Write1((uint8_t)m_shareSenderIdx);
+	Reply.Write1((uint8_t)m_shareReceiverIdx);
+	Reply.Write4((uint32_t)recvBytes);
+	Reply.Write4((uint32_t)totalBytes);
+	SendToAllClients(Reply);
+
+	// (2) 把 NSSXferAck 轉發給 sender，sender thread 在等這個
+	if (m_shareSenderIdx >= 0 && m_shareSenderIdx < (int)Client.size())
+	{
+		Reply.ClearPacket();
+		Reply.Write1(NSSXferAck + NSServerOffset);
+		Reply.Write1((uint8_t)m_shareSenderIdx); // 給 sender 看 — 自己的 idx
+		Reply.Write4((uint32_t)recvBytes);
+		Reply.Write4((uint32_t)totalBytes);
+		SendNetPacket((unsigned int)m_shareSenderIdx, Reply);
+	}
+
+	if (totalBytes > 0 && recvBytes >= totalBytes)
+	{
+		LOG->Info("[SHARE-SRV] receiver fully received: sender=%d receiver=%d %d/%d",
+			m_shareSenderIdx, m_shareReceiverIdx, recvBytes, totalBytes);
 	}
 }
 

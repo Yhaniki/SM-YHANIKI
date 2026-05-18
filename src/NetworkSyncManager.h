@@ -11,12 +11,16 @@ class LoadingWindow;
 
 #define NETMAXPLAYERS 32
 const int NETPROTOCOLVERSION=1;
-const int NETMAXBUFFERSIZE=1020; //1024 - 4 bytes for EzSockets
+// 從 1020 提高到 65500（~64KB）以大幅加速 share song 檔案傳輸。
+// Steam P2P reliable 單一 message 上限是 524288 bytes (512KB)，64KB 仍有充足 margin。
+// 影響：每個 PacketFunctions 物件記憶體從 ~1KB 變 ~64KB，目前實例數量不多 OK。
+const int NETMAXBUFFERSIZE=65500;
 const int NETNUMTAPSCORES=8;
 const int NETGRAPHSIZE=100;
 
 // 分享歌曲時每個資料 chunk 的大小上限（其餘空間留給 packet header + 檔案路徑）
-const int NETSHARECHUNKSIZE = 800;
+// 從 800 提高到 60000，配合 NETMAXBUFFERSIZE 一起放大，吞吐量提升約 75x
+const int NETSHARECHUNKSIZE = 60000;
 
 enum NSCommand
 {
@@ -40,11 +44,13 @@ enum NSCommand
 	NSCCHS,			//17 checkhassong
 	NSCAS,			//18 ask song
 	NSRSSF,			//19 share song finish
-	NSSMeta,		//20 share song: 一次傳輸的 metadata (檔案數/總 bytes)
-	NSSData,		//21 share song: 單一檔案資料 chunk
+	NSSMeta,		//20 share song: 一次傳輸的 metadata (檔案數/總 bytes) [legacy 串流模式]
+	NSSData,		//21 share song: 單一檔案資料 chunk             [legacy 串流模式]
 	NSSDone,		//22 share song: 全部檔案傳輸完成
 	NSSCancel,		//23 share song: 中止傳輸
 	NSSProgress,	//24 share song: server 回傳給所有 client 的進度
+	NSSXferAck,		//25 share song: receiver 回報「我實際收到 N bytes」(用來做真實進度 + sender 等待 ACK)
+	NSSShareLink,	//26 share song: sender 把已上傳到 temp.sh 的 URL+密碼+資料夾名稱告訴 server / receiver
 	NUM_NS_COMMANDS
 };
 
@@ -233,6 +239,16 @@ private:
 	}
 	DWORD ThreadProcNSSSS(void);
 
+	// === Share-song (新流程)：receiver 端的 download thread ===
+	// sender 把 zip 丟到 temp.sh 後送 NSSShareLink 過來；receiver 收到後不能在
+	// main thread 直接 curl 下載/minizip 解壓 (會卡 UI 跟 fps)，所以另開 thread 來跑。
+	static DWORD WINAPI StaticThreadStartShareDownload(void *Param)
+	{
+		NetworkSyncManager *This = (NetworkSyncManager *)Param;
+		return This->ThreadProcShareDownload();
+	}
+	DWORD ThreadProcShareDownload(void);
+
 	CString server_ip;
 	int file_size;
 	int player_num;
@@ -241,9 +257,34 @@ private:
 
 	// === Share-song：sender 端使用 ===
 	volatile bool m_shareCancelRequested; // 由 UI/server 設成 true 來通知 sender thread 退出
-	volatile int  m_shareSentBytes;       // 給 UI 觀察用
+	volatile int  m_shareSentBytes;       // 給 UI 觀察用 (queue 到 Steam 的量)
 	volatile int  m_shareTotalBytes;
+	volatile int  m_shareReceiverAckedBytes; // receiver 回報它實際已收到的 bytes (NSSXferAck 更新)
 	int m_shareReceiverIndex;             // sender 要傳給誰
+
+	// === Share-song (新流程)：sender 端 zip+temp.sh 上傳結果快取 ===
+	// 為什麼要快取：/shareall 時 server 會對每個缺檔的 client 各跑一次 ShareSong，
+	// 我們的 sender thread 不希望每次都重新 zip 跟重新上傳 temp.sh (~5GB×N 太浪費)。
+	// 同一首歌、同一個 sender 在短時間內可以直接送同一份 URL+密碼給不同 receiver。
+	// m_cachedShareSongDir == 目前歌曲資料夾的絕對路徑；不同首歌時整個快取作廢。
+	CString m_cachedShareSongDir;
+	CString m_cachedShareFolderName; // 給 receiver 用來命名解壓資料夾
+	CString m_cachedShareUrl;
+	CString m_cachedSharePassword;
+	int     m_cachedShareZipBytes;
+
+	// === Share-song (新流程)：receiver 端 download thread 用 ===
+	// 由 main thread 在 ProcessInput::NSSShareLink 填好後，啟動 thread；thread 結束自己清。
+	struct DownloadParams
+	{
+		int     senderIdx;
+		CString folderName;
+		CString url;
+		CString password;
+		int     totalBytes;
+	};
+	DownloadParams m_downloadParams;
+	volatile bool  m_downloadThreadRunning;
 
 	// === Share-song：receiver 端使用 (由 main thread 在 ProcessInput 中操作) ===
 	struct RecvState
@@ -257,7 +298,13 @@ private:
 		CString currentRelPath;
 		FILE *currentFile;
 		int  currentFileSize;
-		int  currentFileWritten;
+		int  currentFileWritten;        // 最大 offset + got (用來判斷 "sender 是否送完此檔")
+		int  currentFileBytesWritten;   // 真實累積 fwrite bytes (用來偵測 sparse padding 假象)
+		vector<CString> openedFiles;     // 本次 transfer 開過的相對路徑 (排查殘檔用)
+		vector<int>     openedExpected;  // 對應的 expected size
+		vector<int>     openedWritten;   // 對應的最終 written (=max offset+got，可能高估)
+		vector<int>     openedActualBytes; // 對應的「實際 fwrite bytes」(可以 < written，代表中間有缺)
+		int  lastAckedBytes;             // 上次送 NSSXferAck 時的 receivedBytes (節流用)
 	};
 	RecvState m_recv;
 
@@ -267,6 +314,14 @@ private:
 	void CloseRecvFile();
 	void RemovePartialRecv();
 	void SendShareProgress(); // sender 端呼叫，回報目前進度給 server
+	void SendRecvAck();       // receiver 端呼叫，回報實際收到 bytes 給 sender (經 server 轉發)
+public:
+	// 統一的 SendPack 出口：負責加上 g_hMutex 保護，避免 main thread 與 share sender thread
+	// 同時 append outBuffer 把 [len][payload] 序列撞壞。
+	// 所有 NetPlayerClient->SendPack(...) 都應改走這個函式。
+	// (放 public 是因為 ShareZipUtil 的 download progress watcher thread 也要用)
+	void SendNSMPacket(PacketFunctions& pkt);
+private:
 #endif
 };
 
