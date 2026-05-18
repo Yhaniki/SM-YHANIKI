@@ -1,4 +1,4 @@
-﻿#include "global.h"
+#include "global.h"
 #include "NetworkSyncServer.h"
 #include "RageLog.h"
 #include "PrefsManager.h"
@@ -402,11 +402,6 @@ void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int c
 	case NSSData:
 	case NSSDone:
 		// sender 送來的檔案資料/控制訊息，server 直接轉發給 receiver
-		ForwardShareToReceiver(Packet, command, clientNum);
-		break;
-	case NSSShareLink:
-		// 新流程：sender 已把整個歌曲打包加密上傳到 temp.sh，
-		// 這個 packet 帶 URL+密碼+資料夾名+zipBytes 給 receiver；server 只做轉發。
 		ForwardShareToReceiver(Packet, command, clientNum);
 		break;
 	case NSSCancel:

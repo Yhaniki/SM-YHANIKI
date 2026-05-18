@@ -45,7 +45,6 @@ bool NetworkSyncManager::IsShareSongActive() const { return false; }
 #include "arch/LoadingWindow/LoadingWindow.h"
 #include "steam/steam_api.h"
 #include "steam/steamnetworkingtypes.h"
-#include "ShareZipUtil.h" // zip + temp.sh helper
 HANDLE g_hMutex = NULL;
 const ScreenMessage	SM_AddToChat	= ScreenMessage(SM_User+4);
 const ScreenMessage SM_ChangeSong	= ScreenMessage(SM_User+5);
@@ -87,13 +86,6 @@ NetworkSyncManager::NetworkSyncManager( LoadingWindow *ld )
 	ClientNum=0;
 	m_shareCancelRequested = false;
 	m_shareSentBytes = 0;
-	// 新流程：zip+temp.sh 上傳結果快取，剛起來時通通是空的
-	m_cachedShareSongDir = "";
-	m_cachedShareFolderName = "";
-	m_cachedShareUrl = "";
-	m_cachedSharePassword = "";
-	m_cachedShareZipBytes = 0;
-	m_downloadThreadRunning = false;
 	m_shareTotalBytes = 0;
 	m_shareReceiverIndex = -1;
 	ResetRecvState();
@@ -107,7 +99,7 @@ NetworkSyncManager::NetworkSyncManager( LoadingWindow *ld )
 	}
 	else
 		isLanServer = false;
-	
+
 	ld->SetText("Initilizing Client Network...");
 	NetPlayerClient = new EzSockets;
 	NetPlayerClient->blocking = false;
@@ -196,12 +188,12 @@ void NetworkSyncManager::PostStartUp(const CString& ServerIP)
 
 	m_packet.Write1(NETPROTOCOLVERSION);
 
-	m_packet.WriteNT(CString(PRODUCT_NAME_VER)); 
+	m_packet.WriteNT(CString(PRODUCT_NAME_VER));
 
 	//Block until responce is received
-	//Move mode to blocking in order to give CPU back to the 
+	//Move mode to blocking in order to give CPU back to the
 	//system, and not wait.
-	
+
 	bool dontExit = true;
 
 	// [NETDBG] Steam mode 下不能 blocking：PeekPack 的 spin loop 不會 pump Steam callbacks，
@@ -261,7 +253,7 @@ void NetworkSyncManager::PostStartUp(const CString& ServerIP)
 			if (cmd == (NSServerOffset + NSCHello))
 				dontExit = false;
 		}
-		//Only allow passing on handshake. 
+		//Only allow passing on handshake.
 		//Otherwise scoreboard updates and such will confuse us.
 
 		// [NETDBG] 不論哪種模式都 Sleep 一下，避免吃滿 CPU
@@ -311,7 +303,7 @@ void NetworkSyncManager::StartUp()
 bool NetworkSyncManager::Connect(const CString& addy, unsigned short port)
 {
 	LOG->Info("Beginning to connect");
-	if (port != 8765) 
+	if (port != 8765)
 		return false;
 	//Make sure using port 8765
 	//This may change in future versions
@@ -372,7 +364,7 @@ bool NetworkSyncManager::Connect(const CString& roomCode)
 bool NetworkSyncManager::Listen(unsigned short port)
 {
 	LOG->Info("Beginning to Listen");
-	if (port != 8765) 
+	if (port != 8765)
 		return false;
 	//Make sure using port 8765
 	//This may change in future versions
@@ -398,7 +390,7 @@ bool NetworkSyncManager::Listen(unsigned short port)
 	return useSMserver;
 }
 
-void NetworkSyncManager::ReportNSSOnOff(int i) 
+void NetworkSyncManager::ReportNSSOnOff(int i)
 {
 	m_packet.ClearPacket();
 	m_packet.Write1( NSCSMS );
@@ -415,7 +407,7 @@ void NetworkSyncManager::ReportScore(int playerID, int step, int score, int comb
 {
 	if (!useSMserver) //Make sure that we are using the network
 		return;
-	
+
 	m_packet.ClearPacket();
 
 	m_packet.Write1( NSCGSU );
@@ -454,7 +446,7 @@ void NetworkSyncManager::ReportScore(int playerID, int step, int score, int comb
 
 }
 
-void NetworkSyncManager::ReportSongOver() 
+void NetworkSyncManager::ReportSongOver()
 {
 	if (!useSMserver)	//Make sure that we are using the network
 		return ;
@@ -467,7 +459,7 @@ void NetworkSyncManager::ReportSongOver()
 	return;
 }
 
-void NetworkSyncManager::ReportStyle() 
+void NetworkSyncManager::ReportStyle()
 {
 	if (!useSMserver)
 		return;
@@ -475,7 +467,7 @@ void NetworkSyncManager::ReportStyle()
 	m_packet.Write1( NSCSU );
 	m_packet.Write1( (int8_t) GAMESTATE->GetNumPlayersEnabled() );
 
-	FOREACH_EnabledPlayer( pn ) 
+	FOREACH_EnabledPlayer( pn )
 	{
 		m_packet.Write1((uint8_t) pn );
 		m_packet.WriteNT(GAMESTATE->GetPlayerDisplayName(pn) );
@@ -484,7 +476,7 @@ void NetworkSyncManager::ReportStyle()
 	SendNSMPacket(m_packet);
 }
 
-void NetworkSyncManager::StartRequest(short position) 
+void NetworkSyncManager::StartRequest(short position)
 {
 	if( !useSMserver )
 		return;
@@ -508,7 +500,7 @@ void NetworkSyncManager::StartRequest(short position)
 		if(tmp>0 && tmp%16==0)tmp = 1;
 		ctr = uint8_t(ctr+tmp*16);
 	}
-		
+
 	tSteps = GAMESTATE->m_pCurSteps[PLAYER_2];
 	if ((tSteps!=NULL) && (GAMESTATE->IsPlayerEnabled(PLAYER_2)))
 	{
@@ -516,7 +508,7 @@ void NetworkSyncManager::StartRequest(short position)
 		if(tmp>0 && tmp%16==0)tmp = 1;
 		ctr = uint8_t(ctr+tmp);
 	}
-		
+
 	m_packet.Write1(ctr);
 
 	ctr=0;
@@ -530,7 +522,7 @@ void NetworkSyncManager::StartRequest(short position)
 		ctr = uint8_t(ctr + (int) tSteps->GetDifficulty());
 
 	m_packet.Write1(ctr);
-	
+
 	//Notify server if this is for sync or not.
 	ctr = char(position*16);
 	m_packet.Write1(ctr);
@@ -598,8 +590,8 @@ void NetworkSyncManager::StartRequest(short position)
 
 	//The following packet HAS to get through, so we turn blocking on for it as well
 	//Don't block if we are serving
-	SendNSMPacket(m_packet); 
-	
+	SendNSMPacket(m_packet);
+
 	LOG->Trace("Waiting for RECV");
 
 	m_packet.ClearPacket();
@@ -647,7 +639,7 @@ void NetworkSyncManager::StartRequest(short position)
 
 		if (m_packet.Read1() == (NSServerOffset + NSCGSR))
 			dontExit=false;
-		//Only allow passing on Start request. 
+		//Only allow passing on Start request.
 		//Otherwise scoreboard updates and such will confuse us.
 	}
 	NetPlayerClient->blocking = false;
@@ -715,7 +707,7 @@ CString GetSongDirPath(std::string &songDir,
 	{
 		// Find the position of the first slash
 		size_t found = songDir.find('/');
-		
+
 		// Determine whether slash is found
 		if (found != std::string::npos) {
 			// Remove the slash and the string before it
@@ -1066,23 +1058,7 @@ static void LogSenderConnStatus(const char *tag, HSteamNetConnection conn, int s
 
 DWORD NetworkSyncManager::ThreadProcNSSSS(void)
 {
-	// ======================================================================
-	// 新流程 (zip + temp.sh):
-	//   舊版: NSSMeta -> 一塊塊 NSSData -> NSSDone (60KB chunks 走 Steam reliable)
-	//   新版:
-	//     (a) 用 minizip 把整個歌曲資料夾打包加密 → songs/connect/temp.zip
-	//     (b) curl PUT 到 temp.sh，拿到一條 URL
-	//     (c) 送一個 NSSShareLink (URL + 密碼 + 資料夾名 + zip 大小) 給 server
-	//     (d) server 端轉發給 receiver；receiver 自己 curl GET + minizip 解壓
-	//   優點: sender 只上傳一次，多 receiver 同時下載；省 sender 上行頻寬，且
-	//         走 HTTPS / temp.sh CDN 比 Steam reliable 對大檔友善。
-	//
-	// 為了配合 /shareall (server 對每個缺檔者各跑一次 ShareSong)，本端會
-	// 把 zip 結果 cache 起來：同一首歌的後續 share 直接重用 m_cachedShareUrl，
-	// 不再重新 zip / 重新上傳。
-	// ======================================================================
-	LOG->Info("[SHARE] sender thread start (zip+temp.sh mode). receiver=%d filter=%d",
-		player_num, (int)video_file_filter);
+	LOG->Info("[SHARE] sender thread start. receiver=%d filter=%d", player_num, (int)video_file_filter);
 	m_shareReceiverIndex = player_num;
 	m_shareCancelRequested = false;
 	m_shareSentBytes = 0;
@@ -1105,122 +1081,27 @@ DWORD NetworkSyncManager::ThreadProcNSSSS(void)
 	CString songFolderName = GetLastPathComponent(songDirPath);
 	LOG->Info("[SHARE] sender: songDirPath='%s' folder='%s'", songDirPath.c_str(), songFolderName.c_str());
 
-	// 2. 看看是不是同一首歌的續傳 (/shareall 第 2 個以後的 receiver)；
-	//    是的話直接拿 cache 跳過 zip+upload。
-	bool reuseCache = (!m_cachedShareUrl.empty()
-		&& !m_cachedSharePassword.empty()
-		&& m_cachedShareSongDir == songDirPath);
+	// 2. 列出所有檔案、計算總 bytes
+	vector<CString> relPaths;
+	vector<uint32_t> sizes;
+	EnumerateFilesRecursive(songDirPath, "", video_file_filter, relPaths, sizes);
+	uint32_t totalBytes = 0;
+	for (size_t i = 0; i < sizes.size(); ++i) totalBytes += sizes[i];
+	m_shareTotalBytes = (int)totalBytes;
+	LOG->Info("[SHARE] sender: %u files, total %u bytes", (unsigned)relPaths.size(), totalBytes);
 
-	CString shareUrl, sharePassword;
-	int zipBytes = 0;
-	if (reuseCache)
-	{
-		LOG->Info("[SHARE] sender: reuse cached zip url for '%s'", songDirPath.c_str());
-		shareUrl = m_cachedShareUrl;
-		sharePassword = m_cachedSharePassword;
-		zipBytes = m_cachedShareZipBytes;
-		songFolderName = m_cachedShareFolderName;
-	}
-	else
-	{
-		// 3. 把整個歌曲資料夾打包加密到 songs/connect/temp.zip
-		CString connectFolder = GetConnectFolderPath();
-		EnsureDirectoryExists(connectFolder);
-		CString zipPath = connectFolder + "\\temp.zip";
-
-		// 上次殘留就先刪，避免 zipOpen64 在 CREATE 模式拒絕
-		DeleteFileA(zipPath.c_str());
-
-		sharePassword = ShareZipUtil::GenerateRandomPassword(16);
-		LOG->Info("[SHARE] sender: zipping '%s' -> '%s' (password length=%d)",
-			songDirPath.c_str(), zipPath.c_str(), (int)sharePassword.size());
-
-		CString errMsg;
-		// 注意：這裡是同步的，整個 zip 結束才會回來。對 sender 來說沒影響 (本來就在
-		// worker thread)；對 UI 來說會看到「準備中」狀態幾秒到幾十秒。
-		bool zipOk = ShareZipUtil::ZipFolderWithPassword(songDirPath, zipPath, sharePassword, errMsg);
-		if (!zipOk || m_shareCancelRequested)
-		{
-			LOG->Warn("[SHARE] sender: zip failed: %s (cancel=%d)",
-				errMsg.c_str(), (int)m_shareCancelRequested);
-			DeleteFileA(zipPath.c_str());
-			usingShareSongSystem = false;
-			m_shareReceiverIndex = -1;
-			m_shareCancelRequested = false;
-			ReportShareSongFinish();
-			return 0L;
-		}
-
-		// 取得 zip 檔案大小，作為 UI 進度的 totalBytes
-		HANDLE hFile = CreateFileA(zipPath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
-			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-		if (hFile != INVALID_HANDLE_VALUE)
-		{
-			LARGE_INTEGER li;
-			if (GetFileSizeEx(hFile, &li))
-				zipBytes = (int)li.QuadPart;
-			CloseHandle(hFile);
-		}
-		LOG->Info("[SHARE] sender: zip done, %d bytes", zipBytes);
-
-		// 4. 上傳到 temp.sh
-		//    remoteFileName 加 timestamp 避免和別人撞名 (temp.sh 同名會覆蓋)。
-		CString remoteName;
-		remoteName = ssprintf("sm_%u_%u.zip", (unsigned)time(NULL), (unsigned)GetTickCount());
-
-		LOG->Info("[SHARE] sender: uploading to temp.sh as '%s' ...", remoteName.c_str());
-		bool uploadOk = ShareZipUtil::UploadToTempSh(zipPath, remoteName, shareUrl, errMsg);
-		if (!uploadOk || m_shareCancelRequested)
-		{
-			LOG->Warn("[SHARE] sender: upload failed: %s (cancel=%d)",
-				errMsg.c_str(), (int)m_shareCancelRequested);
-			DeleteFileA(zipPath.c_str());
-			usingShareSongSystem = false;
-			m_shareReceiverIndex = -1;
-			m_shareCancelRequested = false;
-			ReportShareSongFinish();
-			return 0L;
-		}
-
-		// 5. 更新 cache (給同首歌 /shareall 下一個 receiver 用)
-		m_cachedShareSongDir = songDirPath;
-		m_cachedShareFolderName = songFolderName;
-		m_cachedShareUrl = shareUrl;
-		m_cachedSharePassword = sharePassword;
-		m_cachedShareZipBytes = zipBytes;
-
-		// 6. zip 上傳成功後本地 temp.zip 可以丟掉 (不刪也行，反正下次 zip 會覆蓋)
-		DeleteFileA(zipPath.c_str());
-	}
-
-	m_shareTotalBytes = zipBytes;
-	m_shareSentBytes = zipBytes; // sender 端「上傳工作」當作 100% 完成
-	SendShareProgress();
-
-	// 7. 送 NSSShareLink：[opcode][receiver_idx][folderName NT][url NT][password NT][zipBytes 4]
-	//    server 端 ForwardShareToReceiver 看 receiver_idx 轉發。
+	// 3. 送 NSSMeta：receiver_idx + 資料夾名 + 檔案數 + 總 bytes
+	// 用 local packet 避免和 main thread 的 m_packet 競爭。
 	{
 		PacketFunctions pkt; pkt.ClearPacket();
-		pkt.Write1(NSSShareLink);
+		pkt.Write1(NSSMeta);
 		pkt.Write1((uint8_t)player_num);
 		pkt.WriteNT(songFolderName);
-		pkt.WriteNT(shareUrl);
-		pkt.WriteNT(sharePassword);
-		pkt.Write4((uint32_t)zipBytes);
+		pkt.Write4((uint32_t)relPaths.size());
+		pkt.Write4(totalBytes);
 		SendNSMPacket(pkt);
-		LOG->Info("[SHARE] sender: sent NSSShareLink to receiver=%d folder='%s' url='%s' bytes=%d",
-			player_num, songFolderName.c_str(), shareUrl.c_str(), zipBytes);
 	}
 
-	// 8. (新流程下) 不需要等 receiver ack — 它會自己 curl 下載並廣播 NSSXferAck，
-	//    sender thread 在這裡直接退出就好。usingShareSongSystem 要等 thread 真的退出
-	//    才放掉 (見最後)，否則 /shareall 的下一個 receiver 會撞到舊 session。
-
-	// 註：以下保留 (舊 NSSData 串流路徑) 全部刪除；本函式新版到此為止。
-	// 直接跳到 thread 退出區塊。
-	goto SHARE_SENDER_EXIT;
-
-#if 0  /* === LEGACY: 舊 60KB-chunk NSSData 串流流程，留作參考已停用 === */
 	// 4. 一個一個檔案傳出去，依 NETSHARECHUNKSIZE 切塊
 	char buf[NETSHARECHUNKSIZE];
 	int lastProgressReport = 0;
@@ -1476,167 +1357,7 @@ DWORD NetworkSyncManager::ThreadProcNSSSS(void)
 	m_shareReceiverIndex = -1;
 	m_shareCancelRequested = false;
 	ReportShareSongFinish();
-	LOG->Info("[SHARE] sender thread exit (legacy path)");
-	return 0L;
-#endif /* === LEGACY end === */
-
-SHARE_SENDER_EXIT:
-	// 新流程的退出點：上面已經把 NSSShareLink 送出去了，剩下就是清旗標讓
-	// /shareall 第 2 個 receiver 觸發的 NSSSS 可以建出新的 sender thread
-	// (新 thread 會看到 m_cachedShareUrl 有東西，直接重用前一次的 URL)。
-	usingShareSongSystem = false;
-	m_shareReceiverIndex = -1;
-	m_shareCancelRequested = false;
-	ReportShareSongFinish();
-	LOG->Info("[SHARE] sender thread exit (zip+temp.sh path)");
-	return 0L;
-}
-
-// =====================================================================
-// ThreadProcShareDownload — receiver 端
-// =====================================================================
-// 流程：
-//   1) 把 NSSShareLink 帶來的 URL 下載到 songs/connect/.recv_<pid>.zip
-//      (用 curl.exe shell-out。同時開另一個 watcher thread 每 500ms poll
-//       下載中檔案大小，回 NSSXferAck 給 sender 顯示真實進度)
-//   2) 用 minizip + password 解到 songs/connect/<folderName>/
-//   3) 刪 zip、回報 finish 給 UI / server
-// =====================================================================
-
-struct DownloadProgressContext
-{
-	CString localFile;
-	volatile bool stop;
-	NetworkSyncManager* nsm;
-	int totalBytes;
-	int senderIdx;
-};
-
-// poll 用的小 thread：每 500ms stat 一次 localFile，把目前大小當作「已下載」
-// 透過 NSSXferAck 廣播給 server，server 再 forward 給 sender 跟所有 client，
-// receiver UI 顯示進度條也是看 m_PlayerShareProgress (server 廣播的 NSSProgress)。
-static DWORD WINAPI DownloadProgressWatcher(LPVOID param)
-{
-	DownloadProgressContext* ctx = (DownloadProgressContext*)param;
-	while (!ctx->stop)
-	{
-		struct stat st;
-		int curBytes = 0;
-		if (stat(ctx->localFile.c_str(), &st) == 0)
-			curBytes = (int)st.st_size;
-
-		// 直接組 NSSXferAck packet 送出去 (走 mutex 安全的 SendNSMPacket)
-		PacketFunctions pkt;
-		pkt.ClearPacket();
-		pkt.Write1(NSSXferAck);
-		pkt.Write1((uint8_t)ctx->senderIdx);
-		pkt.Write4((uint32_t)curBytes);
-		pkt.Write4((uint32_t)ctx->totalBytes);
-		ctx->nsm->SendNSMPacket(pkt);
-
-		Sleep(500);
-	}
-	return 0;
-}
-
-DWORD NetworkSyncManager::ThreadProcShareDownload(void)
-{
-	int senderIdx = m_downloadParams.senderIdx;
-	CString folderName = m_downloadParams.folderName;
-	CString url = m_downloadParams.url;
-	CString password = m_downloadParams.password;
-	int totalBytes = m_downloadParams.totalBytes;
-
-	LOG->Info("[SHARE] recv-download thread start. sender=%d folder='%s' url='%s' bytes=%d",
-		senderIdx, folderName.c_str(), url.c_str(), totalBytes);
-
-	CString connectFolder = GetConnectFolderPath();
-	EnsureDirectoryExists(connectFolder);
-
-	// localZip：用 .recv_<pid>_<tick>.zip 避免多 receiver 同時跑時撞名
-	CString localZip = connectFolder + ssprintf("\\.recv_%u_%u.zip",
-		(unsigned)GetCurrentProcessId(), (unsigned)GetTickCount());
-	// 上次殘留先掃掉 (基本上不會撞，但保險)
-	DeleteFileA(localZip.c_str());
-
-	// 起 progress watcher
-	DownloadProgressContext ctx;
-	ctx.localFile = localZip;
-	ctx.stop = false;
-	ctx.nsm = this;
-	ctx.totalBytes = totalBytes;
-	ctx.senderIdx = senderIdx;
-	DWORD watcherTid;
-	HANDLE hWatcher = CreateThread(NULL, 0, DownloadProgressWatcher, &ctx, 0, &watcherTid);
-
-	CString errMsg;
-	bool dlOk = ShareZipUtil::DownloadFile(url, localZip, errMsg);
-
-	// 停 watcher
-	ctx.stop = true;
-	if (hWatcher)
-	{
-		WaitForSingleObject(hWatcher, 2000);
-		CloseHandle(hWatcher);
-	}
-
-	if (!dlOk || m_shareCancelRequested)
-	{
-		LOG->Warn("[SHARE] recv-download: curl failed: %s (cancel=%d)",
-			errMsg.c_str(), (int)m_shareCancelRequested);
-		DeleteFileA(localZip.c_str());
-		m_recv.active = false;
-		usingShareSongSystem = false;
-		m_downloadThreadRunning = false;
-		ReportShareSongFinish();
-		return 0L;
-	}
-
-	// 解壓到 songs/connect/<folderName>/，如果撞名就 (1)(2)(3)...
-	CString finalName;
-	CString destDir = MakeUniqueSubfolderPath(connectFolder, folderName, finalName);
-	EnsureDirectoryExists(destDir);
-	m_recv.rootDir = destDir;
-	LOG->Info("[SHARE] recv-download: extract '%s' -> '%s' (password length=%d)",
-		localZip.c_str(), destDir.c_str(), (int)password.size());
-
-	int n = ShareZipUtil::ExtractZipWithPassword(localZip, destDir, password, errMsg);
-	DeleteFileA(localZip.c_str());
-
-	if (n < 0)
-	{
-		LOG->Warn("[SHARE] recv-download: extract failed: %s", errMsg.c_str());
-		// 部份解出來的檔案丟了，刪除已建的目錄避免半成品
-		RemovePartialRecv();
-		usingShareSongSystem = false;
-		m_downloadThreadRunning = false;
-		ReportShareSongFinish();
-		return 0L;
-	}
-
-	// 成功：把 receivedBytes 直接設成 totalBytes，並送一次最終 ack
-	m_recv.receivedBytes = totalBytes;
-	{
-		PacketFunctions pkt;
-		pkt.ClearPacket();
-		pkt.Write1(NSSXferAck);
-		pkt.Write1((uint8_t)senderIdx);
-		pkt.Write4((uint32_t)totalBytes);
-		pkt.Write4((uint32_t)totalBytes);
-		SendNSMPacket(pkt);
-	}
-
-	// 通知 UI / Screen reload
-	LOG->Info("[SHARE] recv-download: done %d files in '%s'", n, destDir.c_str());
-	SCREENMAN->SystemMessage("Share song received!");
-	// 通知 UI 重新載入 connect/ 目錄；走 SCREENMAN 是 thread-safe 的廣播。
-	SCREENMAN->SendMessageToTopScreen(SM_ReloadConnectPack);
-
-	m_recv.active = false;
-	usingShareSongSystem = false;
-	m_downloadThreadRunning = false;
-	ReportShareSongFinish();
-	LOG->Info("[SHARE] recv-download thread exit");
+	LOG->Info("[SHARE] sender thread exit");
 	return 0L;
 }
 
@@ -1771,7 +1492,7 @@ void NetworkSyncManager::RemovePartialRecv()
 void NetworkSyncManager::ProcessInput()
 {
 	//If we're disconnected, just exit
-	if ((NetPlayerClient->state!=NetPlayerClient->skCONNECTED) || 
+	if ((NetPlayerClient->state!=NetPlayerClient->skCONNECTED) ||
 			NetPlayerClient->IsError())
 	{
 		LOG->Warn("[NETDBG] NSM::ProcessInput#1 connection dropped (state=%d)", (int)NetPlayerClient->state);
@@ -1800,7 +1521,7 @@ void NetworkSyncManager::ProcessInput()
 			command, command - NSServerOffset);
 		//Check to make sure command is valid from server
 		if (command < NSServerOffset)
-		{		
+		{
 			LOG->Trace("CMD (below 128) Invalid> %d",command);
  			break;
 		}
@@ -1818,7 +1539,7 @@ void NetworkSyncManager::ProcessInput()
 		case NSCHello: //This is already taken care of by the blocking code earlier on
 		case NSCGSR: //This is taken care of by the blocking start code
 			break;
-		case NSCGON: 
+		case NSCGON:
 			{
 				int PlayersInPack = m_packet.Read1();
 				for (int i=0; i<PlayersInPack; ++i)
@@ -1829,7 +1550,7 @@ void NetworkSyncManager::ProcessInput()
 					m_EvalPlayerData[i].grade = m_packet.Read1();
 				for (int i=0; i<PlayersInPack; ++i)
 					m_EvalPlayerData[i].difficulty = (Difficulty) m_packet.Read1();
-				for (int j=0; j<NETNUMTAPSCORES; ++j) 
+				for (int j=0; j<NETNUMTAPSCORES; ++j)
 					for (int i=0; i<PlayersInPack; ++i)
 						m_EvalPlayerData[i].tapScores[j] = m_packet.Read2();
 				for (int i=0; i<PlayersInPack; ++i)
@@ -1881,7 +1602,7 @@ void NetworkSyncManager::ProcessInput()
 							ColumnData+="C\n"; break;
 						case 6:
 							ColumnData+="D\n"; break;
-						case 7: 
+						case 7:
 							ColumnData+="E\n";	break;	//Is there a better way?
 						}
 					break;
@@ -1937,7 +1658,7 @@ void NetworkSyncManager::ProcessInput()
 						m_ActivePlayer.push_back( i );
 					}
 					m_PlayerStatus.push_back( PStatus );
-					m_PlayerNames.push_back( m_packet.ReadNT() );	
+					m_PlayerNames.push_back( m_packet.ReadNT() );
 				}
 			}
 			break;
@@ -2214,53 +1935,6 @@ void NetworkSyncManager::ProcessInput()
 					recvBytes, totBytes, m_shareReceiverAckedBytes);
 			}
 			break;
-		case NSSShareLink:
-			{
-				// 我是 receiver。Sender 已把整首歌打包加密上傳到 temp.sh，
-				// 這個 packet 告訴我 URL+密碼+資料夾名+zip 大小，我自己去下載+解壓。
-				int senderIdx = m_packet.Read1();
-				CString folderName = m_packet.ReadNT();
-				CString url = m_packet.ReadNT();
-				CString password = m_packet.ReadNT();
-				int zipBytes = (int)m_packet.Read4();
-				LOG->Info("[SHARE] recv: got NSSShareLink sender=%d folder='%s' url='%s' bytes=%d",
-					senderIdx, folderName.c_str(), url.c_str(), zipBytes);
-
-				if (m_downloadThreadRunning)
-				{
-					LOG->Warn("[SHARE] recv: download thread already running, ignore new NSSShareLink");
-					break;
-				}
-
-				// 把參數塞進 m_downloadParams，然後啟一條 thread 去 curl + 解壓 (不能在
-				// main thread 跑，會卡 UI / fps 跟舊 NSSData 一樣的問題)。
-				m_downloadParams.senderIdx = senderIdx;
-				m_downloadParams.folderName = folderName;
-				m_downloadParams.url = url;
-				m_downloadParams.password = password;
-				m_downloadParams.totalBytes = zipBytes;
-				m_downloadThreadRunning = true;
-				usingShareSongSystem = true;
-				m_recv.active = true;
-				m_recv.senderIndex = senderIdx;
-				m_recv.totalBytes = zipBytes;
-				m_recv.receivedBytes = 0;
-				m_recv.lastAckedBytes = 0;
-				m_recv.rootDir = "";  // ThreadProcShareDownload 解壓時會填
-
-				DWORD tid;
-				HANDLE hThr = CreateThread(NULL, 0, StaticThreadStartShareDownload, this, 0, &tid);
-				if (hThr) CloseHandle(hThr);
-				else
-				{
-					LOG->Warn("[SHARE] recv: CreateThread failed for download");
-					m_downloadThreadRunning = false;
-					usingShareSongSystem = false;
-					m_recv.active = false;
-					ReportShareSongFinish();
-				}
-			}
-			break;
 		case NSCGraph:
 			{
 				int PlayersInPack = m_packet.Read1();
@@ -2275,7 +1949,7 @@ void NetworkSyncManager::ProcessInput()
 			}
 			break;
 		case NSCPC:
-			{	
+			{
 				m_PlayerCondition.clear();
 				int player_number = m_packet.Read1();
 				for(int i=0; i<player_number; i++)
@@ -2289,7 +1963,7 @@ void NetworkSyncManager::ProcessInput()
 	}
 }
 
-bool NetworkSyncManager::ChangedScoreboard(int Column) 
+bool NetworkSyncManager::ChangedScoreboard(int Column)
 {
 	if (!m_scoreboardchange[Column])
 		return false;
@@ -2297,7 +1971,7 @@ bool NetworkSyncManager::ChangedScoreboard(int Column)
 	return true;
 }
 
-void NetworkSyncManager::SendChat(const CString& message) 
+void NetworkSyncManager::SendChat(const CString& message)
 {
 	m_packet.ClearPacket();
 	m_packet.Write1( NSCCM );
@@ -2323,7 +1997,7 @@ void NetworkSyncManager::ReportPercentage()
 	{
 		m_packet.WriteNT( GAMESTATE->m_PlayerPercentage[pn] );
 	}
-		
+
 	SendNSMPacket(m_packet);
 }
 
@@ -2338,7 +2012,7 @@ void NetworkSyncManager::ReportGraph()
 			m_packet.Write4( GAMESTATE->m_PlayerGraph[pn][i] );
 		}
 	}
-		
+
 	SendNSMPacket(m_packet);
 }
 
@@ -2418,7 +2092,7 @@ uint8_t PacketFunctions::Read1()
 {
 	if (Position>=NETMAXBUFFERSIZE)
 		return 0;
-	
+
 	return Data[Position++];
 }
 
@@ -2429,8 +2103,8 @@ uint16_t PacketFunctions::Read2()
 
 	uint16_t Temp;
 	memcpy( &Temp, Data + Position,2 );
-	Position+=2;		
-	return ntohs(Temp);	
+	Position+=2;
+	return ntohs(Temp);
 }
 
 uint32_t PacketFunctions::Read4()
@@ -2525,7 +2199,7 @@ LuaFunction_NoArgs( IsNetConnected,			NSMAN->useSMserver )
 /*
  * (c) 2003-2004 Charles Lohr, Joshua Allen
  * All rights reserved.
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
@@ -2535,7 +2209,7 @@ LuaFunction_NoArgs( IsNetConnected,			NSMAN->useSMserver )
  * copyright notice(s) and this permission notice appear in all copies of
  * the Software and that both the above copyright notice(s) and this
  * permission notice appear in supporting documentation.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF

@@ -44,13 +44,12 @@ enum NSCommand
 	NSCCHS,			//17 checkhassong
 	NSCAS,			//18 ask song
 	NSRSSF,			//19 share song finish
-	NSSMeta,		//20 share song: 一次傳輸的 metadata (檔案數/總 bytes) [legacy 串流模式]
-	NSSData,		//21 share song: 單一檔案資料 chunk             [legacy 串流模式]
+	NSSMeta,		//20 share song: 一次傳輸的 metadata (檔案數/總 bytes)
+	NSSData,		//21 share song: 單一檔案資料 chunk
 	NSSDone,		//22 share song: 全部檔案傳輸完成
 	NSSCancel,		//23 share song: 中止傳輸
 	NSSProgress,	//24 share song: server 回傳給所有 client 的進度
 	NSSXferAck,		//25 share song: receiver 回報「我實際收到 N bytes」(用來做真實進度 + sender 等待 ACK)
-	NSSShareLink,	//26 share song: sender 把已上傳到 temp.sh 的 URL+密碼+資料夾名稱告訴 server / receiver
 	NUM_NS_COMMANDS
 };
 
@@ -126,7 +125,7 @@ struct ShareProgressInfo
 	ShareProgressInfo() : active(false), uploading(false), peerIndex(-1), currentBytes(0), totalBytes(0) {}
 };
 
-class NetworkSyncManager 
+class NetworkSyncManager
 {
 public:
 	NetworkSyncManager( LoadingWindow *ld = NULL );
@@ -135,7 +134,7 @@ public:
     //If "useSMserver" then send score to server
 	void ReportTiming(float offset, int PlayerNumber);
 	void ReportScore(int playerID, int step, int score, int combo);
-		
+
 	void ReportSongOver();	//Report to server that song is over
 	void ReportShareSongFinish();
 	void ReportStyle();		//Report to server the style, players, and names
@@ -174,7 +173,7 @@ public:
 	//Used for ScreenNetEvaluation
 	EndOfGame_PlayerData m_EvalPlayerData[NETMAXPLAYERS];
 
-	//Used togeather for 
+	//Used togeather for
 	bool ChangedScoreboard(int Column);	//If scoreboard changed since this function last called, then true.
 	CString m_Scoreboard[NUM_NSSB_CATEGORIES];
 
@@ -218,13 +217,13 @@ private:
 	int m_step;
 	int m_score;
 	int m_combo;
-    
+
 	int m_startupStatus;	//Used to see if attempt was sucessful or not.
 
 	bool m_scoreboardchange[NUM_NSSB_CATEGORIES];
 
 	CString m_ServerName;
- 
+
     EzSockets *NetPlayerClient;
 
 	int m_ServerVersion; //ServerVersion
@@ -239,16 +238,6 @@ private:
 	}
 	DWORD ThreadProcNSSSS(void);
 
-	// === Share-song (新流程)：receiver 端的 download thread ===
-	// sender 把 zip 丟到 temp.sh 後送 NSSShareLink 過來；receiver 收到後不能在
-	// main thread 直接 curl 下載/minizip 解壓 (會卡 UI 跟 fps)，所以另開 thread 來跑。
-	static DWORD WINAPI StaticThreadStartShareDownload(void *Param)
-	{
-		NetworkSyncManager *This = (NetworkSyncManager *)Param;
-		return This->ThreadProcShareDownload();
-	}
-	DWORD ThreadProcShareDownload(void);
-
 	CString server_ip;
 	int file_size;
 	int player_num;
@@ -261,30 +250,6 @@ private:
 	volatile int  m_shareTotalBytes;
 	volatile int  m_shareReceiverAckedBytes; // receiver 回報它實際已收到的 bytes (NSSXferAck 更新)
 	int m_shareReceiverIndex;             // sender 要傳給誰
-
-	// === Share-song (新流程)：sender 端 zip+temp.sh 上傳結果快取 ===
-	// 為什麼要快取：/shareall 時 server 會對每個缺檔的 client 各跑一次 ShareSong，
-	// 我們的 sender thread 不希望每次都重新 zip 跟重新上傳 temp.sh (~5GB×N 太浪費)。
-	// 同一首歌、同一個 sender 在短時間內可以直接送同一份 URL+密碼給不同 receiver。
-	// m_cachedShareSongDir == 目前歌曲資料夾的絕對路徑；不同首歌時整個快取作廢。
-	CString m_cachedShareSongDir;
-	CString m_cachedShareFolderName; // 給 receiver 用來命名解壓資料夾
-	CString m_cachedShareUrl;
-	CString m_cachedSharePassword;
-	int     m_cachedShareZipBytes;
-
-	// === Share-song (新流程)：receiver 端 download thread 用 ===
-	// 由 main thread 在 ProcessInput::NSSShareLink 填好後，啟動 thread；thread 結束自己清。
-	struct DownloadParams
-	{
-		int     senderIdx;
-		CString folderName;
-		CString url;
-		CString password;
-		int     totalBytes;
-	};
-	DownloadParams m_downloadParams;
-	volatile bool  m_downloadThreadRunning;
 
 	// === Share-song：receiver 端使用 (由 main thread 在 ProcessInput 中操作) ===
 	struct RecvState
@@ -315,24 +280,21 @@ private:
 	void RemovePartialRecv();
 	void SendShareProgress(); // sender 端呼叫，回報目前進度給 server
 	void SendRecvAck();       // receiver 端呼叫，回報實際收到 bytes 給 sender (經 server 轉發)
-public:
 	// 統一的 SendPack 出口：負責加上 g_hMutex 保護，避免 main thread 與 share sender thread
 	// 同時 append outBuffer 把 [len][payload] 序列撞壞。
 	// 所有 NetPlayerClient->SendPack(...) 都應改走這個函式。
-	// (放 public 是因為 ShareZipUtil 的 download progress watcher thread 也要用)
 	void SendNSMPacket(PacketFunctions& pkt);
-private:
 #endif
 };
 
 extern NetworkSyncManager *NSMAN;
- 
+
 #endif
- 
+
 /*
  * (c) 2003-2004 Charles Lohr, Joshua Allen
  * All rights reserved.
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
@@ -342,7 +304,7 @@ extern NetworkSyncManager *NSMAN;
  * copyright notice(s) and this permission notice appear in all copies of
  * the Software and that both the above copyright notice(s) and this
  * permission notice appear in supporting documentation.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF

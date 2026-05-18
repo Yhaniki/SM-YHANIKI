@@ -72,14 +72,8 @@
         #define NOUNCRYPT
 #endif
 
-#include "../zlib/zlib.h"
+#include "zlib.h"
 #include "unzip.h"
-
-/* [COMPAT] 同 zip.c — 補 z_crc_t for old zlib 1.2.1 */
-#if !defined(Z_CRC_T_DEFINED) && (ZLIB_VERNUM < 0x1270)
-typedef unsigned long z_crc_t;
-#define Z_CRC_T_DEFINED 1
-#endif
 
 #ifdef STDC
 #  include <stddef.h>

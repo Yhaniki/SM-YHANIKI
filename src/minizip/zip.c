@@ -26,15 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "../zlib/zlib.h"
+#include "zlib.h"
 #include "zip.h"
-
-/* [COMPAT] 專案內建的 zlib 1.2.1 (ZLIB_VERNUM 0x1210) 沒有 z_crc_t typedef，
- * minizip-master 預期 zlib 1.2.7+。手動補一個給 crypt.h / 內部 struct 用。 */
-#if !defined(Z_CRC_T_DEFINED) && (ZLIB_VERNUM < 0x1270)
-typedef unsigned long z_crc_t;
-#define Z_CRC_T_DEFINED 1
-#endif
 
 #ifdef STDC
 #  include <stddef.h>

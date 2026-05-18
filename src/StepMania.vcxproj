@@ -265,23 +265,6 @@
     <ClCompile Include="EditMenu.cpp" />
     <ClCompile Include="EnumHelper.cpp" />
     <ClCompile Include="ezsockets.cpp" />
-    <ClCompile Include="minizip\ioapi.c">
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CompileAsC</CompileAs>
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">CompileAsC</CompileAs>
-    </ClCompile>
-    <ClCompile Include="minizip\iowin32.c">
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CompileAsC</CompileAs>
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">CompileAsC</CompileAs>
-    </ClCompile>
-    <ClCompile Include="minizip\zip.c">
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CompileAsC</CompileAs>
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">CompileAsC</CompileAs>
-    </ClCompile>
-    <ClCompile Include="minizip\unzip.c">
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CompileAsC</CompileAs>
-      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">CompileAsC</CompileAs>
-    </ClCompile>
-    <ClCompile Include="ShareZipUtil.cpp" />
     <ClCompile Include="FadingBanner.cpp" />
     <ClCompile Include="Font.cpp" />
     <ClCompile Include="FontCharAliases.cpp" />
@@ -672,12 +655,6 @@
     <ClInclude Include="EditMenu.h" />
     <ClInclude Include="EnumHelper.h" />
     <ClInclude Include="ezsockets.h" />
-    <ClInclude Include="minizip\crypt.h" />
-    <ClInclude Include="minizip\ioapi.h" />
-    <ClInclude Include="minizip\iowin32.h" />
-    <ClInclude Include="minizip\zip.h" />
-    <ClInclude Include="minizip\unzip.h" />
-    <ClInclude Include="ShareZipUtil.h" />
     <ClInclude Include="FadingBanner.h" />
     <ClInclude Include="Font.h" />
     <ClInclude Include="FontCharAliases.h" />
