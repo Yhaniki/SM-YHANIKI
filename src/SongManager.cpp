@@ -758,13 +758,19 @@ void SongManager::InitRandomSongWithNum(int num)
 	}
 }
 
-void SongManager::InitAutogenCourses()
+void SongManager::InitAutogenCourses( bool bInitRandomSongs )
 {
 	//
 	// Create group courses for Endless and Nonstop
 	//
-	const int songNum = 100;
-	InitRandomSongWithNum(songNum); //init some songs for nonstop group
+	// Force-loading songs is only needed the first time (startup).  Skip it when
+	// rebuilding courses after a reload (Invalidate), otherwise every "reload from
+	// disk" in the editor fully re-reads ~100 songs and becomes very slow.
+	if( bInitRandomSongs )
+	{
+		const int songNum = 100;
+		InitRandomSongWithNum(songNum); //init some songs for nonstop group
+	}
 	CStringArray saGroupNames;
 	this->GetGroupNames( saGroupNames );
 	Course* pCourse;
@@ -899,7 +905,7 @@ void SongManager::Invalidate( Song *pStaleSong )
 	// It doesn't take very long.
 	FreeCourses();
 	InitCoursesFromDisk( NULL );
-	InitAutogenCourses();
+	InitAutogenCourses( false );	// don't re-load ~100 songs from disk on every reload
 
 	// invalidate cache
 	StepsID::Invalidate( pStaleSong );

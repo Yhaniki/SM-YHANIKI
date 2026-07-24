@@ -40,7 +40,11 @@ public:
 	void LoadGroupSymLinks( CString sDir, CString sGroupFolder );
 
 	void InitCoursesFromDisk( LoadingWindow *ld );
-	void InitAutogenCourses();
+	// bInitRandomSongs: force-load a batch of songs so Nonstop/Endless autogen
+	// courses have real data.  Only wanted on the initial load; pass false when
+	// rebuilding courses after a reload (Invalidate) so we don't re-load ~100
+	// songs from disk every "reload from disk" in the editor.
+	void InitAutogenCourses( bool bInitRandomSongs = true );
 	void FreeCourses();
 
 	void InitAll( LoadingWindow *ld );	// songs, courses, groups - everything.
