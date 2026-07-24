@@ -7,8 +7,70 @@
 #include "WaveformDisplay.h"
 #include "RageDisplay.h"
 #include "RageLog.h"
+#include "RageFile.h"
 #include "GameState.h"
 #include "ArrowEffects.h"
+
+// Detect MP3s that are decoded ~one MPEG audio frame ahead of the actual music.
+//
+// StepMania's MP3 reader keeps a leading frame for files that carry a Xing/Info
+// header (to match DWI/BASS sync), but files WITHOUT such a header end up one
+// frame early in the decoded PCM we read for the waveform.  That makes the drawn
+// waveform sit ~26ms (1152 samples @ 44.1kHz) ahead of the note grid / music
+// (e.g. "BlythE ExtenD").  Return the duration of one MPEG frame in seconds for
+// those files so we can compensate; return 0 (no shift) for everything else, so
+// correctly-aligned songs are left untouched.
+static float DetectMp3FrameAlignSeconds( const CString &sPath )
+{
+	RageFile file;
+	if( !file.Open( sPath ) )
+		return 0.f;
+
+	unsigned char buf[16384];
+	int got = file.Read( buf, sizeof(buf) );
+	if( got < 8 )
+		return 0.f;
+
+	int i = 0;
+	// Skip an ID3v2 tag if present (syncsafe 28-bit size).
+	if( got > 10 && buf[0]=='I' && buf[1]=='D' && buf[2]=='3' )
+		i = 10 + ( ((buf[6]&0x7f)<<21) | ((buf[7]&0x7f)<<14) | ((buf[8]&0x7f)<<7) | (buf[9]&0x7f) );
+
+	// Find the first MPEG audio frame sync (0xFF 0xEx/0xFx).
+	int ver = -1, srIdx = -1;
+	for( ; i < got-4; ++i )
+	{
+		if( buf[i]==0xFF && (buf[i+1]&0xE0)==0xE0 )
+		{
+			ver          = (buf[i+1]>>3)&3;	// 0=MPEG2.5, 2=MPEG2, 3=MPEG1
+			int layer    = (buf[i+1]>>1)&3;
+			srIdx        = (buf[i+2]>>2)&3;
+			if( ver!=1 && layer!=0 && srIdx!=3 )
+				break;
+		}
+	}
+	if( ver < 0 || i >= got-4 )
+		return 0.f;	// not a recognisable MP3 -> no shift
+
+	// If this first frame carries a Xing/Info header, the file is already aligned.
+	int end = min( got-4, i+200 );
+	for( int j = i; j < end; ++j )
+	{
+		if( (buf[j]=='X'&&buf[j+1]=='i'&&buf[j+2]=='n'&&buf[j+3]=='g') ||
+		    (buf[j]=='I'&&buf[j+1]=='n'&&buf[j+2]=='f'&&buf[j+3]=='o') )
+			return 0.f;
+	}
+
+	// No Xing/Info header: compute one MPEG frame's duration.
+	static const int rate1[4] = { 44100, 48000, 32000, 0 };
+	int rate = rate1[srIdx];
+	if( ver==2 )      rate /= 2;	// MPEG2
+	else if( ver==0 ) rate /= 4;	// MPEG2.5
+	if( rate <= 0 )
+		return 0.f;
+	int samplesPerFrame = (ver==3) ? 1152 : 576;	// MPEG1 vs MPEG2/2.5 (Layer III)
+	return (float)samplesPerFrame / (float)rate;
+}
 
 WaveformDisplay::WaveformDisplay()
 	: m_height(0),
@@ -25,7 +87,8 @@ WaveformDisplay::WaveformDisplay()
 	  m_fBaseY(0),
 	  m_iDynamicBlockSize(BLOCK_SIZE),
 	  m_bInit(false),
-	  m_fYReverseOffsetPixels(720)
+	  m_fYReverseOffsetPixels(720),
+	  m_fWaveAlignSeconds(0.f)
 {
 }
 
@@ -36,6 +99,9 @@ void WaveformDisplay::Initialize(Song *pSong)
 	{
 		m_pSong = pSong;
 		m_Sound.Load(m_pSong->GetMusicPath());
+		// MP3s without a Xing/Info header decode one frame early; measure that here
+		// so ExtractWaveformSegment can shift the PCM look-up back into sync.
+		m_fWaveAlignSeconds = DetectMp3FrameAlignSeconds(m_pSong->GetMusicPath());
 		PrecomputeWaveform();
 		m_bInit = true;
 	}
@@ -216,8 +282,14 @@ void WaveformDisplay::ExtractWaveformSegment(float firstBeat, float lastBeat, fl
 	int sampleRate = m_Sound.GetSampleRate();
 	int totalSamples = (int)m_LeftChannelFull.size();
 
-	int startIndex = (int)(clampedStart * sampleRate);
-	int endIndex = (int)(clampedEnd * sampleRate);
+	// Shift the PCM look-up later by m_fWaveAlignSeconds so the waveform lines up
+	// with the actual music.  This is non-zero only for MP3s whose decoded PCM runs
+	// one MPEG frame early (no Xing/Info header); it's 0 for everything else, so
+	// already-aligned songs are unaffected.
+	int startIndex = (int)((clampedStart - m_fWaveAlignSeconds) * sampleRate);
+	int endIndex = (int)((clampedEnd - m_fWaveAlignSeconds) * sampleRate);
+	if (startIndex < 0) startIndex = 0;
+	if (endIndex < 0) endIndex = 0;
 
 	int totalBlocks = (totalSamples + m_iDynamicBlockSize - 1) / m_iDynamicBlockSize;
 	m_iBlockStart = startIndex / m_iDynamicBlockSize;

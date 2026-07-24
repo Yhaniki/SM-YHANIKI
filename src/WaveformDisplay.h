@@ -61,6 +61,12 @@ private:
 	float m_fSegmentYStep;
 	int m_iDynamicBlockSize;
 
+	// Seconds to shift the PCM look-up by so the waveform lines up with the real
+	// music.  MP3s without a Xing/Info header decode ~one MPEG frame early, which
+	// draws the waveform ahead of the note grid; this is that one-frame duration
+	// for such files and 0 for everything else.  See Initialize().
+	float m_fWaveAlignSeconds;
+
 	void PrecomputeWaveform();
 	void RebuildEnvelope();
 	void BuildEnvelope(const std::vector<int16_t> &source, std::vector<MinMax> &envelope);

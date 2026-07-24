@@ -451,8 +451,15 @@ void NoteField::DrawPrimitives()
 	if(endSecond < startSecond)
 		std::swap(startSecond, endSecond);
 
-	if (m_PlayerNumber == PLAYER_1)
+	// Only touch the waveform in the editor while it's actually being shown.
+	// This keeps normal gameplay (and the editor with the waveform hidden via F3)
+	// from paying the cost of decoding/preparing the waveform.  Initialize()
+	// self-guards on m_bInit, so the expensive precompute (full decode + filter +
+	// envelope) happens lazily on the first frame the waveform is shown, not on
+	// every song load.
+	if (m_PlayerNumber == PLAYER_1 && GAMESTATE->m_bEditing && GAMESTATE->m_bShowWave)
 	{
+		m_WaveformDisplay.Initialize(GAMESTATE->m_pCurSong);
 		m_WaveformDisplay.SetPlayerNumber(m_PlayerNumber);
 		m_WaveformDisplay.ExtractWaveformSegment(fFirstBeatToDraw, fLastBeatToDraw, startSecond, endSecond - startSecond);
 		m_WaveformDisplay.SetHeight(iLastPixelToDraw - iFirstPixelToDraw);

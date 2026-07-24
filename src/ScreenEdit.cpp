@@ -330,7 +330,9 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	m_NoteFieldEdit.SetXY( EDIT_X, PLAYER_Y );
 	m_NoteFieldEdit.SetZoom( 0.5f );
 	m_NoteFieldEdit.Load( &noteData, PLAYER_1, -240, 800, PLAYER_HEIGHT*2 );
-	m_NoteFieldEdit.InitWaveFromDisplay(m_pSong);
+	// Waveform is now prepared lazily (only when it's actually shown; see
+	// NoteField::DrawPrimitives), so we no longer eagerly decode/precompute it here.
+	// m_NoteFieldEdit.InitWaveFromDisplay(m_pSong);
 
 	m_rectRecordBack.StretchTo( RectI(SCREEN_LEFT, SCREEN_TOP, SCREEN_RIGHT, SCREEN_BOTTOM) );
 	m_rectRecordBack.SetDiffuse( RageColor(0,0,0,0) );
@@ -365,7 +367,9 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	/* XXX: Do we actually have to send real note data here, and to m_NoteFieldRecord? 
 	 * (We load again on play/record.) */
 	m_Player.Load( PLAYER_1, &noteData, NULL, NULL, NULL, NULL, NULL, NULL, NULL );
-	m_Player.SetWaveFormDisplay(m_NoteFieldEdit.GetWaveFormDisplay());
+	// The player's NoteField now prepares its own waveform lazily on first show,
+	// so we avoid deep-copying the (large) precomputed waveform buffers here.
+	// m_Player.SetWaveFormDisplay(m_NoteFieldEdit.GetWaveFormDisplay());
 	GAMESTATE->m_PlayerController[PLAYER_1] = PC_HUMAN;
 	m_Player.SetX( PLAYER_X );
 	/* Why was this here?  Nothing ever sets Player Y values; this was causing
