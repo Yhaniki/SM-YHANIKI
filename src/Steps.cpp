@@ -44,12 +44,28 @@ Steps::Steps()
 	notes = NULL;
 	notes_comp = NULL;
 	parent = NULL;
+	m_pTiming = NULL;
 }
 
 Steps::~Steps()
 {
 	delete notes;
 	delete notes_comp;
+	delete m_pTiming;
+}
+
+void Steps::SetOwnTiming( const TimingData &timing )
+{
+	DeAutogen();
+	if( m_pTiming == NULL )
+		m_pTiming = new TimingData;
+	*m_pTiming = timing;
+}
+
+void Steps::ClearOwnTiming()
+{
+	delete m_pTiming;
+	m_pTiming = NULL;
 }
 
 void Steps::SetNoteData( const NoteData* pNewNoteData )
@@ -273,6 +289,13 @@ void Steps::DeAutogen()
 	m_iMeter		= Real()->m_iMeter;
 	m_RadarValues   = Real()->m_RadarValues;
 
+	if( Real()->m_pTiming != NULL )
+	{
+		if( m_pTiming == NULL )
+			m_pTiming = new TimingData;
+		*m_pTiming = *Real()->m_pTiming;
+	}
+
 	parent = NULL;
 
 	Compress();
@@ -295,6 +318,10 @@ void Steps::CopyFrom( Steps* pSource, StepsType ntTo )	// pSource does not have 
 	this->SetDifficulty( pSource->GetDifficulty() );
 	this->SetMeter( pSource->GetMeter() );
 	this->SetRadarValues( pSource->GetRadarValues() );
+	if( pSource->HasOwnTiming() )
+		this->SetOwnTiming( *pSource->GetOwnTiming() );
+	else
+		this->ClearOwnTiming();
 }
 
 void Steps::CreateBlank( StepsType ntTo )

@@ -267,6 +267,11 @@ bool SMLoader::LoadFromSMFile( CString sPath, Song &out )
 	out.m_Timing.m_sFile = sPath;
 	LoadTimingFromSMFile( msd, out.m_Timing );
 
+	/* #STEPSTIMING 寫在它所屬的 #NOTES 前面（見 NotesWriterSM），先收著等 #NOTES 出現。 */
+	TimingData PendingTiming;
+	CString sPendingTimingType, sPendingTimingDiff;
+	bool bHasPendingTiming = false;
+
 	for( unsigned i=0; i<msd.GetNumValues(); i++ )
 	{
 		int iNumParams = msd.GetNumParams(i);
@@ -414,6 +419,51 @@ bool SMLoader::LoadFromSMFile( CString sPath, Song &out )
 			}
 		}
 
+		/* 這首歌是從 .gn 讀進來的；記住檔名，存檔時才知道要寫回哪個檔。 */
+		else if( 0==stricmp(sValueName,"GNFILE") )
+			out.m_sGNFileName = sParams[1];
+
+		/* 單一難度自己的 timing：type:difficulty:offset:bpms:stops */
+		else if( 0==stricmp(sValueName,"STEPSTIMING") )
+		{
+			if( iNumParams < 5 )
+			{
+				LOG->Trace( "'%s': #STEPSTIMING has too few fields (%d)", sPath.c_str(), iNumParams );
+				continue;
+			}
+			sPendingTimingType = sParams[1];
+			sPendingTimingDiff = sParams[2];
+			PendingTiming = TimingData();
+			PendingTiming.m_fBeat0OffsetInSeconds = strtof( sParams[3], NULL );
+
+			CStringArray as;
+			split( sParams[4], ",", as );
+			for( unsigned b=0; b<as.size(); b++ )
+			{
+				CStringArray asPair;
+				split( as[b], "=", asPair );
+				if( asPair.size() != 2 )
+					continue;
+				PendingTiming.AddBPMSegment( BPMSegment(strtof(asPair[0],NULL), strtof(asPair[1],NULL)) );
+			}
+
+			if( iNumParams >= 6 )
+			{
+				as.clear();
+				split( sParams[5], ",", as );
+				for( unsigned b=0; b<as.size(); b++ )
+				{
+					CStringArray asPair;
+					split( as[b], "=", asPair );
+					if( asPair.size() != 2 )
+						continue;
+					PendingTiming.AddStopSegment( StopSegment(strtof(asPair[0],NULL), strtof(asPair[1],NULL)) );
+				}
+			}
+
+			bHasPendingTiming = !PendingTiming.m_BPMSegments.empty();
+		}
+
 		else if( 0==stricmp(sValueName,"NOTES") )
 		{
 			if( iNumParams < 7 )
@@ -425,9 +475,17 @@ bool SMLoader::LoadFromSMFile( CString sPath, Song &out )
 			Steps* pNewNotes = new Steps;
 			ASSERT( pNewNotes );
 
-			LoadFromSMTokens( 
+			LoadFromSMTokens(
 				sParams[1], sParams[2], sParams[3], sParams[4], sParams[5], sParams[6], (iNumParams>=8)?sParams[7]:CString(""),
 				*pNewNotes);
+
+			if( bHasPendingTiming &&
+				0==stricmp( GameManager::StepsTypeToString(pNewNotes->m_StepsType), sPendingTimingType ) &&
+				0==stricmp( DifficultyToString(pNewNotes->GetDifficulty()), sPendingTimingDiff ) )
+			{
+				pNewNotes->SetOwnTiming( PendingTiming );
+			}
+			bHasPendingTiming = false;
 
 			out.AddSteps( pNewNotes );
 		}

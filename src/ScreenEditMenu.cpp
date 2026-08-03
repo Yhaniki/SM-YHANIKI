@@ -107,6 +107,9 @@ void ScreenEditMenu::MenuStart( PlayerNumber pn )
 	GAMESTATE->m_pCurSong = pSong;
 	GAMESTATE->m_pCurStyle = GAMEMAN->GetEditorStyleForStepsType( st );
 	GAMESTATE->m_pCurSteps[PLAYER_1] = pSteps;
+	/* .gn 的難度各有各的 BPM 表，進編輯器前先套上要編的那一份。 */
+	if( pSong != NULL )
+		pSong->UseTimingOf( pSteps );
 
 	//
 	// handle error cases

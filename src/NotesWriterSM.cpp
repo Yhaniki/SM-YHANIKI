@@ -24,7 +24,10 @@ void NotesWriterSM::WriteGlobalTags( RageFile &f, const Song &out )
 	f.PutLine( ssprintf( "#LYRICSPATH:%s;", out.m_sLyricsFile.c_str() ) );
 	f.PutLine( ssprintf( "#CDTITLE:%s;", out.m_sCDTitleFile.c_str() ) );
 	f.PutLine( ssprintf( "#MUSIC:%s;", out.m_sMusicFile.c_str() ) );
-	f.PutLine( ssprintf( "#OFFSET:%.3f;", out.m_Timing.m_fBeat0OffsetInSeconds ) );
+	/* 記住這首歌是從哪個 .gn 來的，之後即使改走 .sm／cache 也還能寫回去。 */
+	if( out.IsFromGN() )
+		f.PutLine( ssprintf( "#GNFILE:%s;", out.m_sGNFileName.c_str() ) );
+	f.PutLine( ssprintf( "#OFFSET:%.6f;", out.m_Timing.m_fBeat0OffsetInSeconds ) );
 	f.PutLine( ssprintf( "#SAMPLESTART:%.3f;", out.m_fMusicSampleStartSeconds ) );
 	f.PutLine( ssprintf( "#SAMPLELENGTH:%.3f;", out.m_fMusicSampleLengthSeconds ) );
 
@@ -134,8 +137,38 @@ static void WriteLineList( RageFile &f, vector<CString> &lines, bool SkipLeading
 	}
 }
 
+/* .gn 的每個難度可以有自己的 BPM 表，但 .sm 只有一份全曲 timing。
+ * 為了讓下次從 .sm／cache 讀回來時不遺失，這裡把難度自己的 timing 寫在
+ * 它的 #NOTES 前面。其他格式的譜面沒有這個 tag，行為完全不變。 */
+static void WriteStepsTimingTag( const Steps &in, RageFile &f )
+{
+	const TimingData *pTiming = in.GetOwnTiming();
+	if( pTiming == NULL )
+		return;
+
+	CStringArray asBPMs;
+	for( unsigned i = 0; i < pTiming->m_BPMSegments.size(); i++ )
+		asBPMs.push_back( ssprintf("%.3f=%.3f",
+			pTiming->m_BPMSegments[i].m_fStartBeat, pTiming->m_BPMSegments[i].m_fBPM) );
+
+	CStringArray asStops;
+	for( unsigned i = 0; i < pTiming->m_StopSegments.size(); i++ )
+		asStops.push_back( ssprintf("%.3f=%.3f",
+			pTiming->m_StopSegments[i].m_fStartBeat, pTiming->m_StopSegments[i].m_fStopSeconds) );
+
+	f.PutLine( "" );
+	f.PutLine( ssprintf( "#STEPSTIMING:%s:%s:%.6f:%s:%s;",
+		GameManager::StepsTypeToString(in.m_StepsType).c_str(),
+		DifficultyToString(in.GetDifficulty()).c_str(),
+		pTiming->m_fBeat0OffsetInSeconds,
+		join(",",asBPMs).c_str(),
+		join(",",asStops).c_str() ) );
+}
+
 void NotesWriterSM::WriteSMNotesTag( const Steps &in, RageFile &f, bool bSavingCache )
 {
+	WriteStepsTimingTag( in, f );
+
 	f.PutLine( "" );
 	f.PutLine( ssprintf( "//---------------%s - %s----------------",
 		GameManager::StepsTypeToString(in.m_StepsType).c_str(), in.GetDescription().c_str() ) );

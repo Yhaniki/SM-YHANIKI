@@ -1248,6 +1248,9 @@ void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType typ
 			Steps* pSteps = GAMESTATE->m_pCurSteps[PLAYER_1];
 			ASSERT( pSteps );
 			pSteps->SetNoteData( &m_NoteFieldEdit );
+			/* 切走之前先把 Song 上被改過的 BPM 收回這個難度。 */
+			if( pSteps->HasOwnTiming() )
+				pSteps->SetOwnTiming( GAMESTATE->m_pCurSong->m_Timing );
 
 			// Get all Steps of this StepsType
 			StepsType st = pSteps->m_StepsType;
@@ -1285,6 +1288,8 @@ void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType typ
 			pSteps = *it;
 			GAMESTATE->m_pCurSteps[PLAYER_1] = m_pSteps = pSteps;
 			pSteps->GetNoteData( &m_NoteFieldEdit );
+			/* 換難度時，.gn 的譜面要跟著換成該難度自己的 BPM 表。 */
+			GAMESTATE->m_pCurSong->UseTimingOf( pSteps );
 			SCREENMAN->SystemMessage( ssprintf(
 				"Switched to %s %s '%s'",
 				GAMEMAN->StepsTypeToString( pSteps->m_StepsType ).c_str(),
@@ -1933,6 +1938,7 @@ void ScreenEdit::HandleScreenMessage( const ScreenMessage SM )
 
 		m_pSteps = GAMESTATE->m_pCurSteps[PLAYER_1] = pSteps;
 		m_pSteps->GetNoteData( &m_NoteFieldEdit );
+		GAMESTATE->m_pCurSong->UseTimingOf( m_pSteps );
 
 		LyricsLoader LL;
 		if( GAMESTATE->m_pCurSong->HasLyrics()  )
@@ -2229,12 +2235,17 @@ void ScreenEdit::HandleMainMenuChoice( MainMenuChoice c, int* iAnswers )
 				ASSERT( pSteps );
 
 				pSteps->SetNoteData( &m_NoteFieldEdit );
+				/* 編輯期間改的 BPM／停頓在 Song 上，先收回這個難度自己的 timing。 */
+				if( pSteps->HasOwnTiming() )
+					pSteps->SetOwnTiming( GAMESTATE->m_pCurSong->m_Timing );
 				GAMESTATE->m_pCurSong->Save();
 
 				// we shouldn't say we're saving a DWI if we're on any game besides
 				// dance, it just looks tacky and people may be wondering where the
 				// DWI file is :-)
-				if ((int)pSteps->m_StepsType <= (int)STEPS_TYPE_DANCE_SOLO) 
+				if( GAMESTATE->m_pCurSong->IsFromGN() )
+					SCREENMAN->SystemMessage( "Saved as SM, DWI and GN." );
+				else if ((int)pSteps->m_StepsType <= (int)STEPS_TYPE_DANCE_SOLO)
 					SCREENMAN->SystemMessage( "Saved as SM and DWI." );
 				else
 					SCREENMAN->SystemMessage( "Saved as SM." );

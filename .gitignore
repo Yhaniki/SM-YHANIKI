@@ -27,3 +27,5 @@ src/crypto51/d2utmpwOSSWZ
 crashinfo.txt
 BlueSocket/**
 Screenshots/
+# .gn 離線測試的建置產物
+src/tests/gn/build/
