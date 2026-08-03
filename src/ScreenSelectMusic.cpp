@@ -1395,6 +1395,10 @@ void ScreenSelectMusic::AfterStepsChange( PlayerNumber pn )
 
 	GAMESTATE->m_pCurSteps[pn] = pSteps;
 
+	/* .gn 的難度各有各的 BPM 表，選到哪個難度就照那一份顯示。 */
+	if( pSong != NULL )
+		pSong->UseTimingOf( pSteps );
+
 	int iScore = 0;
 	if( pSteps )
 	{

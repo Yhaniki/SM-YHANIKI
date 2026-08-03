@@ -44,6 +44,10 @@ public:
 	bool			m_bPalettedBannerCache;
 	bool			m_bFastLoad;
 
+	/* 寫回 .gn 時是否堅持維持原檔大小（SDOM／熱舞版的容器原本靠補零維持長度）。
+	 * 預設關閉：譜面變大就讓檔案跟著變大。 */
+	bool			m_bGNKeepFileSize;
+
 	bool			m_bOnlyDedicatedMenuButtons;
 	bool			m_bMenuTimer;
 	bool			m_bShowDanger;

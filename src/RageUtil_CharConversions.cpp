@@ -34,6 +34,8 @@ static bool CodePageConvert(CString &txt, int cp)
 static bool AttemptEnglishConversion( CString &txt ) { return CodePageConvert( txt, 1252 ); }
 static bool AttemptKoreanConversion( CString &txt ) { return CodePageConvert( txt, 949 ); }
 static bool AttemptJapaneseConversion( CString &txt ) { return CodePageConvert( txt, 932 ); }
+static bool AttemptChineseConversion( CString &txt ) { return CodePageConvert( txt, 936 ); }	// GBK
+static bool AttemptBig5Conversion( CString &txt ) { return CodePageConvert( txt, 950 ); }
 
 #elif defined(HAVE_ICONV)
 #include <iconv.h>
@@ -46,6 +48,8 @@ TODO
 static bool AttemptEnglishConversion( CString &txt ) { return false; }
 static bool AttemptKoreanConversion( CString &txt ) { return false; }
 static bool AttemptJapaneseConversion( CString &txt ) { return false; }
+static bool AttemptChineseConversion( CString &txt ) { return false; }
+static bool AttemptBig5Conversion( CString &txt ) { return false; }
 
 #endif
 
@@ -80,6 +84,21 @@ bool ConvertString(CString &str, const CString &encodings)
 		if( lst[i] == "korean" )
 		{
 			if(AttemptKoreanConversion(str))
+				return true;
+			continue;
+		}
+
+		/* .gn 的表頭字串多為 GBK；台版少數為 Big5。 */
+		if( lst[i] == "chinese" )
+		{
+			if(AttemptChineseConversion(str))
+				return true;
+			continue;
+		}
+
+		if( lst[i] == "big5" )
+		{
+			if(AttemptBig5Conversion(str))
 				return true;
 			continue;
 		}

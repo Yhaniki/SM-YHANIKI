@@ -30,7 +30,10 @@ void NotesWriterSM::WriteGlobalTags( CString &f, const Song &out )
 	PutLine( f, ssprintf( "#LYRICSPATH:%s;", out.m_sLyricsFile.c_str() ) );
 	PutLine( f, ssprintf( "#CDTITLE:%s;", out.m_sCDTitleFile.c_str() ) );
 	PutLine( f, ssprintf( "#MUSIC:%s;", out.m_sMusicFile.c_str() ) );
-	PutLine( f, ssprintf( "#OFFSET:%.3f;", out.m_Timing.m_fBeat0OffsetInSeconds ) );
+	/* 記住這首歌是從哪個 .gn 來的，之後即使改走 .sm／cache 也還能寫回去。 */
+	if( out.IsFromGN() )
+		PutLine( f, ssprintf( "#GNFILE:%s;", out.m_sGNFileName.c_str() ) );
+	PutLine( f, ssprintf( "#OFFSET:%.6f;", out.m_Timing.m_fBeat0OffsetInSeconds ) );
 	PutLine( f, ssprintf( "#SAMPLESTART:%.3f;", out.m_fMusicSampleStartSeconds ) );
 	PutLine( f, ssprintf( "#SAMPLELENGTH:%.3f;", out.m_fMusicSampleLengthSeconds ) );
 
@@ -152,8 +155,38 @@ static void WriteLineList( CString &f, vector<CString> &lines, bool SkipLeadingB
 	}
 }
 
+/* .gn 的每個難度可以有自己的 BPM 表，但 .sm 只有一份全曲 timing。
+ * 為了讓下次從 .sm／cache 讀回來時不遺失，這裡把難度自己的 timing 寫在
+ * 它的 #NOTES 前面。其他格式的譜面沒有這個 tag，行為完全不變。 */
+static void WriteStepsTimingTag( const Steps &in, CString &f )
+{
+	const TimingData *pTiming = in.GetOwnTiming();
+	if( pTiming == NULL )
+		return;
+
+	CStringArray asBPMs;
+	for( unsigned i = 0; i < pTiming->m_BPMSegments.size(); i++ )
+		asBPMs.push_back( ssprintf("%.3f=%.3f",
+			pTiming->m_BPMSegments[i].m_fStartBeat, pTiming->m_BPMSegments[i].m_fBPM) );
+
+	CStringArray asStops;
+	for( unsigned i = 0; i < pTiming->m_StopSegments.size(); i++ )
+		asStops.push_back( ssprintf("%.3f=%.3f",
+			pTiming->m_StopSegments[i].m_fStartBeat, pTiming->m_StopSegments[i].m_fStopSeconds) );
+
+	PutLine( f, "" );
+	PutLine( f, ssprintf( "#STEPSTIMING:%s:%s:%.6f:%s:%s;",
+		GameManager::StepsTypeToString(in.m_StepsType).c_str(),
+		DifficultyToString(in.GetDifficulty()).c_str(),
+		pTiming->m_fBeat0OffsetInSeconds,
+		join(",",asBPMs).c_str(),
+		join(",",asStops).c_str() ) );
+}
+
 void NotesWriterSM::WriteSMNotesTag( const Steps &in, CString &f, bool bSavingCache, bool bOmitNoteData )
 {
+	WriteStepsTimingTag( in, f );
+
 	/* The song index has no note data; store the hash of the cache file's notes
 	 * instead.  Steps::Decompress reads the notes back from the cache file when
 	 * they're needed, and EDIT steps are matched by this hash. */

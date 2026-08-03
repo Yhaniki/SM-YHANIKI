@@ -29,8 +29,10 @@
 #include "NotesLoaderDWI.h"
 #include "NotesLoaderBMS.h"
 #include "NotesLoaderKSF.h"
+#include "NotesLoaderGN.h"
 #include "NotesWriterDWI.h"
 #include "NotesWriterSM.h"
+#include "NotesWriterGN.h"
 
 #include "LyricsLoader.h"
 
@@ -182,6 +184,12 @@ NotesLoader *Song::MakeLoader( CString sDir ) const
 	if(ret->Loadable( sDir )) return ret;
 	delete ret;
 
+	/* SDO 系列的 .gn。排在最後：資料夾裡若已經有 .sm（例如編輯過後存出來的），
+	 * 就以 .sm 為準，那份 .sm 裡也記著它是從哪個 .gn 來的。 */
+	ret = new GNLoader;
+	if(ret->Loadable( sDir )) return ret;
+	delete ret;
+
 	return NULL;
 }
 
@@ -281,7 +289,7 @@ bool Song::LoadFromSongDir( CString sDir )
 		NotesLoader *ld = MakeLoader( sDir );
 		if(!ld)
 		{
-			LOG->Warn( "Couldn't find any SM, DWI, BMS, or KSF files in '%s'.  This is not a valid song directory.", sDir.c_str() );
+			LOG->Warn( "Couldn't find any SM, DWI, BMS, KSF, or GN files in '%s'.  This is not a valid song directory.", sDir.c_str() );
 			return false;
 		}
 
@@ -1034,6 +1042,14 @@ void Song::Save()
 	SaveToSMFile( GetSongFilePath(), false );
 	SaveToDWIFile();
 
+	/* 從 .gn 讀進來的就一併寫回去，不然編輯的結果只會留在 .sm 裡。 */
+	if( IsFromGN() )
+	{
+		CString sErr;
+		if( !SaveToGNFile( sErr ) )
+			LOG->Warn( "Couldn't write back .gn (%s): %s", GetGNPath().c_str(), sErr.c_str() );
+	}
+
 	/* We've safely written our files and created backups.  Rename non-SM and non-DWI
 	 * files to avoid confusion. */
 	CStringArray arrayOldFileNames;
@@ -1100,6 +1116,51 @@ void Song::SaveToCacheFile()
 			continue;
 		pSteps->SetFile( GetCacheFilePath(), iIndexInFile++ );
 	}
+}
+
+CString Song::GetGNPath() const
+{
+	if( m_sGNFileName.empty() )
+		return "";
+	return m_sSongDir + m_sGNFileName;
+}
+
+bool Song::SaveToGNFile( CString &sErrOut )
+{
+	const CString sPath = GetGNPath();
+	if( sPath.empty() )
+	{
+		sErrOut = "this song was not loaded from a .gn";
+		return false;
+	}
+	if( !IsAFile(sPath) )
+	{
+		sErrOut = ssprintf( "original .gn not found (%s)", sPath.c_str() );
+		return false;
+	}
+
+	/* 先備份原檔，跟 SaveToSMFile 一樣放在 FileBackup/ 底下。 */
+	{
+		time_t now = time(0);
+		char filename[100];
+		tm *ltm = localtime(&now);
+		strftime( filename, sizeof(filename), "%Y-%m-%d_%H%M%S", ltm );
+		const CString sBackup = m_sSongDir + "FileBackup/" + filename + "_" + m_sGNFileName;
+		if( !FileCopy(sPath, sBackup) )
+		{
+			sErrOut = "couldn't back up the original .gn; not writing";
+			return false;
+		}
+	}
+
+	return NotesWriterGN::Write( sPath, *this, PREFSMAN->m_bGNKeepFileSize, sErrOut );
+}
+
+void Song::UseTimingOf( const Steps *pSteps )
+{
+	if( pSteps == NULL || !pSteps->HasOwnTiming() )
+		return;
+	m_Timing = *pSteps->GetOwnTiming();
 }
 
 void Song::SaveToDWIFile()
