@@ -2,6 +2,7 @@
 #define BLOCK_SIZE                    (256)
 #define ALPHA                         (0.6)
 #define MAX_DISPLAY_SAMPLE_SIZE       (2000)
+#define MIN_WAVE_BRIGHTNESS           (0.15f)
 
 #include "global.h"
 #include "WaveformDisplay.h"
@@ -10,6 +11,7 @@
 #include "RageFile.h"
 #include "GameState.h"
 #include "ArrowEffects.h"
+#include "PrefsManager.h"
 
 // Detect MP3s that are decoded ~one MPEG audio frame ahead of the actual music.
 //
@@ -458,6 +460,12 @@ void WaveformDisplay::DrawPrimitives()
 
 	// float m_fYReverseOffsetPixels = 720; // 350;
 
+	// Dim the waveform along with the "Brightness" (BGBrightness) option, so it
+	// doesn't glare when the rest of the screen is turned down.  Keep a small
+	// floor: at 0% the waveform would otherwise vanish completely and look broken
+	// even though F2 says it's shown.
+	const float fBright = std::max(MIN_WAVE_BRIGHTNESS, PREFSMAN->m_fBGBrightness);
+
 	const float fYPos = BeatToYPosition(m_fFirstBeat);
 	const float fYPos2 = BeatToYPosition(m_fLastBeat);
 	const float waveHeight = fabs(fYPos2 - fYPos);
@@ -480,21 +488,21 @@ void WaveformDisplay::DrawPrimitives()
 	// part 2: Audio Interpretation
 	if (realPartPixel > 0)
 	{
-		DrawEnvelopeRange(m_LeftEnvelopeFull, waveHeight, waveWidth, 0.f, RageColor(0, 1, 0, 1));
-		DrawEnvelopeRange(m_RightEnvelopeFull, waveHeight, waveWidth, 0.f, RageColor(1, 1, 0, 1));
+		DrawEnvelopeRange(m_LeftEnvelopeFull, waveHeight, waveWidth, 0.f, RageColor(0, fBright, 0, 1));
+		DrawEnvelopeRange(m_RightEnvelopeFull, waveHeight, waveWidth, 0.f, RageColor(fBright, fBright, 0, 1));
 
 		if (m_bEnableFilter)
 		{
-			DrawEnvelopeRange(m_LeftEnvelopeFiltered, waveHeight, waveWidth, 0.f, RageColor(1, 0, 0, 1));
-			DrawEnvelopeRange(m_RightEnvelopeFiltered, waveHeight, waveWidth, 0.f, RageColor(1, 0, 0, 1));
+			DrawEnvelopeRange(m_LeftEnvelopeFiltered, waveHeight, waveWidth, 0.f, RageColor(fBright, 0, 0, 1));
+			DrawEnvelopeRange(m_RightEnvelopeFiltered, waveHeight, waveWidth, 0.f, RageColor(fBright, 0, 0, 1));
 		}
 	}
 
 	const float fYPos3 = BeatToYPosition(GAMESTATE->m_fSongBeat);
 	RageSpriteVertex v[2];
 	v[0].p = RageVector3(-waveWidth/2, fYPos3, 0);
-	v[0].c = RageColor(0, 0, 1, 1);
+	v[0].c = RageColor(0, 0, fBright, 1);
 	v[1].p = RageVector3(waveWidth/2, fYPos3, 0);
-	v[1].c = RageColor(0, 0, 1, 1);
+	v[1].c = RageColor(0, 0, fBright, 1);
 	DISPLAY->DrawLineStrip(v, 2, 1.0f);
 }
