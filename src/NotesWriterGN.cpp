@@ -233,7 +233,13 @@ bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, 
 
 		sf.aiNoteCount[d] = CountNotesInFrames( vNew );
 		sf.aiMeasurements[d] = (int) vNew.size();
-		/* aiExtra52 / aiDuration / aiLevel 的確切語意還沒完全弄清楚（實測 extra52 既不是
+
+		/* 等級：GN 的 level 跟 SM 的 meter 是同一個數字，在編輯器改過就寫回去。
+		 * 原本表頭沒填（0）的就別動，免得把 Steps::TidyUpData 猜出來的數字寫進檔案。 */
+		if( sf.aiLevel[d] > 0 && pSteps->GetMeter() > 0 )
+			sf.aiLevel[d] = (int16_t) GNLoader::MeterToGNLevel( pSteps->GetMeter() );
+
+		/* aiExtra52 / aiDuration 的確切語意還沒完全弄清楚（實測 extra52 既不是
 		 * 最大小節也不是小節數），亂寫可能讓原版遊戲算錯速度，所以原樣保留。 */
 	}
 

@@ -35,18 +35,21 @@ int GNLoader::ColToFrameType( int iCol )
 	}
 }
 
-/* GN 的 level 大約是 osu! 星數的五倍（工具端以 star×5 產生），實測看到 0~40 出頭。
- * SM 的 meter 只到 13，等比壓過去。 */
+/* GN 的 level 就是譜面等級本身，跟 SM 的 meter 一對一（工具端從 .sm 注入 .gn 時
+ * 也是直接把 meter 寫進 level，見 gn_master_core.py）。SDO 的等級可以到 30、40，
+ * 遠超過 SM 的 MAX_METER，這裡不做壓縮，否則畫面顯示的難度會跟原譜對不起來。 */
+const int GN_LEVEL_MAX = 99;
+
 int GNLoader::GNLevelToMeter( int iLevel )
 {
 	if( iLevel <= 0 )
-		return 0;	// 讓 Steps::TidyUpData 自己去猜
-	return clamp( (int) roundf( iLevel * MAX_METER / 40.0f ), 1, MAX_METER );
+		return 0;	// 表頭沒填，讓 Steps::TidyUpData 自己去猜
+	return min( iLevel, GN_LEVEL_MAX );
 }
 
 int GNLoader::MeterToGNLevel( int iMeter )
 {
-	return clamp( (int) roundf( iMeter * 40.0f / MAX_METER ), 1, 99 );
+	return clamp( iMeter, 0, GN_LEVEL_MAX );
 }
 
 float GNLoader::GetSecondsFromBeat( const TimingData &timing, float fBeat )
