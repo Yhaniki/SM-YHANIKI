@@ -58,9 +58,14 @@ frame 在檔案裡照 **(measurement, type) 由小到大** 排列，writer 也�
 | type | 意義 |
 |------|------|
 | 1 | BPM 變化（slot 的 4 bytes 直接是一個 little-endian float） |
-| 2 / 3 / 4 / 5 | 左 / 上 / 下 / 右 |
+| 2 / 3 / 4 / 5 | 左 / 下 / 上 / 右 |
 | 9 | 小節線，slot 的 `u0` 是遞增的小節編號 |
 | 10 | 音樂起止標記 |
+
+上下兩軌要注意：外部的 `SM_GN_NOTE_FORMAT.md` 原本把 3 寫成 Up、4 寫成 Down，
+`stepfile_dump2.py` 的 `_TYPE_NAMES` 也是同一個錯。實際寫回遊戲會上下顛倒，
+正確的是 `COL_TO_FRAME_TYPE = (2, 3, 4, 5)` 依序對到 Left / Down / Up / Right，
+也就是 **3 = Down、4 = Up**。
 
 slot 是 `u0(int16) + u1(uint8) + step_note_type(uint8)`；四個位元組全 0 代表空格。
 `step_note_type`：0 = 一般音符，2 = hold 起點，3 = hold 終點。
