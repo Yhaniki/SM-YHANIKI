@@ -103,8 +103,12 @@ GN 的 `measurement * 4` 直接就是 SM 的拍數。
 
 ### level 與 meter
 
-GN 的 level 大約是 osu! 星數的五倍（實測 0～40 出頭），SM 的 meter 只到 13，
-`GNLevelToMeter()` 等比壓縮。寫回時 **不會**動原本的 level（見下）。
+GN 表頭的 level 就是譜面等級本身，跟 SM 的 meter **一對一，不做換算** ——
+工具端從 `.sm` 注入 `.gn` 時也是直接把 meter 寫進 level。SDO 的等級可以到 30、40，
+遠超過 SM 的 `MAX_METER`(13)，硬壓過去只會讓畫面顯示的難度跟原譜對不起來。
+
+寫回時，原本 level 是 0 的難度不動（避免把 `Steps::TidyUpData` 猜出來的數字寫進檔案），
+其餘就照編輯器裡的 meter 寫回去。
 
 ## 四、寫回 `.gn`
 
