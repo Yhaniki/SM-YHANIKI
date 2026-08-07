@@ -43,9 +43,12 @@ namespace GNFile
 	enum FrameType
 	{
 		FRAME_BPM     = 1,	// slot 的 4 bytes 直接是 float BPM
+		/* 上下這兩軌的編號：SM_GN_NOTE_FORMAT.md 的表格寫成 3=上、4=下，
+		 * 但實際存回遊戲後上下是顛倒的；以實測與 gn_master_core.py 的
+		 * COL_TO_FRAME_TYPE=(2,3,4,5)（左下上右）為準。 */
 		FRAME_LEFT    = 2,
-		FRAME_UP      = 3,
-		FRAME_DOWN    = 4,
+		FRAME_DOWN    = 3,
+		FRAME_UP      = 4,
 		FRAME_RIGHT   = 5,
 		FRAME_BARLINE = 9,	// 小節線，放在奇數 measurement
 		FRAME_MUSIC   = 10	// 音樂起止標記
