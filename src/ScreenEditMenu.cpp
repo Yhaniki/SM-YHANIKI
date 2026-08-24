@@ -106,7 +106,11 @@ void ScreenEditMenu::MenuStart( PlayerNumber pn )
 
 	GAMESTATE->m_pCurSong = pSong;
 	GAMESTATE->m_pCurStyle = GAMEMAN->GetEditorStyleForStepsType( st );
-	GAMESTATE->m_pCurSteps[PLAYER_1] = pSteps;
+	/* 編輯器 style 是 ONE_PLAYER_ONE_CREDIT，只有 m_MasterPlayerNumber 算 human，
+	 * 而 master 是「最先投幣的那一邊」。從 P2 開始玩的話，只設 PLAYER_1 會讓
+	 * ScreenEdit 拿不到譜面（它是照 GetFirstHumanPlayer() 取的），所以兩邊都設。 */
+	FOREACH_PlayerNumber( p )
+		GAMESTATE->m_pCurSteps[p] = pSteps;
 	/* .gn 的難度各有各的 BPM 表，進編輯器前先套上要編的那一份。 */
 	if( pSong != NULL )
 		pSong->UseTimingOf( pSteps );
