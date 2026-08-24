@@ -276,8 +276,16 @@ float g_fLastInsertAttackDurationSeconds = -1;
 ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 {
 	LOG->Trace( "ScreenEdit::ScreenEdit()" );
-	FOREACH_PotentialCpuPlayer(p)
-		GAMESTATE->m_pCurSteps[p] = GAMESTATE->m_pCurSteps[ GAMESTATE->GetFirstHumanPlayer() ];
+	/* 把 human 那邊的譜面複製給另一邊；來源是空的就別覆蓋，
+	 * 不然從 P2 開始玩時會把 PLAYER_1 已經設好的譜面洗成 NULL。 */
+	{
+		Steps *pHumanSteps = GAMESTATE->m_pCurSteps[ GAMESTATE->GetFirstHumanPlayer() ];
+		if( pHumanSteps == NULL )
+			pHumanSteps = GAMESTATE->m_pCurSteps[PLAYER_1];
+		if( pHumanSteps != NULL )
+			FOREACH_PlayerNumber(p)
+				GAMESTATE->m_pCurSteps[p] = pHumanSteps;
+	}
 	/* We do this ourself. */
 	SOUND->HandleSongTimer( false );
 
