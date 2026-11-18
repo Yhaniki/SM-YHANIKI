@@ -777,6 +777,9 @@
     <ClCompile Include="NoteField.cpp">
       <Filter>Actors used in Gameplay</Filter>
     </ClCompile>
+    <ClCompile Include="WaveformDisplay.cpp">
+      <Filter>Actors used in Gameplay</Filter>
+    </ClCompile>
     <ClCompile Include="PercentageDisplay.cpp">
       <Filter>Actors used in Gameplay</Filter>
     </ClCompile>
@@ -1929,6 +1932,9 @@
       <Filter>Actors used in Gameplay</Filter>
     </ClInclude>
     <ClInclude Include="NoteField.h">
+      <Filter>Actors used in Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="WaveformDisplay.h">
       <Filter>Actors used in Gameplay</Filter>
     </ClInclude>
     <ClInclude Include="PercentageDisplay.h">

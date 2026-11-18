@@ -110,6 +110,8 @@ public:
 	Difficulty		m_PreferredDifficulty[NUM_PLAYERS];
 	SortOrder	m_SortOrder;			// used by MusicWheel
 	bool			m_bEditing;			// NoteField does special stuff when this is true
+	bool			m_bShowWave;		// editor: draw the music waveform behind the NoteField (F3)
+	bool			m_bWaveNormalize;	// editor: normalise the waveform to the song's loudest part (Shift+F3, for testing)
 	bool            m_bMute;
 	bool			m_bLoadPackConnect;
 	bool			m_bfastLoadInScreenSelectMusic;

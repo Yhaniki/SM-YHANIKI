@@ -458,6 +458,15 @@ void NoteField::DrawPrimitives()
 		unsigned i;
 
 		//
+		// Waveform (F3), behind everything else
+		//
+		if( GAMESTATE->m_bShowWave )
+		{
+			m_WaveformDisplay.SetDrawRange( m_PlayerNumber, fFirstBeatToDraw, fLastBeatToDraw, m_fYReverseOffsetPixels );
+			m_WaveformDisplay.Draw();
+		}
+
+		//
 		// Draw beat bars
 		//
 		{
