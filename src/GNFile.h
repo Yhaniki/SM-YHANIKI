@@ -110,7 +110,7 @@ namespace GNFile
 		int16_t		aiLevel[NUM_DIFFS];
 		uint8_t		aHeader26_39[14];		// not interpreted
 		int32_t		aiNoteCount[NUM_DIFFS];	// counts only types 2/3/4/5
-		int32_t		aiExtra52[NUM_DIFFS];	// measure count per testing; the game derives the effective BPM from it
+		int32_t		aiExtra52[NUM_DIFFS];	// meaning not settled yet (see NotesWriterGN.cpp); kept as-is
 		int32_t		aiMeasurements[NUM_DIFFS];	// number of StepFrames
 		uint8_t		aStrings[6][32];		// unknown0, title, unknown1, writer, producer, filename
 		int32_t		iUnknown19;
@@ -155,7 +155,7 @@ namespace GNFile
 	bool Decrypt( const std::string &sRaw, std::string &sBodyOut, ContainerInfo &infoOut, std::string *psErrOut = NULL );
 
 	/* Wrap the body back into its original container with the original key.
-	 * bKeepFileSize: SDOM and REWU pad the output to exactly the original file size,
+	 * bKeepFileSize: DDRM, SDOM and REWU pad the output to exactly the original file size,
 	 *                and fail outright if the chart grew and no longer fits; false by
 	 *                default, which lets the file grow. */
 	bool Encrypt( const std::string &sBody, const ContainerInfo &info, bool bKeepFileSize,

@@ -213,7 +213,7 @@ static uint32_t ModInverseMultiplier()
 	return x;
 }
 
-/* Known-plaintext attack: iKs holds iNumKs consecutive keystream bytes (ciphertext -
+/* Known-plaintext attack: pKs holds iNumKs consecutive keystream bytes (ciphertext -
  * plaintext); recovers the seed from before the first byte was generated. The search
  * space is 2^24. */
 static bool RecoverSeed( const uint8_t *pKs, int iNumKs, uint32_t &iSeedOut )
