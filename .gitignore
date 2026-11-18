@@ -27,3 +27,9 @@ src/crypto51/d2utmpwOSSWZ
 crashinfo.txt
 BlueSocket/**
 Screenshots/
+# ThirdParty 資源包 / 素材包：本機路徑設定與打包產物
+src/ThirdParty.user.props
+ThirdParty-pack.zip
+ThirdParty-pack.zip.tmp
+Assets-pack.zip
+Assets-pack.zip.tmp

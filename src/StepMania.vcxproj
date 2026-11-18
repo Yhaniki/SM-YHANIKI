@@ -36,10 +36,12 @@
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC70.props" />
+    <Import Project="ThirdParty.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC70.props" />
+    <Import Project="ThirdParty.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
@@ -62,7 +64,7 @@
     <ClCompile>
       <AdditionalOptions>/EHa  /wd4430 /wd4996 /wd4458 /wd4018 /wd4456 /wd4457 /wd4459 /wd4838 /wd4996 /wd26812 /wd26495 /wd4244 /wd4306 /wd4389 /wd4305 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>C:\\local\\boost_1_72_0;$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;$(SMThirdPartyDir)vorbis;$(SMThirdPartyDir)libjpeg;.\ThirdParty_rebuild\lua-5.0\include;$(SMThirdPartyDir)dx80\include;$(SMThirdPartyDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;WINDOWS;DEBUG;_USING_V110_SDK71_;WINDOWS_IGNORE_PACKING_MISMATCH;_ITERATOR_DEBUG_LEVEL=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ExceptionHandling>Sync</ExceptionHandling>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -87,7 +89,7 @@
       <AdditionalDependencies>gdi32.lib;shell32.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutputPath)$(ProjectName)-$(COnfiguration).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>C:\\local\\boost_1_72_0\\lib32-msvc-14.2;..\ThirdParty\dx80\lib;..\ThirdParty;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SMThirdPartyDir)dx80\lib;$(SMThirdPartyDir)BaseClasses\Debug;$(SMThirdPartyDir)ffmpeg\lib;$(SMThirdPartyDir)libjpeg;$(SMThirdPartyDir)libpng\lib;$(SMThirdPartyDir)libresample;$(SMThirdPartyDir)mad-0.15.1b\msvc++\Release;$(SMThirdPartyDir)vorbis\win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>wininet.lib;msimg32.lib;libci.lib;msvcrt.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>../Debug/StepMania-debug.pdb</ProgramDatabaseFile>
@@ -105,7 +107,7 @@
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;..\ThirdParty\vorbis;..\ThirdParty\libjpeg;.\ThirdParty_rebuild\lua-5.0\include;..\ThirdParty\dx80\include;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(WindowsSDK_IncludePath);.;.\ThirdParty_rebuild\SDL-1.2.6\include;$(SMThirdPartyDir)vorbis;$(SMThirdPartyDir)libjpeg;.\ThirdParty_rebuild\lua-5.0\include;$(SMThirdPartyDir)dx80\include;$(SMThirdPartyDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;WINDOWS;RELEASE;_USING_V110_SDK71_;WINDOWS_IGNORE_PACKING_MISMATCH;BOOST_USE_WINAPI_VERSION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
@@ -132,7 +134,7 @@
       <AdditionalOptions>/MACHINE:I386 %(AdditionalOptions)</AdditionalOptions>
       <OutputFile>../Program/StepMania.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>..\ThirdParty\dx80\lib;..\ThirdParty;..\ThirdParty\icu4c-68_2-Win32-MSVC2019\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SMThirdPartyDir)dx80\lib;$(SMThirdPartyDir)BaseClasses\Release;$(SMThirdPartyDir)ffmpeg\lib;$(SMThirdPartyDir)libjpeg;$(SMThirdPartyDir)libpng\lib;$(SMThirdPartyDir)libresample;$(SMThirdPartyDir)mad-0.15.1b\msvc++\Release;$(SMThirdPartyDir)vorbis\win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>wininet.lib;msimg32.lib;libci.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <ProgramDatabaseFile>../Release/StepMania.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>

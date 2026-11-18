@@ -8,7 +8,7 @@
 #if defined(WIN32)
 #  include "libpng/include/png.h"
 #  if defined(_WINDOWS)
-#    pragma comment(lib, "../ThirdParty/libpng/lib/libpng.lib")
+#    pragma comment(lib, "libpng.lib")
 #  endif
 #  pragma warning(disable: 4611) /* interaction between '_setjmp' and C++ object destruction is non-portable */
 #else

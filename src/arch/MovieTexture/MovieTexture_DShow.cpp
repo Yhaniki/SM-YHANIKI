@@ -5,9 +5,9 @@
  
 // Link with the DirectShow base class libraries
 #if defined(DEBUG)
-	#pragma comment(lib, "../ThirdParty/baseclasses/debug/strmbasd.lib") 
+	#pragma comment(lib, "strmbasd.lib") 
 #else
-	#pragma comment(lib, "../ThirdParty/baseclasses/release/strmbase.lib") 
+	#pragma comment(lib, "strmbase.lib") 
 #endif
 
 #include "MovieTexture_DShowHelper.h"

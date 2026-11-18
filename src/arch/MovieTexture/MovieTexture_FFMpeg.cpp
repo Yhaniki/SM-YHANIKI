@@ -25,8 +25,8 @@ namespace avcodec
 };
 
 #if defined(_WIN32)
-	#pragma comment(lib, "../ThirdParty/ffmpeg/lib/avcodec.lib")
-	#pragma comment(lib, "../ThirdParty/ffmpeg/lib/avformat.lib")
+	#pragma comment(lib, "avcodec.lib")
+	#pragma comment(lib, "avformat.lib")
 #endif
 
 struct AVPixelFormat_t

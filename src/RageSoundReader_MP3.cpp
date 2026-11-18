@@ -17,7 +17,7 @@
 #pragma comment(lib, "../ThirdParty/mad-0.15.1b/xboxmad/Release/xboxmad.lib")
 #endif
 #else
-#pragma comment(lib, "../ThirdParty/mad-0.15.1b/msvc++/Release/libmad.lib")
+#pragma comment(lib, "libmad.lib")
 #endif
 #else
 #include <mad.h>

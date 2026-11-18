@@ -5,7 +5,7 @@
 
 #include "libresample/include/libresample.h"
 #ifdef _WINDOWS
-#pragma comment(lib, "../ThirdParty/libresample/resample.lib")
+#pragma comment(lib, "resample.lib")
 #endif
 
 #ifdef _XBOX
