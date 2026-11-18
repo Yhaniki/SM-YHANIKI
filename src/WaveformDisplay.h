@@ -136,6 +136,7 @@ private:
 	float			m_fFirstBeat;
 	float			m_fLastBeat;
 	float			m_fYReverseOffsetPixels;
+	float			m_fBrightness;		// AddQuad() multiplies colours by this; set each frame
 	std::vector<RageSpriteVertex> m_Verts;	// reused every frame
 };
 

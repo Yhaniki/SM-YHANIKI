@@ -7,6 +7,7 @@
 #include "RageUtil.h"
 #include "RageSoundReader_FileReader.h"
 #include "GameState.h"
+#include "PrefsManager.h"
 #include "ArrowEffects.h"
 #include "song.h"
 
@@ -22,6 +23,7 @@ static const float FULL_SCALE		= 32768.f;	// |sample| that's drawn full width (u
 static const float SILENCE			= 0.001f;	// rows whose scaled peak is below this aren't drawn
 static const float MIN_RMS_WIDTH	= 0.5f;		// NoteField units
 static const float RMS_BRIGHTNESS	= 1.4f;		// colour = lerp(lo, hi, clamp(rms * this))
+static const float MIN_BRIGHTNESS	= 0.15f;	// lowest colour multiplier from the Brightness option
 static const RageColor COLOR_CENTER_LINE( 0x2b/255.f, 0x2b/255.f, 0x36/255.f, 1 );
 static const RageColor COLOR_PEAK(        0x4a/255.f, 0x3f/255.f, 0x0d/255.f, 1 );
 static const RageColor COLOR_RMS_LO(      0x8a/255.f, 0x77/255.f, 0x18/255.f, 1 );
@@ -362,7 +364,8 @@ WaveformDisplay::WaveformDisplay():
 	m_PlayerNumber( PLAYER_1 ),
 	m_fFirstBeat( 0 ),
 	m_fLastBeat( 0 ),
-	m_fYReverseOffsetPixels( 0 )
+	m_fYReverseOffsetPixels( 0 ),
+	m_fBrightness( 1 )
 {
 }
 
@@ -385,7 +388,7 @@ void WaveformDisplay::AddQuad( float fLeft, float fTop, float fRight, float fBot
 	/* Corners in order around the quad, as both GL_QUADS and the D3D index
 	 * buffer (0,1,2 / 2,3,0) expect. */
 	RageSpriteVertex v;
-	v.c = c;
+	v.c = RageColor( c.r * m_fBrightness, c.g * m_fBrightness, c.b * m_fBrightness, c.a );
 	v.p = RageVector3( fLeft,  fTop,    0 );	m_Verts.push_back( v );
 	v.p = RageVector3( fRight, fTop,    0 );	m_Verts.push_back( v );
 	v.p = RageVector3( fRight, fBottom, 0 );	m_Verts.push_back( v );
@@ -400,6 +403,12 @@ void WaveformDisplay::DrawPrimitives()
 		return;
 
 	m_Verts.clear();
+
+	/* Dim the waveform along with the "Brightness" (BGBrightness) option, so it
+	 * doesn't glare when the rest of the screen is turned down.  Keep a small
+	 * floor: at 0% the waveform would vanish completely and look broken even
+	 * though F3 says it's shown.  The backdrop is black, so it's unaffected. */
+	m_fBrightness = max( MIN_BRIGHTNESS, PREFSMAN->m_fBGBrightness );
 
 	AddQuad( -BG_HALF_WIDTH, BG_TOP, BG_HALF_WIDTH, BG_BOTTOM, RageColor(0,0,0,BG_ALPHA) );
 	AddQuad( -0.5f, BG_TOP, 0.5f, BG_BOTTOM, COLOR_CENTER_LINE );
