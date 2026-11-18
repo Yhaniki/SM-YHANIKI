@@ -186,7 +186,10 @@ static bool WriteWholeFile( CString sPath, const std::string &s )
 		return false;
 	if( f.Write( s.data(), s.size() ) != (int) s.size() )
 		return false;
-	return f.Flush() == 0;
+	/* Flush() returns the number of bytes it wrote (0 only if the buffer was
+	 * already empty) and -1 on error.  Checking for == 0 reported almost every
+	 * successful write as "could not write the file". */
+	return f.Flush() != -1;
 }
 
 bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, CString &sErrOut )
