@@ -113,6 +113,9 @@ public:
 	bool HasOwnTiming() const { return m_pTiming != NULL; }
 	const TimingData *GetOwnTiming() const { return m_pTiming; }
 	void GetNoteData( NoteData *p ) const { *p = m_NoteData; }
+	/* Used by NotesWriterGN when writing the level back; 0 means unset, so the
+	 * writer keeps the level already in the .gn. */
+	int GetMeter() const { return 0; }
 	NoteData m_NoteData;
 	TimingData *m_pTiming;
 };
