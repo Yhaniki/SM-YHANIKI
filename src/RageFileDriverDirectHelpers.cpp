@@ -260,8 +260,20 @@ void DirectFilenameDB::PopulateFileSet( FileSet &fs, const CString &path )
 		if(!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
 			continue;
 
+		/* FindFirstFile returns names in the system code page.  Characters the
+		 * code page can't represent (e.g. Japanese kana on Traditional Chinese
+		 * Windows) come back as '?', and a name containing '?' can never be
+		 * opened.  Use the 8.3 short name instead when the volume has one: it is
+		 * made of characters the code page can represent.  '?' can't appear in a
+		 * real file name, nor as the second byte of a DBCS character, so it
+		 * reliably marks a lossy conversion. */
+		const char *szName = fd.cFileName;
+		if( strchr(fd.cFileName, '?') != NULL &&
+			fd.cAlternateFileName[0] != '\0' && strchr(fd.cAlternateFileName, '?') == NULL )
+			szName = fd.cAlternateFileName;
+
 		File f;
-		f.SetName( fd.cFileName );
+		f.SetName( szName );
 		f.dir = !!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
 		f.size = fd.nFileSizeLow;
 		f.hash = fd.ftLastWriteTime.dwLowDateTime;
