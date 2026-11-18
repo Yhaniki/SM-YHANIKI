@@ -340,7 +340,10 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 	float cx = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("User%dX",ShowSide));
 	float cy = THEME->GetMetricF("ScreenNetEvaluation",ssprintf("User%dY",ShowSide));
 	
-	m_iActivePlayers = 20;
+	/* Set up every slot: UpdateUsersStates() and UpdateShareProgress() use all
+	 * NETMAXPLAYERS of them, and BitmapText::SetText() asserts on a slot whose
+	 * font was never loaded. */
+	m_iActivePlayers = NETMAXPLAYERS;
 	m_iCurrentPlayer = 0;
 
 	for( int i=0; i<m_iActivePlayers; ++i )
@@ -1231,13 +1234,14 @@ void ScreenNetSelectMusic::UpdateUsersStates()
 	}
 
 	m_rectUsersBG.SetDiffuse(RageColor(0,1,0.9,alpha*0.2));
-	for( int i=0; i<20; ++i )
+	for( int i=0; i<NETMAXPLAYERS; ++i )
 	{
 		m_textUsers[i].SetText( "" );
 		m_textUsersNum[i].SetText( "" );
 	}
 	//RageColor(R,G,B,A)
-	for( int i=0; i<NSMAN->m_PlayerNames.size()/2; ++i )
+	const int iNumUsers = min( (int)NSMAN->m_PlayerNames.size()/2, NETMAXPLAYERS );
+	for( int i=0; i<iNumUsers; ++i )
 	{
 		if(NSMAN->m_PlayerCondition.size()<=i)
 			return;
