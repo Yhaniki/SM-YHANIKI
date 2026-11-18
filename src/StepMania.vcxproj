@@ -328,6 +328,7 @@
     <ClCompile Include="NoteDataWithScoring.cpp" />
     <ClCompile Include="NoteDisplay.cpp" />
     <ClCompile Include="NoteField.cpp" />
+    <ClCompile Include="WaveformDisplay.cpp" />
     <ClCompile Include="NoteFieldPositioning.cpp" />
     <ClCompile Include="NoteSkinManager.cpp" />
     <ClCompile Include="NotesLoader.cpp" />
@@ -722,6 +723,7 @@
     <ClInclude Include="NoteDataWithScoring.h" />
     <ClInclude Include="NoteDisplay.h" />
     <ClInclude Include="NoteField.h" />
+    <ClInclude Include="WaveformDisplay.h" />
     <ClInclude Include="NoteFieldPositioning.h" />
     <ClInclude Include="NoteSkinManager.h" />
     <ClInclude Include="NotesLoader.h" />

@@ -137,6 +137,8 @@ void GameState::Reset()
 	m_SortOrder = SORT_INVALID;
 	m_PlayMode = PLAY_MODE_INVALID;
 	m_bEditing = false;
+	m_bShowWave = false;
+	m_bWaveNormalize = false;
 	m_bMute = false;
 	m_bLoadPackConnect=false;
 	m_bfastLoadInScreenSelectMusic=false;

@@ -13,6 +13,7 @@
 #include "ArrowBackdrop.h"
 #include "ReceptorArrowRow.h"
 #include "GhostArrowRow.h"
+#include "WaveformDisplay.h"
 
 class Song;
 
@@ -90,6 +91,7 @@ protected:
 	BitmapText		m_textMeasureNumber;
 	Quad			m_rectMarkerBar;
 	Quad			m_rectAreaHighlight;
+	WaveformDisplay	m_WaveformDisplay;
 };
 
 #endif

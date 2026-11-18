@@ -27,6 +27,7 @@
 #include "PlayerOptions.h"
 #include <ctime>
 #include "ArrowEffects.h"
+#include "WaveformDisplay.h"
 const float RECORD_HOLD_SECONDS = 0.3f;
 
 
@@ -114,6 +115,8 @@ static const MenuRow g_KeyboardShortcutsItems[] =
 	{ "Ctrl + P: Play whole song",						false, 0, { NULL } },
 	{ "Shift + P: Play current beat to end",			false, 0, { NULL } },
 	{ "Ctrl + R: Record",								false, 0, { NULL } },
+	{ "F3: Toggle waveform",							false, 0, { NULL } },
+	{ "Shift + F3: Toggle waveform normalization",		false, 0, { NULL } },
 	{ "F4: Toggle assist tick",							false, 0, { NULL } },
 	{ "F5/F6: Next/prev steps of same StepsType",		false, 0, { NULL } },
 	{ "F7/F8: Decrease/increase BPM at cur beat",		false, 0, { NULL } },
@@ -432,6 +435,7 @@ ScreenEdit::~ScreenEdit()
 {
 	LOG->Trace( "ScreenEdit::~ScreenEdit()" );
 	m_soundMusic.StopPlaying();
+	WaveformData::FreeShared();
 }
 void ScreenEdit::UpdateAutoPlayText()
 {
@@ -566,6 +570,12 @@ float binarySearch2(float find)
 }
 void ScreenEdit::Update( float fDeltaTime )
 {
+	/* Waveform (F3): decode the music a few milliseconds per frame until it's
+	 * all loaded, so turning it on never stalls the editor.  Nothing is decoded
+	 * while it's off. */
+	if( GAMESTATE->m_bShowWave )
+		WaveformData::UpdateShared( m_pSong->GetMusicPath(), 0.006f );
+
 	if( m_soundMusic.IsPlaying() )
 	{
 		RageTimer tm;
@@ -859,6 +869,26 @@ void ScreenEdit::Input( const DeviceInput& DeviceI, const InputEventType type, c
 	UpdateTextInfo();
 }
 
+
+/* F3: waveform on/off.  Shift+F3: normalise the waveform to the song's loudest
+ * part (off by default; kept for testing, see WaveformDisplay.h). */
+static void HandleWaveformKey()
+{
+	const bool bShift =
+		INPUTFILTER->IsBeingPressed( DeviceInput(DEVICE_KEYBOARD, KEY_LSHIFT) ) ||
+		INPUTFILTER->IsBeingPressed( DeviceInput(DEVICE_KEYBOARD, KEY_RSHIFT) );
+	if( bShift )
+	{
+		GAMESTATE->m_bWaveNormalize = !GAMESTATE->m_bWaveNormalize;
+		SCREENMAN->SystemMessage( GAMESTATE->m_bWaveNormalize?
+			"Waveform normalization ON (shown once the song is loaded)":
+			"Waveform normalization OFF" );
+	}
+	else
+	{
+		GAMESTATE->m_bShowWave = !GAMESTATE->m_bShowWave;
+	}
+}
 
 void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType type, const GameInput &GameI, const MenuInput &MenuI, const StyleInput &StyleI )
 {
@@ -1234,6 +1264,10 @@ void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType typ
 
 	case KEY_F1:
 		SCREENMAN->MiniMenu( &g_KeyboardShortcuts, SM_None );
+		break;
+	case KEY_F3:
+		if( type == IET_FIRST_PRESS )
+			HandleWaveformKey();
 		break;
 	case KEY_F4:
 		// SCREENMAN->SystemMessage( ssprintf("Assist Tick is %s", GAMESTATE->m_SongOptions.m_bAssistTick?"ON":"OFF") );
@@ -1640,6 +1674,9 @@ void ScreenEdit::InputPlay( const DeviceInput& DeviceI, const InputEventType typ
 		{
 		case KEY_ESC:
 			TransitionToEdit();
+			break;
+		case KEY_F3:
+			HandleWaveformKey();
 			break;
 		case KEY_F4:
 			// SCREENMAN->SystemMessage( ssprintf("Assist Tick is %s", GAMESTATE->m_SongOptions.m_bAssistTick?"ON":"OFF") );
