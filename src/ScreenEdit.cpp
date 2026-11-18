@@ -94,6 +94,7 @@ const ScreenMessage SM_BackFromBPMChange		= (ScreenMessage)(SM_User+15);
 const ScreenMessage SM_BackFromStopChange		= (ScreenMessage)(SM_User+16);
 const ScreenMessage SM_BackFromDisplayBPMMin		= (ScreenMessage)(SM_User+17);
 const ScreenMessage SM_BackFromDisplayBPMMax		= (ScreenMessage)(SM_User+18);
+const ScreenMessage SM_BackFromBPMToMatchTime		= (ScreenMessage)(SM_User+19);
 const CString HELP_TEXT = 
 	"Up/Down:\n     change beat\n"
 	"Left/Right:\n     change snap\n"
@@ -183,6 +184,7 @@ static const MenuRow g_AreaMenuItems[] =
 									true, 0, { NULL } },
 	{ "Convert beats to pause",		true, 0, { NULL } },
 	{ "Convert pause to beats",		true, 0, { NULL } },
+	{ "Adjust BPM to Match Time",	true, 0, { NULL } },
 	{ NULL, true, 0, { NULL } }
 };
 static Menu g_AreaMenu( "Area Menu", g_AreaMenuItems );
@@ -1805,6 +1807,51 @@ void ReloadFromDisk( void *p )
 	g_DoReload = true;
 }
 
+/* Area menu "Adjust BPM to Match Time": set the BPM at the begin marker so that
+ * the end marker lands on the entered time (music seconds), and put the BPM that
+ * was in effect at the end marker back there, so everything after it keeps its
+ * timing.  Assumes there are no other BPM changes or stops between the markers. */
+void ScreenEdit::AdjustBPMToMatchTime()
+{
+	if( ScreenTextEntry::s_bCancelledLast )
+		return;
+
+	if( m_NoteFieldEdit.m_fBeginMarker == -1 || m_NoteFieldEdit.m_fEndMarker == -1 )
+	{
+		SCREENMAN->SystemMessage( "No range selected!" );
+		return;
+	}
+
+	const float fStartBeat = m_NoteFieldEdit.m_fBeginMarker;
+	const float fEndBeat = m_NoteFieldEdit.m_fEndMarker;
+	if( fEndBeat <= fStartBeat )
+	{
+		SCREENMAN->SystemMessage( "Invalid range!" );
+		return;
+	}
+
+	const float fStartTime = m_pSong->m_Timing.GetElapsedTimeFromBeat( fStartBeat );
+	const float fTargetSeconds = (float) atof( ScreenTextEntry::s_sLastAnswer.c_str() );
+	if( fTargetSeconds <= fStartTime )
+	{
+		SCREENMAN->SystemMessage( "Invalid target time! Must be greater than start time." );
+		return;
+	}
+
+	/* Read these before changing anything. */
+	const float fEndBPM = m_pSong->GetBPMAtBeat( fEndBeat );
+	bool bHasBPMAtEndBeat = false;
+	const vector<BPMSegment> aBPMSegments = m_pSong->GetBPMSegment();
+	for( unsigned i = 0; i < aBPMSegments.size(); ++i )
+		if( aBPMSegments[i].m_fStartBeat == fEndBeat )
+			bHasBPMAtEndBeat = true;
+
+	const float fNewBPM = (fEndBeat - fStartBeat) / ((fTargetSeconds - fStartTime) / 60.0f);
+	m_pSong->SetBPMAtBeat( fStartBeat, fNewBPM );
+	if( !bHasBPMAtEndBeat )
+		m_pSong->SetBPMAtBeat( fEndBeat, fEndBPM );
+}
+
 void ScreenEdit::HandleScreenMessage( const ScreenMessage SM )
 {
 	switch( SM )
@@ -2012,6 +2059,9 @@ void ScreenEdit::HandleScreenMessage( const ScreenMessage SM )
 			SetDisplayBPMType(ScreenMiniMenu::s_iLastAnswers[display_bpm_type]);
 		}
 		break;	
+	case SM_BackFromBPMToMatchTime:
+		AdjustBPMToMatchTime();
+		break;
 	}
 }
 
@@ -2834,6 +2884,10 @@ void ScreenEdit::HandleAreaMenuChoice( AreaMenuChoice c, int* iAnswers )
 			// Hello and welcome to I FEEL STUPID :-)
 			break;
 			}
+		case adjust_bpm_to_match_time:
+			GAMESTATE->m_bClearText = true;
+			SCREENMAN->TextEntry( SM_BackFromBPMToMatchTime, "Enter target end time (seconds):", "" );
+			break;
 		default:
 			ASSERT(0);
 	};
