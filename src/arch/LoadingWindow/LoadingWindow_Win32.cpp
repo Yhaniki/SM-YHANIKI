@@ -11,39 +11,124 @@
 
 static HBITMAP g_hBitmap = NULL;
 
-/* Load a file into a GDI surface. */
-HBITMAP LoadWin32Surface( CString fn )
+/*
+ * The dialog template is laid out in dialog units, and DLUs are derived from the
+ * dialog font ("MS Sans Serif").  When the system locale is set to a DBCS locale
+ * such as Japanese, that font is substituted with a CJK font whose average
+ * character width is larger, so the whole dialog grows while the splash bitmap
+ * stays the same size, leaving empty space on the right and between the image
+ * and the text.
+ *
+ * To keep the window the same size under every locale, ignore the template's
+ * geometry and lay the dialog out in pixels in WM_INITDIALOG:
+ *  - the client area is always SPLASH_WIDTH pixels wide (the width the dialog
+ *    has on an English system, and the width of the stock splash image);
+ *  - the splash image is scaled to that width, keeping its aspect ratio, so
+ *    replacement images of any size fit;
+ *  - the three text lines are stacked below the image, sized from the actual
+ *    dialog font (which may still be the substituted CJK font, so that song
+ *    names in the local code page display correctly).
+ */
+static const int SPLASH_WIDTH = 468;
+static const int TEXT_TOP_MARGIN = 4;
+static const int TEXT_LINE_PADDING = 6;
+static const int BOTTOM_MARGIN = 8;
+
+/* Load an image file into a GDI bitmap, scaled to iWidth pixels wide with the
+ * aspect ratio preserved.  The scaled height is returned in iHeightOut. */
+static HBITMAP LoadWin32Surface( CString fn, int iWidth, int &iHeightOut )
 {
 	CString error;
 	RageSurface *s = RageSurfaceUtils::LoadFile( fn, error );
 	if( s == NULL )
 		return NULL;
 
-	RageSurfaceUtils::ConvertSurface( s, s->w, s->h, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0 );
-
-	HBITMAP bitmap = CreateCompatibleBitmap( GetDC(NULL), s->w, s->h );
-	ASSERT( bitmap );
-
-	HDC BitmapDC = CreateCompatibleDC( GetDC(NULL) );
-	SelectObject( BitmapDC, bitmap );
-
-	/* This is silly, but simple.  We only do this once, on a small image. */
-	for( int y = 0; y < s->h; ++y )
+	if( s->w <= 0 || s->h <= 0 )
 	{
-		unsigned const char *line = ((unsigned char *) s->pixels) + (y * s->pitch);
-		for( int x = 0; x < s->w; ++x )
-		{
-			unsigned const char *data = line + (x*s->format->BytesPerPixel);
-			
-			SetPixelV( BitmapDC, x, y, RGB( data[3], data[2], data[1] ) );
-		}
+		delete s;
+		return NULL;
 	}
 
-	SelectObject( BitmapDC, NULL );
-	DeleteObject( BitmapDC );
+	/* 32-bit BI_RGB DIB layout: each pixel is a little-endian 0x00RRGGBB. */
+	RageSurfaceUtils::ConvertSurface( s, s->w, s->h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0 );
+
+	const int iHeight = max( 1, (s->h * iWidth + s->w / 2) / s->w );
+
+	BITMAPINFO bmi;
+	ZERO( bmi );
+	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bmi.bmiHeader.biWidth = s->pitch / 4;
+	bmi.bmiHeader.biHeight = -s->h;	/* top-down */
+	bmi.bmiHeader.biPlanes = 1;
+	bmi.bmiHeader.biBitCount = 32;
+	bmi.bmiHeader.biCompression = BI_RGB;
+
+	HDC hScreenDC = GetDC( NULL );
+	HBITMAP bitmap = CreateCompatibleBitmap( hScreenDC, iWidth, iHeight );
+	ASSERT( bitmap );
+
+	HDC hBitmapDC = CreateCompatibleDC( hScreenDC );
+	HGDIOBJ hOldBitmap = SelectObject( hBitmapDC, bitmap );
+
+	SetStretchBltMode( hBitmapDC, HALFTONE );
+	SetBrushOrgEx( hBitmapDC, 0, 0, NULL );
+	StretchDIBits( hBitmapDC,
+		0, 0, iWidth, iHeight,
+		0, 0, s->w, s->h,
+		s->pixels, &bmi, DIB_RGB_COLORS, SRCCOPY );
+
+	SelectObject( hBitmapDC, hOldBitmap );
+	DeleteDC( hBitmapDC );
+	ReleaseDC( NULL, hScreenDC );
 
 	delete s;
+
+	iHeightOut = iHeight;
 	return bitmap;
+}
+
+/* Lay out the dialog in pixels; see the comment above SPLASH_WIDTH. */
+static void LayoutDialog( HWND hWnd, int iSplashHeight )
+{
+	const int iWidth = SPLASH_WIDTH;
+
+	int iLineHeight = 13 + TEXT_LINE_PADDING;
+	HDC hDC = GetDC( hWnd );
+	if( hDC != NULL )
+	{
+		HFONT hFont = (HFONT) SendMessage( hWnd, WM_GETFONT, 0, 0 );
+		HGDIOBJ hOldFont = hFont != NULL? SelectObject( hDC, hFont ):NULL;
+		TEXTMETRIC tm;
+		if( GetTextMetrics(hDC, &tm) )
+			iLineHeight = tm.tmHeight + TEXT_LINE_PADDING;
+		if( hOldFont != NULL )
+			SelectObject( hDC, hOldFont );
+		ReleaseDC( hWnd, hDC );
+	}
+
+	SetWindowPos( GetDlgItem(hWnd, IDC_SPLASH), NULL, 0, 0, iWidth, iSplashHeight, SWP_NOZORDER | SWP_NOACTIVATE );
+
+	int y = iSplashHeight + TEXT_TOP_MARGIN;
+	const int msgs[] = { IDC_STATIC_MESSAGE1, IDC_STATIC_MESSAGE2, IDC_STATIC_MESSAGE3 };
+	for( unsigned i = 0; i < 3; ++i )
+	{
+		SetWindowPos( GetDlgItem(hWnd, msgs[i]), NULL, 0, y, iWidth, iLineHeight, SWP_NOZORDER | SWP_NOACTIVATE );
+		y += iLineHeight;
+	}
+	const int iClientHeight = y + BOTTOM_MARGIN;
+
+	/* Convert the client size to a window size, and keep the window centered
+	 * where DS_CENTER originally placed it. */
+	RECT rcOld;
+	GetWindowRect( hWnd, &rcOld );
+
+	RECT rcNew = { 0, 0, iWidth, iClientHeight };
+	AdjustWindowRectEx( &rcNew, GetWindowLong(hWnd, GWL_STYLE), FALSE, GetWindowLong(hWnd, GWL_EXSTYLE) );
+	const int cx = rcNew.right - rcNew.left;
+	const int cy = rcNew.bottom - rcNew.top;
+	const int x = (rcOld.left + rcOld.right - cx) / 2;
+	const int top = (rcOld.top + rcOld.bottom - cy) / 2;
+	SetWindowPos( hWnd, NULL, x, top, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE );
 }
 
 BOOL CALLBACK LoadingWindow_Win32::WndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
@@ -51,15 +136,19 @@ BOOL CALLBACK LoadingWindow_Win32::WndProc( HWND hWnd, UINT msg, WPARAM wParam, 
 	switch( msg )
 	{
 	case WM_INITDIALOG:
-		g_hBitmap = LoadWin32Surface( "Data/splash.png" );
+	{
+		int iSplashHeight = 0;
+		g_hBitmap = LoadWin32Surface( "Data/splash.png", SPLASH_WIDTH, iSplashHeight );
 		if( g_hBitmap == NULL )
-			g_hBitmap = LoadWin32Surface( "Data/splash.bmp" );
+			g_hBitmap = LoadWin32Surface( "Data/splash.bmp", SPLASH_WIDTH, iSplashHeight );
 		SendMessage( 
 			GetDlgItem(hWnd,IDC_SPLASH), 
 			STM_SETIMAGE, 
 			(WPARAM) IMAGE_BITMAP, 
 			(LPARAM) (HANDLE) g_hBitmap );
+		LayoutDialog( hWnd, g_hBitmap != NULL? iSplashHeight:0 );
 		break;
+	}
 
 	case WM_DESTROY:
 		DeleteObject( g_hBitmap );
