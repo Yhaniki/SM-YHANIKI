@@ -209,6 +209,9 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 	this->AddChild( &m_rectDiff );
 
 
+	FOREACH_PlayerNumber( p )
+		m_pSteps[p] = NULL;
+
 	FOREACH_EnabledPlayer (p)
 	{
 		m_DifficultyIcon[p].SetName( ssprintf("DifficultyIconP%d",p+1) );
@@ -886,6 +889,8 @@ void ScreenNetSelectMusic::HandleScreenMessage( const ScreenMessage SM )
 		NSMAN->ReportNSSOnOff(3);
 		GAMESTATE->m_bEditing = false;
 		NSMAN->ReportPlayerOptions();
+		FOREACH_PlayerNumber( p )	//every song was reloaded; these point at deleted Steps
+			m_pSteps[p] = NULL;
 		ResetSongList();
 		NSMAN->SendAskSong();
 		CheckChangeSong();
@@ -934,27 +939,82 @@ void ScreenNetSelectMusic::HandleScreenMessage( const ScreenMessage SM )
 }
 vector <Steps *> ScreenNetSelectMusic::SortStep(vector <Steps *> MultiSteps)
 {
-	vector <Steps *> sort;
-	sort.assign(MultiSteps.begin(), MultiSteps.end());
-	
-	for ( int i=(int)sort.size()-1; i>0; --i )
+	/* Same order as ScreenSelectMusic: difficulty, then meter, then note count,
+	 * so several edits of one song come out in a stable, sensible order. */
+	StepsUtil::SortNotesArrayByDifficulty( MultiSteps );
+	return MultiSteps;
+}
+
+/* Index of pSteps in vSteps, or -1.  Compares pointers only: pSteps may be left
+ * over from a song that was reloaded since, so it must not be dereferenced
+ * until it is found in the current list. */
+static int FindStepsIndex( const vector<Steps*> &vSteps, const Steps *pSteps )
+{
+	if( pSteps == NULL )
+		return -1;
+	for( unsigned i = 0; i < vSteps.size(); ++i )
+		if( vSteps[i] == pSteps )
+			return (int)i;
+	return -1;
+}
+
+/* Pick the chart pn plays on pSong:
+ * 1. the chart already picked on this screen, if it belongs to pSong;
+ * 2. GAMESTATE->m_pCurSteps (chart last played, or picked in ScreenSelectMusic),
+ *    if it belongs to pSong and has the preferred difficulty;
+ * 3. otherwise the first chart at or above the preferred difficulty
+ *    (the hardest chart if there is none). */
+void ScreenNetSelectMusic::ResolveSteps( PlayerNumber pn, const Song *pSong )
+{
+	vector<Steps*> vSteps;
+	if( pSong != NULL )
+		vSteps = SortStep( pSong->GetAllSteps( GAMESTATE->GetCurrentStyle()->m_StepsType ) );
+
+	if( vSteps.empty() )
 	{
-		for(int j=0; j<i; ++j)
-		{
-			if(sort[j]->GetDifficulty() > sort[j+1]->GetDifficulty())
-			{
-				Steps *tmp = sort[j];
-				sort[j] = sort[j+1];
-				sort[j+1] = tmp;
-			}
-		}
+		m_pSteps[pn] = NULL;
+		m_DC[pn] = NUM_DIFFICULTIES;	//no lv?
+		return;
 	}
-	//MultiSteps.assign(sort.begin(), sort.end());
-	return sort;
+
+	const Difficulty dcPreferred = GAMESTATE->m_PreferredDifficulty[pn];
+	int i = FindStepsIndex( vSteps, m_pSteps[pn] );
+	if( i == -1 )
+	{
+		i = FindStepsIndex( vSteps, GAMESTATE->m_pCurSteps[pn] );
+		if( i != -1 && vSteps[i]->GetDifficulty() != dcPreferred )
+			i = -1;
+	}
+	if( i == -1 )
+	{
+		for( i = 0; i < (int)vSteps.size()-1; ++i )
+			if( vSteps[i]->GetDifficulty() >= dcPreferred )
+				break;
+	}
+
+	m_pSteps[pn] = vSteps[i];
+	m_DC[pn] = vSteps[i]->GetDifficulty();
+}
+
+/* Step to the previous/next chart.  Moves one chart at a time, so every edit
+ * can be reached, not only the first one of each difficulty. */
+void ScreenNetSelectMusic::MoveSteps( PlayerNumber pn, int iDir )
+{
+	const Song *pSong = GAMESTATE->m_pCurSong;
+	ResolveSteps( pn, pSong );
+	if( m_pSteps[pn] != NULL )
+	{
+		vector<Steps*> vSteps = SortStep( pSong->GetAllSteps( GAMESTATE->GetCurrentStyle()->m_StepsType ) );
+		int i = FindStepsIndex( vSteps, m_pSteps[pn] ) + iDir;
+		CLAMP( i, 0, (int)vSteps.size()-1 );
+		m_pSteps[pn] = vSteps[i];
+		m_DC[pn] = vSteps[i]->GetDifficulty();
+		GAMESTATE->m_PreferredDifficulty[pn] = m_DC[pn];
+	}
+	UpdateDifficulties( pn );
 }
 void ScreenNetSelectMusic::MenuLeft( PlayerNumber pn, const InputEventType type )
 {
-	int i;
 	m_soundChangeOpt.Play();
 	switch (m_SelectMode)
 	{
@@ -970,29 +1030,7 @@ void ScreenNetSelectMusic::MenuLeft( PlayerNumber pn, const InputEventType type 
 		UpdateSongsListPos();
 		break;
 	case SelectDifficulty:
-		{
-			StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType;
-			vector <Steps *> MultiSteps;
-			MultiSteps = GAMESTATE->m_pCurSong->GetAllSteps( st );
-			if (MultiSteps.size() == 0)
-				m_DC[pn] = NUM_DIFFICULTIES;//no lv?
-			else
-			{
-				MultiSteps = SortStep(MultiSteps);
-				
-				for ( i=0; i<(int)MultiSteps.size(); ++i )
-					if ( MultiSteps[i]->GetDifficulty() >= m_DC[pn] )
-						break;
-
-				if ( i == (int)MultiSteps.size() )
-					m_DC[pn] = MultiSteps[i-1]->GetDifficulty();
-				else
-					if (i > 0)	//If we are at the easiest difficulty, do nothign
-						m_DC[pn] = MultiSteps[i-1]->GetDifficulty();
-			}
-			UpdateDifficulties( pn );
-			GAMESTATE->m_PreferredDifficulty[pn] = m_DC[pn];
-		}
+		MoveSteps( pn, -1 );
 		break;
 	case SelectOptions:
 		//XXX: HACK: This will causes ScreenSelectOptions to go back here.
@@ -1005,7 +1043,6 @@ void ScreenNetSelectMusic::MenuLeft( PlayerNumber pn, const InputEventType type 
 
 void ScreenNetSelectMusic::MenuRight( PlayerNumber pn, const InputEventType type )
 {
-	int i;
 	m_soundChangeOpt.Play();
 	switch (m_SelectMode)
 	{
@@ -1021,29 +1058,7 @@ void ScreenNetSelectMusic::MenuRight( PlayerNumber pn, const InputEventType type
 		UpdateSongsListPos();
 		break;
 	case SelectDifficulty:
-		{
-			StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType;
-			vector <Steps *> MultiSteps;
-			MultiSteps = GAMESTATE->m_pCurSong->GetAllSteps( st );
-			if (MultiSteps.size() == 0)
-				m_DC[pn] = NUM_DIFFICULTIES;
-			else
-			{
-				MultiSteps = SortStep(MultiSteps);
-
-				for ( i=0; i<(int)MultiSteps.size(); ++i )
-					if ( MultiSteps[i]->GetDifficulty() >= m_DC[pn] )
-						break;
-
-				if ( i == (int)MultiSteps.size() )
-					m_DC[pn] = MultiSteps[i-1]->GetDifficulty();
-				else
-					if (i < (int)MultiSteps.size() - 1 )	//If we are at the hardest difficulty, do nothign
-						m_DC[pn] = MultiSteps[i+1]->GetDifficulty();
-			}
-			UpdateDifficulties( pn );
-			GAMESTATE->m_PreferredDifficulty[pn] = m_DC[pn];
-		}
+		MoveSteps( pn, +1 );
 		break;
 	case SelectOptions:
 		//XXX: HACK: This will causes ScreenSelectOptions to go back here.
@@ -1081,12 +1096,11 @@ void ScreenNetSelectMusic::MenuStart( PlayerNumber pn )
 		NSMAN->m_sSubTitle = m_vSongs[j]->GetTranslitSubTitle();
 		NSMAN->m_iSelectMode = 2; //Command for user selecting song
 		//=========hash======
-		StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType;
-		NoteField cur_song_note_date;
-		Steps * SelectStep;
-		SelectStep = m_vSongs[j]->GetStepsByDifficulty(st, m_DC[pn]);
-		int notenum = 0;
-		notenum = SelectStep->GetNumTapNotesformSetp();
+		ResolveSteps( pn, m_vSongs[j] );
+		Steps * SelectStep = m_pSteps[pn];
+		if( SelectStep == NULL )
+			return;
+		int notenum = SelectStep->GetNumTapNotesformSetp();
 		// LOG->Info("m_iNumTracks %d", notenum);
 		if(notenum<=0)return;
 		NSMAN->m_ihash = notenum;
@@ -1147,6 +1161,11 @@ void ScreenNetSelectMusic::Update( float fDeltaTime )
 	if( NSMAN->m_bShareReloadPending && SCREENMAN->GetTopScreen() == this )
 	{
 		NSMAN->m_bShareReloadPending = false;
+		/* Reloading deletes the song's Steps (RevertFromDisk only fixes
+		 * GAMESTATE->m_pCurSteps), so drop our pointers; ResetSongList
+		 * resolves them again. */
+		FOREACH_PlayerNumber( p )
+			m_pSteps[p] = NULL;
 		Song *pSong = SONGMAN->LoadOrReloadSong( NSMAN->m_sShareReloadSongDir );
 		if( pSong == NULL )
 		{
@@ -1291,12 +1310,14 @@ void ScreenNetSelectMusic::UpdateTextInput()
 void ScreenNetSelectMusic::StartSelectedSong()
 {
 	Song * pSong = m_vSongs[m_iSongNum%m_vSongs.size()];
-	StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType; //STEPS_TYPE_DANCE_SINGLE;
 	FOREACH_EnabledPlayer (pn)
 	{
-		GAMESTATE->m_PreferredDifficulty[pn] = m_DC[pn];
-		Steps * pSteps = pSong->GetStepsByDifficulty(st,m_DC[pn]);
-		GAMESTATE->m_pCurSteps[pn] = pSteps;
+		/* Use the exact chart that was picked; looking it up by difficulty
+		 * would always give the first edit when the song has several. */
+		ResolveSteps( pn, pSong );
+		if( m_pSteps[pn] != NULL )
+			GAMESTATE->m_PreferredDifficulty[pn] = m_DC[pn];
+		GAMESTATE->m_pCurSteps[pn] = m_pSteps[pn];
 	}
 	
 	TweenOffScreen();
@@ -1310,10 +1331,8 @@ void ScreenNetSelectMusic::UpdateDifficulties( PlayerNumber pn )
 	else
 		m_DifficultyIcon[pn].SetFromSteps( pn, NULL );	//It will blank it out 
 
-	StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType;
-
-	if ( ( m_DC[pn] < NUM_DIFFICULTIES ) && ( m_DC[pn] >= DIFFICULTY_BEGINNER ) )
-		m_DifficultyMeters[pn].SetFromSteps( GAMESTATE->m_pCurSong->GetStepsByDifficulty( st, m_DC[pn] ) );
+	if ( m_pSteps[pn] != NULL )
+		m_DifficultyMeters[pn].SetFromSteps( m_pSteps[pn] );
 	else
 		m_DifficultyMeters[pn].SetFromMeterAndDifficulty( 0, DIFFICULTY_BEGINNER ); 
 }
@@ -1343,26 +1362,7 @@ void ScreenNetSelectMusic::UpdateSongsListPos()
 	//Handle difficulty
 	FOREACH_EnabledPlayer (pn)
 	{
-		m_DC[pn] = GAMESTATE->m_PreferredDifficulty[pn];
-		StepsType st = GAMESTATE->GetCurrentStyle()->m_StepsType;
-		vector <Steps *> MultiSteps;
-		MultiSteps = m_vSongs[j]->GetAllSteps( st );
-		
-		MultiSteps = SortStep(MultiSteps);
-
-		if (MultiSteps.size() == 0)
-			m_DC[pn] = NUM_DIFFICULTIES;
-		else
-		{
-			for ( i=0; i<(int)MultiSteps.size(); ++i )
-				if ( MultiSteps[i]->GetDifficulty() >= m_DC[pn] )
-					break;
-
-			if ( i == (int)MultiSteps.size() )
-				m_DC[pn] = MultiSteps[i-1]->GetDifficulty();
-			else
-				m_DC[pn] = MultiSteps[i]->GetDifficulty();
-		}
+		ResolveSteps( pn, m_vSongs[j] );
 		UpdateDifficulties( pn );
 	}
 

@@ -108,6 +108,12 @@ private:
 	//Difficulty Icon(s)
 	DifficultyIcon		m_DifficultyIcon[NUM_PLAYERS];
 	Difficulty			m_DC[NUM_PLAYERS];
+	/* The chart each player picked.  m_DC alone can't tell charts of the same
+	 * difficulty apart (a song can have several DIFFICULTY_EDIT charts, e.g.
+	 * extra Challenge charts that Song::AdjustDuplicateSteps turned into edits). */
+	Steps*				m_pSteps[NUM_PLAYERS];
+	void ResolveSteps( PlayerNumber pn, const Song *pSong );
+	void MoveSteps( PlayerNumber pn, int iDir );
 
 	//Select Options
 	Sprite			m_sprSelOptions;
