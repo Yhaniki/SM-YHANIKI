@@ -475,6 +475,16 @@ int EzSockets::pWriteData(const char* data, int dataSize)
  */
 
 
+CString EzSockets::getPeerIp()
+{
+	struct sockaddr_in name;
+	socklen_t namelen = sizeof(name);
+	if( getpeername(sock, (struct sockaddr*)&name, &namelen) != 0 )
+		return "";
+	CString cstr = inet_ntoa(name.sin_addr);
+	return cstr;
+}
+
 CString EzSockets::getIp()
 {
 	struct sockaddr_in name;

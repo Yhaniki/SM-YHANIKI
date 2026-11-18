@@ -77,6 +77,11 @@ private:
 	Quad			m_rectUsersBG;
 	BitmapText		m_textUsers[NETMAXPLAYERS];
 	BitmapText		m_textUsersNum[NETMAXPLAYERS];
+	//Song transfer progress bar under each user name
+	Quad			m_rectShareBarBG[NETMAXPLAYERS];
+	Quad			m_rectShareBarFill[NETMAXPLAYERS];
+	BitmapText		m_textShareLabel[NETMAXPLAYERS];
+	void			UpdateShareProgress();
 	int				m_iCurrentPlayer;
 	int				m_iActivePlayers;
 	

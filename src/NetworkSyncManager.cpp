@@ -6,7 +6,7 @@
 NetworkSyncManager *NSMAN;
 
 #if defined(WITHOUT_NETWORKING)
-NetworkSyncManager::NetworkSyncManager( LoadingWindow *ld ) { useSMserver=false; }
+NetworkSyncManager::NetworkSyncManager( LoadingWindow *ld ) { useSMserver=false; m_bShareReloadPending=false; }
 NetworkSyncManager::~NetworkSyncManager () { }
 void NetworkSyncManager::CloseConnection() { }
 void NetworkSyncManager::PostStartUp(const CString& ServerIP ) { }
@@ -38,13 +38,14 @@ void NetworkSyncManager::SelectUserSong() { }
 #include "ProductInfo.h"
 #include "ScreenMessage.h"
 #include "GameManager.h"
+#include "SongManager.h"
+#include "Style.h"
+#include "ShareSongTransfer.h"
 #include "arch/LoadingWindow/LoadingWindow.h"
 
-HANDLE g_hMutex = NULL;
 const ScreenMessage	SM_AddToChat	= ScreenMessage(SM_User+4);
 const ScreenMessage SM_ChangeSong	= ScreenMessage(SM_User+5);
 const ScreenMessage SM_GotEval		= ScreenMessage(SM_User+6);
-const ScreenMessage SM_ReloadConnectPack	        = ScreenMessage(SM_User+9);
 // const ScreenMessage SM_BackFromReloadSongs			= ScreenMessage(SM_User+7);
 
 bool IsPathExists(const std::string &path)
@@ -53,25 +54,14 @@ bool IsPathExists(const std::string &path)
 	return (stat(path.c_str(), &buffer) == 0);
 }
 
-unsigned long GetFileSizeInKB(CString path)
-{
-	if(!IsPathExists(path)) return 0;
-	FILE *fp = fopen(path, "rb");
-
-	unsigned long currentPosition = ftell(fp); // Save the current file pointer position
-	unsigned long fileSize = 0;
-
-	fseek(fp, 0L, SEEK_END);			  // Move the file pointer to the end of the file
-	fileSize = ftell(fp);				  // Get file size
-	fseek(fp, currentPosition, SEEK_SET); // Restore file pointer position
-
-	fclose(fp);
-	return fileSize / 1024; // Return file size (KB)
-}
-
 NetworkSyncManager::NetworkSyncManager( LoadingWindow *ld )
 {
-	usingShareSongSystem=false;
+	m_pShare = new ShareSongTransfer;
+	m_bShareReloadPending = false;
+	m_bShareReadySent = false;
+	m_bShareSupplement = false;
+	m_fShareReportTimer = 0;
+	m_iShareLastReportedKB = 0;
 	ClientNum=0;
 	LANserver = NULL;	//So we know if it has been created yet
 	if( GetCommandlineArgument( "runserver" ))
@@ -109,6 +99,8 @@ NetworkSyncManager::~NetworkSyncManager ()
 		LANserver->ServerStop();
 		delete LANserver;
 	}
+
+	delete m_pShare;	// cancels and waits for a running transfer
 }
 
 void NetworkSyncManager::CloseConnection()
@@ -233,6 +225,7 @@ bool NetworkSyncManager::Connect(const CString& addy, unsigned short port)
 
 	NetPlayerClient->create(); // Initilize Socket
 	useSMserver = NetPlayerClient->connect(addy, port);
+	m_sServerAddress = addy;
 
 	m_packet.fromIp = NetPlayerClient->getIp();
 
@@ -514,6 +507,8 @@ void NetworkSyncManager::Update(float fDeltaTime)
 
 	if (useSMserver)
 		ProcessInput();
+
+	UpdateShare(fDeltaTime);
 }
 
 CString GetSongDirPath(std::string &songDir,
@@ -544,17 +539,6 @@ CString GetSongDirPath(std::string &songDir,
 	return path;
 }
 
-CString GetTempFilePath(void)
-{
-	const int maxBufferSize = 512;
-	string currentPath;
-	char buf[maxBufferSize];
-	getcwd(buf, sizeof(buf));
-	currentPath.assign(buf);
-	CString path = currentPath + "\\Songs\\connect\\temp.zip";
-	return path;
-}
-
 CString GetConnectFolderPath(void)
 {
 	const int maxBufferSize = 512;
@@ -566,86 +550,197 @@ CString GetConnectFolderPath(void)
 	return path;
 }
 
-DWORD NetworkSyncManager::ThreadProcNSSSS(void)
+/* ---------------- Song sharing (client side) ---------------- */
+
+static void AddShareHost( vector<CString> &vHosts, CString sIp, const CString &sServerAddress )
 {
-	LOG->Info("open the share song server!!");
-	LOG->Info("player_num %d", player_num);
-
-	CString ip_address = this->NetPlayerClient->getIp();
-	LOG->Info("IP address %s", ip_address.c_str());
-
-	string songDir = (GAMESTATE->m_pCurSong->GetSongDir()).c_str();
-	songDir = songDir.substr(0, songDir.size() - 1);
-	// LOG->Info("songDir %s",songDir.c_str());
-
-	CString songDirPath = GetSongDirPath(songDir, PREFSMAN->m_sAdditionalSongFolders);
-
-	if (songDirPath.empty()) LOG->Info("cant not find the song directory %s", songDir.c_str());
-
-	CString zipCmd = CString("Program\\miniZip.exe 0 ") + (video_file_filter ? "1 " : "0 ") + "\"" + songDirPath.GetBuffer() + "\"";
-	LOG->Info("zipCmd %s", zipCmd);
-	if (!songDirPath.empty()) system(zipCmd.c_str());
-	CString filePath = GetTempFilePath();
-	int file_size = GetFileSizeInKB(filePath); //(kb)
-	LOG->Info("file_size %d", file_size);
-
-	// open server and sent require to open client
-	WaitForSingleObject(g_hMutex, INFINITE);
-	m_packet.ClearPacket();
-	m_packet.Write1(NSSSC);
-	m_packet.WriteNT(ip_address);
-	m_packet.Write1(player_num);
-	m_packet.Write4(file_size);
-	NetPlayerClient->SendPack((char *)&m_packet.Data, m_packet.Position);
-	// LOG->Info("player_num %d", player_num);
-	ReleaseMutex(g_hMutex);
-
-	CString serverCmd = "Program\\winsocket_server.exe " + ip_address + " \"" + filePath + "\"";
-	LOG->Info("serverCmd %s", serverCmd.c_str());
-	if (!songDirPath.empty()) system(serverCmd.c_str());
-	// winsocket_server.exe "{server_ip}" "C:\\StepMania\\connect\\temp.zip"
-	usingShareSongSystem = false;
-	ReportShareSongFinish();
-	return 0L;
+	if( sIp.empty() || sIp == "0.0.0.0" )
+		return;
+	/* A loopback address means the sender runs on the server's machine (usually the
+	 * host): reach it through the address we use for the server. */
+	if( sIp.Left(4) == "127." && !sServerAddress.empty() )
+		sIp = sServerAddress;
+	for( unsigned i = 0; i < vHosts.size(); ++i )
+		if( vHosts[i] == sIp )
+			return;
+	vHosts.push_back( sIp );
 }
 
-DWORD NetworkSyncManager::ThreadProcNSSSC(void)
+static CString GetSongFolderOnDisk( const Song *pSong )
 {
-	LOG->Info("open the share song client!!");
-	LOG->Info("server_ip %s", server_ip.c_str());
-	LOG->Info("file_size %d", file_size);
-	if (file_size <= 0) LOG->Info("error file_size %d", file_size);
+	if( pSong == NULL )
+		return "";
+	std::string sSongDir = pSong->GetSongDir().c_str();
+	if( !sSongDir.empty() )
+		sSongDir = sSongDir.substr( 0, sSongDir.size() - 1 );	// drop the trailing slash
+	return GetSongDirPath( sSongDir, PREFSMAN->m_sAdditionalSongFolders );
+}
 
-	if (file_size > 0)
+/* The song the server is currently playing, matched the same way
+ * ScreenNetSelectMusic does (title/artist/subtitle + note count). */
+Song *NetworkSyncManager::FindCurrentNetSong()
+{
+	if( m_sMainTitle.empty() )
+		return NULL;
+	const Style *pStyle = GAMESTATE->GetCurrentStyle();
+	const vector<Song*> &vSongs = SONGMAN->GetAllSongs();
+	for( unsigned i = 0; i < vSongs.size(); ++i )
 	{
-		CString fileSizeStr;
-		fileSizeStr.Format("%d", file_size);
-		// 1. creat song folder for connect
-		CString connectFolderPath = GetConnectFolderPath();
-		CString tempFilePath = GetTempFilePath();
-		CString connect_dir_cmd = "mkdir \"" + connectFolderPath + "\"";
-		system(connect_dir_cmd.c_str());
-		// mkdir "C:\\StepMania\\Songs\\connect"
+		Song *pSong = vSongs[i];
+		if( pSong->GetTranslitArtist().CompareNoCase( m_sArtist ) ||
+			pSong->GetTranslitMainTitle().CompareNoCase( m_sMainTitle ) ||
+			pSong->GetTranslitSubTitle().CompareNoCase( m_sSubTitle ) )
+			continue;
+		if( pStyle == NULL )
+			return pSong;
+		const vector<Steps*> &vSteps = pSong->GetAllSteps( pStyle->m_StepsType );
+		for( unsigned j = 0; j < vSteps.size(); ++j )
+			if( vSteps[j]->GetNumTapNotesformSetp() == m_ihash )
+				return pSong;
+	}
+	return NULL;
+}
 
-		// 2. get zip file from other user
-		string zip_name = "temp.zip";
-		string filePath = GetTempFilePath();
-		CString client_cmd = "Program\\winsocket_client.exe " + server_ip + " \"" + tempFilePath + "\" " + fileSizeStr;
-		LOG->Info("client_cmd %s", client_cmd.c_str());
-		system(client_cmd.c_str());
-		// winsocket_client.exe {IP} "C:\\StepMania\\Songs\\connect\\temp.zip" {file_size}
+void NetworkSyncManager::SendSharePacket( PacketFunctions &packet )
+{
+	if( useSMserver )
+		NetPlayerClient->SendPack( (char*)packet.Data, packet.Position );
+}
 
-		// 3. unzip the song file
-		CString unZipCmd = CString("Program\\miniZip.exe 1");
-		LOG->Info("unZipCmd %s", unZipCmd.c_str());
-		system(unZipCmd.c_str());
-		// miniZip.exe 1 "
+void NetworkSyncManager::SendShareResult( int id, bool isReceiver, int result, const CString &message )
+{
+	PacketFunctions packet;
+	packet.ClearPacket();
+	packet.Write1( NSSResult );
+	packet.Write1( (uint8_t)id );
+	packet.Write1( isReceiver ? 1 : 0 );
+	packet.Write1( (uint8_t)result );
+	packet.WriteNT( message.Left(200) );
+	SendSharePacket( packet );
+}
+
+void NetworkSyncManager::StartShare( const PendingShare &req )
+{
+	if( m_pShare->IsBusy() )
+	{
+		/* The server already ended the previous transfer; let it close, then start this one. */
+		m_pShare->Cancel();
+		m_PendingShare = req;
+		return;
+	}
+	m_PendingShare.valid = false;
+	m_bShareReadySent = false;
+	m_fShareReportTimer = 0;
+	m_iShareLastReportedKB = 0xFFFFFFFF;
+	m_bShareSupplement = false;
+	m_sShareSupplementDir = "";
+
+	if( req.isSender )
+	{
+		Song *pSong = FindCurrentNetSong();
+		if( pSong == NULL )
+			pSong = GAMESTATE->m_pCurSong;
+		CString sDir = GetSongFolderOnDisk( pSong );
+		if( sDir.empty() )
+		{
+			LOG->Warn( "ShareSong: cannot find the folder of the song to send" );
+			SendShareResult( req.id, false, ShareSongTransfer::RESULT_FAILED, "song folder not found" );
+			return;
+		}
+		m_pShare->StartSend( req.id, sDir, req.includeVideo );
+	}
+	else
+	{
+		/* Already have this song?  Then only the missing videos are wanted,
+		 * written straight into its folder. */
+		CString sExisting;
+		Song *pSong = FindCurrentNetSong();
+		if( pSong != NULL )
+		{
+			sExisting = GetSongFolderOnDisk( pSong );
+			if( !sExisting.empty() )
+			{
+				m_bShareSupplement = true;
+				m_sShareSupplementDir = pSong->GetSongDir();
+			}
+		}
+		vector<CString> vHosts = req.hosts;
+		if( vHosts.empty() && !m_sServerAddress.empty() )
+			vHosts.push_back( m_sServerAddress );
+		m_pShare->StartReceive( req.id, vHosts, req.port, req.token, sExisting, GetConnectFolderPath() );
+	}
+}
+
+void NetworkSyncManager::UpdateShare( float fDeltaTime )
+{
+	if( !useSMserver )
+	{
+		/* Nobody coordinates the transfer any more. */
+		if( m_pShare->IsBusy() )
+			m_pShare->Cancel();
+		m_PendingShare.valid = false;
+		m_PlayerShareProgress.clear();
 	}
 
-	usingShareSongSystem = false;
-	ReportShareSongFinish();
-	SCREENMAN->SendMessageToTopScreen(SM_ReloadConnectPack);
-	return 0L;
+	const ShareSongTransfer::Role role = m_pShare->GetRole();
+	const int id = m_pShare->GetTransferId();
+
+	if( role == ShareSongTransfer::ROLE_SENDER && !m_bShareReadySent && m_pShare->IsListening() )
+	{
+		PacketFunctions packet;
+		packet.ClearPacket();
+		packet.Write1( NSSReady );
+		packet.Write1( (uint8_t)id );
+		packet.Write2( m_pShare->GetListenPort() );
+		packet.Write4( m_pShare->GetToken() );
+		packet.WriteNT( NetPlayerClient->getIp() );
+		SendSharePacket( packet );
+		m_bShareReadySent = true;
+	}
+
+	if( role == ShareSongTransfer::ROLE_RECEIVER && m_pShare->HasTotal() )
+	{
+		m_fShareReportTimer -= fDeltaTime;
+		unsigned int iDoneKB = (unsigned int)(m_pShare->GetDoneBytes() / 1024);
+		if( m_fShareReportTimer <= 0 && iDoneKB != m_iShareLastReportedKB )
+		{
+			m_fShareReportTimer = 0.25f;
+			m_iShareLastReportedKB = iDoneKB;
+			PacketFunctions packet;
+			packet.ClearPacket();
+			packet.Write1( NSSProgress );
+			packet.Write1( (uint8_t)id );
+			packet.Write4( iDoneKB );
+			packet.Write4( (unsigned int)((m_pShare->GetTotalBytes() + 1023) / 1024) );
+			SendSharePacket( packet );
+		}
+	}
+
+	ShareSongTransfer::Result result;
+	CString sMessage;
+	if( m_pShare->PollFinished( result, sMessage ) )
+	{
+		const bool bReceiver = (role == ShareSongTransfer::ROLE_RECEIVER);
+		SendShareResult( id, bReceiver, result, sMessage );
+		if( bReceiver && result == ShareSongTransfer::RESULT_OK )
+		{
+			/* ScreenNetSelectMusic picks this up and loads just this song. */
+			m_bShareReloadPending = true;
+			if( m_bShareSupplement )
+				m_sShareReloadSongDir = m_sShareSupplementDir;
+			else
+				m_sShareReloadSongDir = "Songs/connect/" + m_pShare->GetReceivedFolder() + "/";
+		}
+		if( result == ShareSongTransfer::RESULT_FAILED )
+			SCREENMAN->SystemMessage( "Song transfer failed: " + sMessage );
+	}
+
+	if( m_PendingShare.valid && !m_pShare->IsBusy() && useSMserver )
+	{
+		PendingShare req = m_PendingShare;
+		m_PendingShare.valid = false;
+		StartShare( req );
+	}
 }
 
 void NetworkSyncManager::ProcessInput()
@@ -823,34 +918,62 @@ void NetworkSyncManager::ProcessInput()
 				SCREENMAN->SetNewScreen( "ScreenNetSelectMusic" ); //Should this be metric'd out?
 			}
 			break;
-		case NSSSS:
+		case NSSOffer:	//Server asks us to send our copy of the current song
 			{
-				server_ip = m_packet.ReadNT();
-				player_num = m_packet.Read1();
-				// LOG->Info("player_num %d",player_num);
-				video_file_filter = (bool)m_packet.Read1();
-				if (usingShareSongSystem == false)
+				PendingShare req;
+				req.valid = true;
+				req.isSender = true;
+				req.id = m_packet.Read1();
+				m_packet.Read1();	// receiver index, only used by the server
+				req.includeVideo = m_packet.Read1() != 0;
+				StartShare( req );
+			}
+			break;
+		case NSSReady:	//The sender is listening, go get the song
+			{
+				PendingShare req;
+				req.valid = true;
+				req.isSender = false;
+				req.id = m_packet.Read1();
+				m_packet.Read1();	// sender index
+				req.port = m_packet.Read2();
+				req.token = m_packet.Read4();
+				CString sReportedIp = m_packet.ReadNT();	// address reported by the sender itself
+				CString sObservedIp = m_packet.ReadNT();	// address seen by the server
+				AddShareHost( req.hosts, sReportedIp, m_sServerAddress );
+				AddShareHost( req.hosts, sObservedIp, m_sServerAddress );
+				StartShare( req );
+			}
+			break;
+		case NSSProgress:	//Progress of the transfer running in the room
+			{
+				unsigned int iSender = m_packet.Read1();
+				unsigned int iReceiver = m_packet.Read1();
+				unsigned int iDoneKB = m_packet.Read4();
+				unsigned int iTotalKB = m_packet.Read4();
+				bool bActive = m_packet.Read1() != 0;
+				m_PlayerShareProgress.clear();
+				if( bActive && iSender < NETMAXPLAYERS && iReceiver < NETMAXPLAYERS )
 				{
-					usingShareSongSystem = true;
-					DWORD ThreadID;
-					HANDLE thread = CreateThread(NULL, 0, StaticThreadStartNSSSS, (void *)this, 0, &ThreadID);
-					CloseHandle(thread);
+					m_PlayerShareProgress.resize( (iSender > iReceiver ? iSender : iReceiver) + 1 );
+					ShareProgressInfo &up = m_PlayerShareProgress[iSender];
+					up.active = true;
+					up.uploading = true;
+					up.doneKB = iDoneKB;
+					up.totalKB = iTotalKB;
+					ShareProgressInfo &down = m_PlayerShareProgress[iReceiver];
+					down = up;
+					down.uploading = false;
 				}
 			}
 			break;
-		case NSSSC:
+		case NSSCancel:	//Server aborted the transfer
 			{
-				server_ip = m_packet.ReadNT();
-				file_size = m_packet.Read4();
-				// LOG->Info("server_ip %s",server_ip.c_str());
-				// LOG->Info("file_size %d",file_size);
-				if(usingShareSongSystem==false)
-				{
-					usingShareSongSystem=true;
-					DWORD ThreadID;
-					HANDLE thread = CreateThread(NULL, 0, StaticThreadStartNSSSC, (void*) this, 0, &ThreadID);
-					CloseHandle(thread);
-				}
+				int id = m_packet.Read1();
+				if( m_PendingShare.valid && m_PendingShare.id == id )
+					m_PendingShare.valid = false;
+				if( m_pShare->IsBusy() && m_pShare->GetTransferId() == id )
+					m_pShare->Cancel();
 			}
 			break;
 		case NSCGraph:
@@ -961,12 +1084,6 @@ void NetworkSyncManager::SendAskSong()
 {
 	m_packet.ClearPacket();
 	m_packet.Write1( NSCAS );
-	NetPlayerClient->SendPack((char*)&m_packet.Data, m_packet.Position);
-}
-void NetworkSyncManager::ReportShareSongFinish()
-{
-	m_packet.ClearPacket();
-	m_packet.Write1( NSRSSF );
 	NetPlayerClient->SendPack((char*)&m_packet.Data, m_packet.Position);
 }
 //Packet functions

@@ -61,11 +61,8 @@ public:
 	bool isStarting;
 	bool wasIngame;
 	bool lowerJudge;
-	bool shareAll;
-	bool usingShareSongSystem;
-	bool filefilter;
-	int ShareNum;
-	
+	bool autoShareTried;	//Already got an automatic song transfer for the current song
+
 private:
 	string build;
 	GameInfo gameInfo;
@@ -127,7 +124,6 @@ protected:
 	void ScreenNetMusicSelectStatus(PacketFunctions& Packet, const unsigned int clientNum);
 	void AnalizeChat(PacketFunctions &Packet, const unsigned int clientNum);
 	CString StepManiaLanServer::ListPlayers();
-	void CommandShare(CString &command, const unsigned int clientNum);
 	void Have(const unsigned int clientNum);
 	void Kick(CString &name);
 	void Ban(CString &name);
@@ -144,9 +140,49 @@ protected:
 	void SendPlayerCondition();
 	void GetHasSong(PacketFunctions&Packet, unsigned int clientNum);
 	void GetAskSong(PacketFunctions&Packet, unsigned int clientNum);
-	void ShareSong(unsigned int ShareSongServerNum, unsigned int ShareSongClientNum, CString ServerIp);
-	void ShareAll(unsigned int ShareSongServerNum, CString ServerIp);
-	bool CheckShare(unsigned int hostIdx, unsigned int clientIdx, bool shareAll);
+	//Song sharing: one transfer at a time, the rest waits in m_ShareQueue.
+	//The server only relays control messages; the data goes straight from
+	//the sender to the receiver (see ShareSongTransfer.h).
+	struct ShareJob
+	{
+		int sender;
+		int receiver;
+		bool includeVideo;
+		bool manual;			//from /share; automatic jobs come from "lacks song"
+		unsigned long queuedAt;
+	};
+	struct ShareSession
+	{
+		bool active;
+		int id;
+		int sender;
+		int receiver;
+		bool includeVideo;
+		bool manual;
+		bool ready;				//the sender is listening
+		unsigned long lastActivity;
+		unsigned int doneKB;
+		unsigned int totalKB;
+	};
+	vector<ShareJob> m_ShareQueue;
+	ShareSession m_Share;
+	int m_iNextShareId;
+	unsigned long m_iLastShareCheck;
+	CString ClientDisplayName(unsigned int clientNum);
+	bool IsShareParty(unsigned int clientNum) const;
+	void CommandShare(bool includeVideo, const CString &arg, const unsigned int clientNum);
+	void CommandCancel(const unsigned int clientNum);
+	void EnqueueShare(unsigned int sender, unsigned int receiver, bool includeVideo, bool manual);
+	void ProcessShareQueue();
+	void StartShareSession(const ShareJob &job);
+	void EndShareSession(const CString &message, bool notifyParties);
+	void CancelAllShares(const CString &message);
+	void BroadcastShareProgress(bool active);
+	void CheckShareTimeout();
+	void ShareOnClientRemoved(unsigned int clientNum);
+	void ShareReady(PacketFunctions &Packet, unsigned int clientNum);
+	void ShareProgress(PacketFunctions &Packet, unsigned int clientNum);
+	void ShareResult(PacketFunctions &Packet, unsigned int clientNum);
 #endif
 };
 

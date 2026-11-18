@@ -8,6 +8,7 @@
 #include <windows.h>
 
 class LoadingWindow;
+class Song;
 
 #define NETMAXPLAYERS 32
 const int NETPROTOCOLVERSION=1;
@@ -29,13 +30,19 @@ enum NSCommand
 	NSCSMS,			//10
 	NSCUPOpts,		//11
 	NSCUPPer,       //12
-	NSSSS,          //13 share song server
-	NSSSC,          //14
+	NSSSS,			//13 obsolete (old exe based song sharing), number kept for compatibility
+	NSSSC,			//14 obsolete
 	NSCGraph,       //15
 	NSCPC,			//16 player conditions //is the data size enough to use 16?
 	NSCCHS,			//17 checkhassong
 	NSCAS,			//18 ask song
-	NSRSSF,         //19 share song finish
+	NSRSSF,			//19 obsolete
+	// Song sharing over a direct TCP connection (see ShareSongTransfer.h)
+	NSSOffer,		//20 server->sender: [id][receiver][includeVideo] send your current song
+	NSSReady,		//21 sender->server: [id][port2][token4][ip]  server->receiver: [id][sender][port2][token4][ip][ip2]
+	NSSProgress,	//22 receiver->server: [id][doneKB4][totalKB4]  server->all: [sender][receiver][doneKB4][totalKB4][active]
+	NSSResult,		//23 sender/receiver->server: [id][isReceiver][result][message]
+	NSSCancel,		//24 server->sender/receiver: [id] abort the transfer
 	NUM_NS_COMMANDS
 };
 
@@ -64,6 +71,17 @@ enum NSScoreBoardColumn
 
 class EzSockets;
 class StepManiaLanServer;
+class ShareSongTransfer;
+
+/* Progress of a song transfer, one entry per client (row of the user list). */
+struct ShareProgressInfo
+{
+	bool active;
+	bool uploading;			// true: this client sends, false: this client receives
+	unsigned int doneKB;
+	unsigned int totalKB;	// 0 while the transfer is still connecting
+	ShareProgressInfo() : active(false), uploading(false), doneKB(0), totalKB(0) { }
+};
 
 class PacketFunctions
 {
@@ -98,7 +116,6 @@ public:
 	void ReportScore(int playerID, int step, int score, int combo);
 		
 	void ReportSongOver();	//Report to server that song is over
-	void ReportShareSongFinish();
 	void ReportStyle();		//Report to server the style, players, and names
 	void ReportNSSOnOff(int i);	//Report song selection screen on/off
 	void StartRequest(short position);	//Request a start.  Block until granted.
@@ -156,6 +173,11 @@ public:
 
 	bool isLanServer;	//Must be public for ScreenNetworkOptions
 	StepManiaLanServer *LANserver;
+
+	//Song sharing
+	vector<ShareProgressInfo> m_PlayerShareProgress;	// indexed like the user list
+	bool m_bShareReloadPending;		// a received song is on disk and has to be loaded
+	CString m_sShareReloadSongDir;	// that song's folder, e.g. "Songs/connect/My Song/"
 private:
 #if !defined(WITHOUT_NETWORKING)
 
@@ -184,24 +206,32 @@ private:
 	bool Listen(unsigned short port);
 
 	PacketFunctions m_packet;
-	static DWORD WINAPI StaticThreadStartNSSSS(void *Param)
-	{
-		NetworkSyncManager *This = (NetworkSyncManager *)Param;
-		return This->ThreadProcNSSSS();
-	}
-	static DWORD WINAPI StaticThreadStartNSSSC(void *Param)
-	{
-		NetworkSyncManager *This = (NetworkSyncManager *)Param;
-		return This->ThreadProcNSSSC();
-	}
-	DWORD ThreadProcNSSSS(void);
-	DWORD ThreadProcNSSSC(void);
+	CString m_sServerAddress;	// address used to reach the game server
 
-	CString server_ip;
-	int file_size;
-	int player_num;
-	bool video_file_filter;
-	bool usingShareSongSystem;
+	//Song sharing (see ShareSongTransfer.h)
+	struct PendingShare
+	{
+		bool valid;
+		bool isSender;
+		int id;
+		bool includeVideo;			// sender
+		vector<CString> hosts;		// receiver
+		unsigned short port;		// receiver
+		unsigned int token;			// receiver
+		PendingShare() : valid(false), isSender(false), id(0), includeVideo(false), port(0), token(0) { }
+	};
+	ShareSongTransfer *m_pShare;
+	PendingShare m_PendingShare;	// request that arrived while the previous transfer was still closing
+	bool m_bShareReadySent;
+	bool m_bShareSupplement;		// receiver: adding videos to a song we already have
+	CString m_sShareSupplementDir;	// ...whose folder is this (game path)
+	float m_fShareReportTimer;
+	unsigned int m_iShareLastReportedKB;
+	void UpdateShare(float fDeltaTime);
+	void StartShare(const PendingShare &req);
+	void SendSharePacket(PacketFunctions &packet);
+	void SendShareResult(int id, bool isReceiver, int result, const CString &message);
+	Song *FindCurrentNetSong();
 #endif
 };
 

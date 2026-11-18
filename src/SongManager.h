@@ -29,6 +29,10 @@ public:
 
 	void Invalidate( Song *pStaleSong );
 	void RevertFromDisk( Song *pSong, bool bAllowNotesLoss=false );
+	/* Load (or reload) one song folder, e.g. one that just arrived from another
+	 * player, without rescanning everything.  sSongDir is a game path like
+	 * "Songs/connect/My Song/".  Returns NULL if it isn't a loadable song. */
+	Song *LoadOrReloadSong( CString sSongDir );
 
 	void RegenerateNonFixedCourses();
 	void SetPreferences();
