@@ -8,6 +8,7 @@
 
 - [StepMania 3.9 永和金城武版(YHANIKI)](#stepmania-39-永和金城武版yhaniki)
   - [VS-2019 Migration Notes](#vs-2019-migration-notes)
+  - [編譯環境建置](#編譯環境建置)
   - [一般模式](#一般模式)
   - [遊戲中](#遊戲中)
   - [作譜模式](#作譜模式)
@@ -29,6 +30,30 @@
     + Using C++14 now. Currently there are some problems with C++17.
     + Old assets pack won't work with this source. Please contact devs for updated assets pack.
   ```
+ 
+## 編譯環境建置
+  1. 安裝 Visual Studio 2019，工作負載選「使用 C++ 的桌面開發」，並裝上 Windows 10 SDK。
+     - 用 VS 2022 以後的版本也可以，但要在 Visual Studio Installer 的「個別元件」加裝「MSVC v142 - VS 2019 C++ x64/x86 建置工具」。
+  2. clone 專案。
+  3. 向開發者索取素材包 `Assets-pack.zip`，放到 repo 根目錄，雙擊 `scripts\setup-assets.cmd`。
+     - 素材會解壓縮到 repo 根目錄（跟 `Program` 資料夾同一層），遊戲從這裡讀取，不能改位置。
+     - zip 放在別處：`scripts\setup-assets.cmd -Package D:\Downloads\Assets-pack.zip`
+     - 歌曲不在素材包裡，請自己放進 `Songs\`。
+  4. 向開發者索取第三方資源包 `ThirdParty-pack.zip`，放到 repo 根目錄，雙擊 `scripts\setup-thirdparty.cmd`。
+     - 想放到別的位置：`scripts\setup-thirdparty.cmd -ThirdPartyDir D:\deps\sm-thirdparty`
+     - zip 放在別處：`scripts\setup-thirdparty.cmd -Package D:\Downloads\ThirdParty-pack.zip`
+     - 腳本會把位置寫進 `src\ThirdParty.user.props`（只在本機、不進版控），VS 專案會從那個位置找 include / lib。
+  5. 用 VS 開啟 `src\SM-YHANIKI.sln`，方案組態選 `Release | x86`（或 `Debug | x86`）後建置。
+     - 產出：`Program\StepMania.exe`（Debug 為 `Program\StepMania-Debug.exe`）
+
+  維護者更新兩種包：
+  - 素材包：雙擊 `scripts\pack-assets.cmd`，從 repo 根目錄打包出 `Assets-pack.zip`。
+    包含 `Themes`、`NoteSkins`、`Characters`、`Courses` 等整個資料夾，`Data` 只帶內建資料與預設 Theme 設定（`GamePrefs.ini`），
+    不帶 `StepMania.ini`、`Keymaps.ini`、Profile 等個人設定；`Cache`、`Screenshots`、`Songs`、`Utils` 只建立空資料夾（保留資料夾原本的 `instructions.txt`，例如 `Songs\Instructions.txt`）。
+    清單定義在 `scripts\assets-common.ps1`。
+  - 第三方資源包：雙擊 `scripts\pack-thirdparty.cmd`，從目前設定的 ThirdParty 位置打包出 `ThirdParty-pack.zip`。
+    只包含編譯會用到的 8 個資料夾（`BaseClasses`、`dx80`、`ffmpeg`、`libjpeg`、`libpng`、`libresample`、`mad-0.15.1b`、`vorbis`），
+    清單定義在 `scripts\thirdparty-common.ps1`。
  
 ## 一般模式
   | 快速鍵     | 功能                 |

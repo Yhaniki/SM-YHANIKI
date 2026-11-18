@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  第三方函式庫（ThirdParty 資源包）的位置設定，StepMania.vcxproj 會匯入這個檔案。
+
+  SMThirdPartyDir 決定 include / lib 目錄從哪裡找：
+    - 預設：<repo>\ThirdParty\
+    - 要改位置：執行 scripts\setup-thirdparty.cmd -ThirdPartyDir <路徑>
+      腳本會產生 src\ThirdParty.user.props（只在本機、不進版控）覆寫這個值。
+
+  資源包內容由 scripts\thirdparty-common.ps1 的 $SMThirdPartyFolders 定義；
+  下方 _SMThirdPartyKeyFile 的清單要跟 $SMThirdPartyKeyFiles 保持一致。
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildThisFileDirectory)ThirdParty.user.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)ThirdParty.user.props')" />
+
+  <PropertyGroup>
+    <SMThirdPartyDir Condition="'$(SMThirdPartyDir)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\ThirdParty\'))</SMThirdPartyDir>
+    <SMThirdPartyDir Condition="!HasTrailingSlash('$(SMThirdPartyDir)')">$(SMThirdPartyDir)\</SMThirdPartyDir>
+  </PropertyGroup>
+
+  <!-- 建置前先確認資源包在設定的位置，避免一路噴出幾百個找不到標頭檔的錯誤。 -->
+  <Target Name="SMCheckThirdParty" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_SMThirdPartyKeyFile Include="BaseClasses\streams.h" />
+      <_SMThirdPartyKeyFile Include="dx80\include\d3d8.h" />
+      <_SMThirdPartyKeyFile Include="ffmpeg\include\ffmpeg\avformat.h" />
+      <_SMThirdPartyKeyFile Include="libjpeg\jpeglib.h" />
+      <_SMThirdPartyKeyFile Include="libpng\include\png.h" />
+      <_SMThirdPartyKeyFile Include="libresample\include\libresample.h" />
+      <_SMThirdPartyKeyFile Include="mad-0.15.1b\mad.h" />
+      <_SMThirdPartyKeyFile Include="vorbis\vorbis\vorbisfile.h" />
+      <_SMThirdPartyMissing Include="@(_SMThirdPartyKeyFile)" Condition="!Exists('$(SMThirdPartyDir)%(Identity)')" />
+    </ItemGroup>
+    <Error Condition="'@(_SMThirdPartyMissing)' != ''"
+           Text="找不到第三方資源包。目前設定的位置：$(SMThirdPartyDir)，缺少：@(_SMThirdPartyMissing, ', ')。請先執行 scripts\setup-thirdparty.cmd（說明見 README 的「編譯環境建置」）。" />
+  </Target>
+</Project>

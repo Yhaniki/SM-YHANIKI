@@ -21,9 +21,9 @@
 #pragma comment(lib, "../ThirdParty/vorbis/xbox/vorbisfile_static.lib")
 #endif
 #elif defined(_WINDOWS)
-#pragma comment(lib, "../ThirdParty/vorbis/win32/ogg_static.lib")
-#pragma comment(lib, "../ThirdParty/vorbis/win32/vorbis_static.lib")
-#pragma comment(lib, "../ThirdParty/vorbis/win32/vorbisfile_static.lib")
+#pragma comment(lib, "ogg_static.lib")
+#pragma comment(lib, "vorbis_static.lib")
+#pragma comment(lib, "vorbisfile_static.lib")
 #endif
 
 #include <cstring>

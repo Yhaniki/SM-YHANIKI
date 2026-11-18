@@ -19,7 +19,7 @@ namespace jpeg
 #ifdef _XBOX
 	// FIXME
 #elif defined _WINDOWS
-#pragma comment(lib, "../ThirdParty/libjpeg/jpeg.lib")
+#pragma comment(lib, "jpeg.lib")
 #endif
 
 
