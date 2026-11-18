@@ -62,6 +62,16 @@ public:
 
 	bool LoadFromSongDir( CString sDir );
 
+	/* Where LoadFromSongDir got each song from: the song index, a cache file in
+	 * Cache/Songs, or the original song files. */
+	struct LoadStats
+	{
+		int iFromIndex, iFromCacheFile, iFromSongFile;
+		LoadStats() { iFromIndex = iFromCacheFile = iFromSongFile = 0; }
+	};
+	static void ResetLoadStats();
+	static LoadStats GetLoadStats();
+
 	void TidyUpData();	// call after loading to clean up invalid data
 	void ReCalculateRadarValuesAndLastBeat();	// called by TidyUpData, and after saving
 	void TranslateTitles();	// called by TidyUpData

@@ -39,6 +39,10 @@ public:
 	/* iIndexInFile: which #NOTES in the file this Steps is.  Decompress uses it
 	 * to tell apart steps that look the same. */
 	void SetFile( CString fn, int iIndexInFile = -1 );
+	/* When loading from the song index there is no note data, so the hash that
+	 * SetSMNoteData("") computes is wrong.  This restores the hash of the cache
+	 * file's notes, so StepsIDs of EDIT steps still match. */
+	void SetHash( unsigned uHash ) { m_uHash = uHash; }
 	void SetDescription(CString desc);
 	void SetDifficulty(Difficulty d);
 	void SetLoadedFromProfile( ProfileSlot slot ) { m_LoadedFromProfile = slot; }

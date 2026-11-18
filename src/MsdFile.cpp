@@ -149,6 +149,15 @@ bool MsdFile::ReadFile( CString sNewPath )
 	return true;
 }
 
+void MsdFile::ReadFromString( const CString &sData )
+{
+	error = "";
+
+	/* ReadBuf blanks out "//" comments in place, so work on our own copy. */
+	CString sCopy = sData;
+	ReadBuf( (char*) sCopy.c_str(), sCopy.size() );
+}
+
 CString MsdFile::GetParam(unsigned val, unsigned par) const
 {
 	if(val >= GetNumValues()) return "";

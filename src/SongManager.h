@@ -23,8 +23,12 @@ public:
 	~SongManager();
 
 	void InitSongsFromDisk( LoadingWindow *ld );
+	/* Reload a single group (e.g. "connect", or the group picked with Ctrl+F5
+	 * on the song select screen) and leave the other groups alone.  Songs in
+	 * the group are checked for changes on disk.  GAMESTATE's song and steps
+	 * in this group, and all courses, are pointed at the reloaded objects. */
+	void ReloadGroup( const CString &sGroupName, LoadingWindow *ld );
 	void FreeSongs();
-	void FreeSongsFromGroup(CString GroupName);
 	void Cleanup();
 
 	void Invalidate( Song *pStaleSong );
@@ -101,8 +105,10 @@ public:
 	void UpdateRankingCourses();	// courses shown on the ranking screen
 
 protected:
-	void LoadStepManiaSongDir( CString sDir, LoadingWindow *ld );
+	/* If sOnlyGroup isn't empty, load only that group. */
+	void LoadStepManiaSongDir( CString sDir, LoadingWindow *ld, const CString &sOnlyGroup );
 	void LoadDWISongDir( CString sDir );
+	void SaveSongIndex();
 	bool GetExtraStageInfoFromCourse( bool bExtra2, CString sPreferredGroup,
 					   Song*& pSongOut, Steps*& pStepsOut, PlayerOptions& po_out, SongOptions& so_out );
 	void SanityCheckGroupDir( CString sDir ) const;
@@ -111,6 +117,7 @@ protected:
 	Song *FindSong( CString sGroup, CString sSong );
 
 	vector<Song*>		m_pSongs;	// all songs that can be played
+	vector<Song*>		m_pRetiredSongs;	// replaced by ReloadGroup but maybe still referenced; deleted in FreeSongs
 	vector<Song*>		m_pBestSongs[NUM_PROFILE_SLOTS];
 	vector<Song*>		m_pShuffledSongs;	// used by GetRandomSong
 	CStringArray		m_sGroupNames;
