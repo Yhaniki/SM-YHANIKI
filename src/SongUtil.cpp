@@ -9,6 +9,7 @@
 #include "SongManager.h"
 #include "XmlFile.h"
 #include "PrefsManager.h"
+#include "RageUtil_CharConversions.h"
 
 
 /////////////////////////////////////
@@ -387,6 +388,8 @@ void SongID::LoadFromNode( const XNode* pNode )
 {
 	ASSERT( pNode->name == "Song" );
 	pNode->GetAttrValue("Dir", sDir);
+	/* Profiles written by older builds have the dir in the system code page. */
+	sDir = LegacyPathToUtf8( sDir );
 }
 
 CString SongID::ToString() const

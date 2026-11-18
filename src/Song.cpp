@@ -293,10 +293,9 @@ bool Song::LoadFromSongDir( CString sDir )
 			return false;
 		}
 
-		/* The loaders throw when they can't read a file, e.g. one whose name the
-		 * system code page can't represent: the directory listing turns those
-		 * characters into '?', so opening the file fails.  Skip that one song
-		 * instead of taking the whole game down. */
+		/* The loaders throw when they can't use the song's files, e.g. a file
+		 * that can't be opened or a folder with more than one .sm.  Skip that
+		 * one song instead of taking the whole game down. */
 		bool success;
 		try
 		{

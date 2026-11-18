@@ -5,6 +5,7 @@
 #include "ProfileManager.h"
 #include "SongManager.h"
 #include "XmlFile.h"
+#include "RageUtil_CharConversions.h"
 #include "GameState.h"
 #include "Style.h"
 
@@ -234,6 +235,8 @@ void CourseID::LoadFromNode( const XNode* pNode )
 {
 	ASSERT( pNode->name == "Course" );
 	pNode->GetAttrValue("Path", sPath);
+	/* Profiles written by older builds have the path in the system code page. */
+	sPath = LegacyPathToUtf8( sPath );
 	pNode->GetAttrValue("FullTitle", sFullTitle);
 }
 
