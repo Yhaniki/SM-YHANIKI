@@ -320,6 +320,7 @@
     <ClCompile Include="MusicWheelItem.cpp" />
     <ClCompile Include="NetworkSyncManager.cpp" />
     <ClCompile Include="NetworkSyncServer.cpp" />
+    <ClCompile Include="ShareSongTransfer.cpp" />
     <ClCompile Include="NoteData.cpp" />
     <ClCompile Include="NoteDataUtil.cpp" />
     <ClCompile Include="NoteDataWithScoring.cpp" />
@@ -713,6 +714,7 @@
     <ClInclude Include="MusicWheelItem.h" />
     <ClInclude Include="NetworkSyncManager.h" />
     <ClInclude Include="NetworkSyncServer.h" />
+    <ClInclude Include="ShareSongTransfer.h" />
     <ClInclude Include="NoteData.h" />
     <ClInclude Include="NoteDataUtil.h" />
     <ClInclude Include="NoteDataWithScoring.h" />

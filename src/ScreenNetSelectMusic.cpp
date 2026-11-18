@@ -15,6 +15,9 @@
 #include "AnnouncerManager.h"
 #include "MenuTimer.h"
 #include "NetworkSyncManager.h"
+#include "SongManager.h"
+#include "song.h"
+#include "UnlockSystem.h"
 #include "StepsUtil.h"
 #include "RageUtil.h"
 #include "RageLog.h"
@@ -354,8 +357,29 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 		m_textUsersNum[i].SetShadowLength( 1 );
 		m_textUsersNum[i].SetXY( cx-80, cy );
 		
+		//Song transfer progress bar, under the name and as wide as the user box
+		const float fBarW = USERSBG_WIDTH - 16.f;
+		const float fBarY = cy + 18.f;
+		m_rectShareBarBG[i].SetWidth( fBarW );
+		m_rectShareBarBG[i].SetHeight( 10 );
+		m_rectShareBarBG[i].SetXY( m_rectUsersBG.GetX(), fBarY );
+		m_rectShareBarBG[i].SetDiffuse( RageColor(0,0,0,0) );
+		m_rectShareBarFill[i].SetWidth( 1 );
+		m_rectShareBarFill[i].SetHeight( 10 );
+		m_rectShareBarFill[i].SetXY( m_rectUsersBG.GetX() - fBarW/2, fBarY );
+		m_rectShareBarFill[i].SetDiffuse( RageColor(0,0,0,0) );
+		m_textShareLabel[i].LoadFromFont( THEME->GetPathF(m_sName,"chat") );
+		m_textShareLabel[i].SetName( "ShareLabel" );
+		m_textShareLabel[i].SetShadowLength( 1 );
+		m_textShareLabel[i].SetZoom( 0.4f );
+		m_textShareLabel[i].SetXY( m_rectUsersBG.GetX(), fBarY );
+		m_textShareLabel[i].SetDiffuse( RageColor(1,1,1,0) );
+
 		this->AddChild( &m_textUsers[i] );
 		this->AddChild( &m_textUsersNum[i] );
+		this->AddChild( &m_rectShareBarBG[i] );
+		this->AddChild( &m_rectShareBarFill[i] );
+		this->AddChild( &m_textShareLabel[i] );
 		cx+=USERDX;
 		cy+=USERDY;
 	}
@@ -1117,6 +1141,65 @@ void ScreenNetSelectMusic::Update( float fDeltaTime )
 {
 	Screen::Update( fDeltaTime );
 	UpdateUsersStates();
+	UpdateShareProgress();
+
+	//A song transfer finished: load just the song that arrived, right here
+	if( NSMAN->m_bShareReloadPending && SCREENMAN->GetTopScreen() == this )
+	{
+		NSMAN->m_bShareReloadPending = false;
+		Song *pSong = SONGMAN->LoadOrReloadSong( NSMAN->m_sShareReloadSongDir );
+		if( pSong == NULL )
+		{
+			LOG->Warn( "ShareSong: could not load \"%s\"", NSMAN->m_sShareReloadSongDir.c_str() );
+			SCREENMAN->SystemMessage( "The received song could not be loaded." );
+		}
+		UNLOCKMAN->UpdateSongs();
+		ResetSongList();	//refresh the lists; reports "has song" to the server when it matches
+	}
+}
+void ScreenNetSelectMusic::UpdateShareProgress()
+{
+	const float alpha = GAMESTATE->ScreenNetSelectMusicAlpha ? 1.0f : 0.0f;
+	for( int i = 0; i < NETMAXPLAYERS; ++i )
+	{
+		const bool bShow = alpha > 0 &&
+			i < (int)NSMAN->m_PlayerShareProgress.size() &&
+			NSMAN->m_PlayerShareProgress[i].active;
+		if( !bShow )
+		{
+			m_rectShareBarBG[i].SetDiffuse( RageColor(0,0,0,0) );
+			m_rectShareBarFill[i].SetDiffuse( RageColor(0,0,0,0) );
+			m_textShareLabel[i].SetText( "" );
+			continue;
+		}
+
+		const ShareProgressInfo &sp = NSMAN->m_PlayerShareProgress[i];
+		float fRatio = sp.totalKB > 0 ? (float)sp.doneKB / (float)sp.totalKB : 0.f;
+		if( fRatio < 0.f ) fRatio = 0.f;
+		if( fRatio > 1.f ) fRatio = 1.f;
+
+		const float fBarW = m_rectShareBarBG[i].GetUnzoomedWidth();
+		m_rectShareBarBG[i].SetDiffuse( RageColor(0.15f, 0.15f, 0.15f, alpha * 0.85f) );
+
+		float fFillW = fBarW * fRatio;
+		if( fFillW < 1.f )
+			fFillW = 1.f;
+		m_rectShareBarFill[i].SetWidth( fFillW );
+		m_rectShareBarFill[i].SetXY( m_rectShareBarBG[i].GetX() - fBarW/2 + fFillW/2, m_rectShareBarBG[i].GetY() );
+		if( sp.uploading )
+			m_rectShareBarFill[i].SetDiffuse( RageColor(0.2f, 0.9f, 0.3f, alpha) );	//green = sending
+		else
+			m_rectShareBarFill[i].SetDiffuse( RageColor(0.3f, 0.6f, 1.f, alpha) );	//blue = receiving
+
+		CString sLabel;
+		if( sp.totalKB == 0 )
+			sLabel.Format( "%s connecting...", sp.uploading ? "UP" : "DN" );
+		else
+			sLabel.Format( "%s %d%% %.1f/%.1fMB", sp.uploading ? "UP" : "DN", (int)(fRatio * 100.f),
+				sp.doneKB / 1024.f, sp.totalKB / 1024.f );
+		m_textShareLabel[i].SetText( sLabel );
+		m_textShareLabel[i].SetDiffuse( RageColor(1,1,1,alpha) );
+	}
 }
 void ScreenNetSelectMusic::UpdateUsersStates()
 {

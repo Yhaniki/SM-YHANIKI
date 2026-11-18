@@ -2,6 +2,8 @@
 #include "NetworkSyncServer.h"
 #include "RageLog.h"
 #include "PrefsManager.h"
+#include "RageUtil.h"
+#include "ShareSongTransfer.h"
 #include <time.h>
 #include <windows.h>
 #include <unordered_set>
@@ -14,9 +16,15 @@ StepManiaLanServer::StepManiaLanServer() { }
 StepManiaLanServer::~StepManiaLanServer() { }
 #else
 
+static const bool AUTO_SHARE_MISSING_SONG = true;			// send the song (without video) to players who lack it
+static const unsigned long SHARE_READY_TIMEOUT_MS = 15000;	// the sender has to answer an offer
+static const unsigned long SHARE_IDLE_TIMEOUT_MS = 45000;	// no progress at all (both ends give up after 15s on their own)
+static const unsigned long SHARE_AUTO_WAIT_MS = 10000;		// automatic job waiting for the host's "I have it" report
+
 std::unordered_set<std::string> cmdList =
 	{"share",
 	 "sharefull",
+	 "cancel",
 	 "list",
 	 "have"};
 
@@ -50,6 +58,20 @@ StepManiaLanServer::StepManiaLanServer()
 	stop = true;
 	SecondSameSelect = false;
 	ChangeHost = false;
+	m_Share.active = false;
+	m_Share.id = 0;
+	m_Share.sender = -1;
+	m_Share.receiver = -1;
+	m_Share.includeVideo = false;
+	m_Share.manual = false;
+	m_Share.ready = false;
+	m_Share.lastActivity = 0;
+	m_Share.doneKB = 0;
+	m_Share.totalKB = 0;
+	m_iNextShareId = 1;
+	m_iLastShareCheck = GetTickCount();
+	CurrentSongInfo.hash = 0;
+	LastSongInfo.hash = 0;
 	AssignPlayerIDs();
 }
 
@@ -105,6 +127,8 @@ void StepManiaLanServer::ServerUpdate()
 			SendStatsToClients();
 			statsTime = time(NULL);
 		}
+		CheckShareTimeout();
+		ProcessShareQueue();
 	}
 }
 
@@ -130,14 +154,12 @@ GameClient::GameClient()
 	isStarting = false;  //Used for after ScreenNetMusicSelect but before InGame
 	wasIngame = false;
 	lowerJudge = false;
-	shareAll = false;
-	usingShareSongSystem = false;
-	filefilter = true;
-	ShareNum = 0;
+	autoShareTried = false;
 }
 
 void StepManiaLanServer::Disconnect(const unsigned int clientNum)
 {
+	ShareOnClientRemoved(clientNum);
 	if (clientNum == (Client.size()-1))//host leave
 	{
 		delete Client[Client.size()-1];
@@ -233,29 +255,14 @@ void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int c
 		Client[clientNum]->Player[0].percentage = Packet.ReadNT();
 		Client[clientNum]->Player[1].percentage = Packet.ReadNT();
 		break;
-	case NSSSC:
-		{
-			CString server_ip = Packet.ReadNT();
-			int client_index = Packet.Read1();
-			int file_size = Packet.Read4();
-			// LOG->Info("NSSSC server_ip %s",server_ip.c_str());
-			// LOG->Info("NSSSC file_size %d",file_size);
-			// LOG->Info("NSSSC client_index %d",client_index);
-
-			Reply.ClearPacket();
-			Reply.Write1(NSSSC + NSServerOffset);
-			Reply.WriteNT(server_ip);
-			Reply.Write4(file_size);
-			SendNetPacket(client_index, Reply);
-
-			LastSongInfo.title="";
-			LastSongInfo.artist="";
-			LastSongInfo.subtitle="";//if sent file success, ask "play?" again
-			if(client_index<Client.size())
-			{
-				Client[client_index]->usingShareSongSystem=true;
-			}
-		}
+	case NSSReady:
+		ShareReady(Packet, clientNum);
+		break;
+	case NSSProgress:
+		ShareProgress(Packet, clientNum);
+		break;
+	case NSSResult:
+		ShareResult(Packet, clientNum);
 		break;
 	case NSCGraph:
 		ServerGetGraph(Packet, clientNum);
@@ -266,13 +273,6 @@ void StepManiaLanServer::ParseData(PacketFunctions& Packet, const unsigned int c
 		break;
 	case NSCAS:
 		GetAskSong(Packet, clientNum);
-		break;
-	case NSRSSF:
-		Client[clientNum]->usingShareSongSystem = false;
-		if(Client[clientNum]->shareAll)
-		{
-			ShareAll(clientNum, Packet.fromIp);
-		}
 		break;
 	default:
 		break;
@@ -737,6 +737,7 @@ void StepManiaLanServer::ClientSort(int clientNum)
 {
 	if ( clientNum < Client.size() && clientNum!=0)
 	{
+		CancelAllShares("Host changed, song transfer cancelled.");
 		vector<GameClient*> Client_tmp;
 		Client_tmp.push_back(Client.at(clientNum));//host
 		for(int i=1;i<Client.size();i++)
@@ -758,50 +759,6 @@ void StepManiaLanServer::SendValue(uint8_t value, const unsigned int clientNum)
 {
 	if ( clientNum < Client.size() )
 		Client[clientNum]->clientSocket.SendPack((char*)&value, sizeof(uint8_t));
-}
-
-bool StepManiaLanServer::CheckShare(unsigned int hostIdx, unsigned int clientIdx, bool shareAll)
-{
-	bool result = true;
-	if (hostIdx >= Client.size())
-	{
-		ServerChatOne("The host index is invalid.", hostIdx);
-		result = false;
-	}
-	else if (!Client[hostIdx]->hasSong)
-	{
-		ServerChatOne("The Host hasn't selected a song yet.", hostIdx);
-		result = false;
-	}
-	else if (Client[hostIdx]->usingShareSongSystem)
-	{
-		ServerChatOne("File transfer system is in use.", hostIdx);
-		result = false;
-	}
-	else if (!Client[hostIdx]->inNetMusicSelect)
-	{
-		ServerChatOne("The host is not in the room.", hostIdx);
-		result = false;
-	}
-	else if (!shareAll)
-	{
-		if (clientIdx >= Client.size() || hostIdx == clientIdx)
-		{
-			ServerChatOne("The share song parameter is invalid.", hostIdx);
-			result = false;
-		}
-		else if (!Client[clientIdx]->inNetMusicSelect)
-		{
-			ServerChatOne("The client is not in the room.", hostIdx);
-			result = false;
-		}
-		else if (Client[clientIdx]->hasSong)
-		{
-			ServerChatOne("The client already has the song.", hostIdx);
-			result = false;
-		}
-	}
-	return result;
 }
 
 bool IsCmd(CString &command)
@@ -828,31 +785,28 @@ bool IsHostCmd(CString &command)
 	return result;
 }
 
-CString GetArg(CString&command)
-{
-	size_t spacePos = command.find(" ");
-	CString arg;
-
-	if (spacePos != std::string::npos) {
-		arg = command.substr(spacePos + 1);
-	} else {
-		arg = "";
-	}
-	return arg;
-}
-
 void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int clientNum)
 {
 	CString message = Packet.ReadNT();
-	if (message.at(0) == '/')
+	if (!message.empty() && message.at(0) == '/')
 	{
-		CString command = message.substr(1, message.find(" ")-1);
+		//Split "/command argument"
+		size_t spacePos = message.find(" ");
+		CString command = message.substr(1, spacePos == string::npos ? string::npos : spacePos - 1);
+		CString arg = (spacePos == string::npos) ? CString("") : CString(message.substr(spacePos + 1));
+		size_t argBegin = arg.find_first_not_of(" \t");
+		size_t argEnd = arg.find_last_not_of(" \t");
+		arg = (argBegin == string::npos) ? CString("") : CString(arg.substr(argBegin, argEnd - argBegin + 1));
 		if(IsCmd(command) || IsHostCmd(command))
 		{
 			if ((command.compare("share") == 0) ||
 			(command.compare("sharefull") == 0))
 			{
-				CommandShare(command, clientNum);
+				CommandShare(command.compare("sharefull") == 0, arg, clientNum);
+			}
+			else if (command.compare("cancel") == 0)
+			{
+				CommandCancel(clientNum);
 			}
 			else if ((command.compare("list") == 0))
 			{
@@ -864,7 +818,6 @@ void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int
 			}
 			else if (clientNum == 0)
 			{
-				CString arg = GetArg(command);
 				if (command.compare("start") == 0)
 				{
 					ForceStart();
@@ -897,54 +850,6 @@ void StepManiaLanServer::AnalizeChat(PacketFunctions &Packet, const unsigned int
 	else
 		RelayChat(message, clientNum); //normal chat
 }
-void StepManiaLanServer::ShareSong(unsigned int ShareSongServerNum, unsigned int ShareSongClientNum, CString ServerIp)
-{
-	int clientNum = ShareSongServerNum;
-	int client_index = ShareSongClientNum;
-	CString host_ip = ServerIp;
-
-	if (Client[clientNum]->hasSong == true && // the player have song and another doesn't
-		Client[clientNum]->usingShareSongSystem == false &&
-		Client[clientNum]->inNetMusicSelect == true &&
-		clientNum != client_index &&
-		client_index < Client.size() &&
-		Client[client_index]->hasSong == false)
-	{
-		Reply.ClearPacket();
-		Reply.Write1(NSSSS + NSServerOffset);
-		Reply.WriteNT(host_ip);
-		Reply.Write1(client_index);
-		if(Client[clientNum]->filefilter)
-		{
-			Reply.Write1(1);//open the video file filter
-		}else
-		{
-			Reply.Write1(0);
-		}
-		SendNetPacket(clientNum, Reply);
-		Client[clientNum]->usingShareSongSystem=true;
-	}
-}
-void StepManiaLanServer::ShareAll(unsigned int ShareSongServerNum, CString ServerIp)
-{
-	if (Client[ShareSongServerNum]->hasSong == false) return;
-	for (int i = Client[ShareSongServerNum]->ShareNum; i < Client.size(); i++)
-	{
-		if (i != 0 &&
-			Client[i]->hasSong == false &&
-			Client[i]->usingShareSongSystem == false &&
-			Client[i]->inNetMusicSelect == true &&
-			i != ShareSongServerNum)
-		{
-			ShareSong(ShareSongServerNum, i, ServerIp);
-			Client[ShareSongServerNum]->ShareNum = i + 1;
-			return;
-		}
-		Client[ShareSongServerNum]->ShareNum = i;
-	}
-	Client[ShareSongServerNum]->shareAll = false;
-	Client[ShareSongServerNum]->ShareNum = 0;
-}
 void StepManiaLanServer::RelayChat(CString &passedmessage, const unsigned int clientNum)
 {
 	Reply.ClearPacket();
@@ -973,9 +878,10 @@ void StepManiaLanServer::SelectSong(PacketFunctions& Packet, unsigned int client
 	if (use == 2)
 	{
 		if (clientNum == 0)
-		{ 
+		{
 			SecondSameSelect = false;
 
+			GameInfo previousSong = CurrentSongInfo;
 			CurrentSongInfo.title = Packet.ReadNT();
 			CurrentSongInfo.artist = Packet.ReadNT();
 			CurrentSongInfo.subtitle = Packet.ReadNT();
@@ -983,6 +889,17 @@ void StepManiaLanServer::SelectSong(PacketFunctions& Packet, unsigned int client
 			if(tmp_hash!=0)
 			{
 				CurrentSongInfo.hash = tmp_hash;
+			}
+
+			//A different song: transfers of the old one are useless now
+			if (previousSong.title != CurrentSongInfo.title ||
+				previousSong.artist != CurrentSongInfo.artist ||
+				previousSong.subtitle != CurrentSongInfo.subtitle ||
+				previousSong.hash != CurrentSongInfo.hash)
+			{
+				CancelAllShares("Song changed, song transfer cancelled.");
+				for (unsigned int x = 0; x < Client.size(); ++x)
+					Client[x]->autoShareTried = false;
 			}
 
 			Reply.ClearPacket();
@@ -1055,6 +972,14 @@ void StepManiaLanServer::SelectSong(PacketFunctions& Packet, unsigned int client
 		message += CurrentSongInfo.title;
 		message += "\"";
 		ServerChat(message);
+
+		//Send it automatically (without video) from the host
+		if (AUTO_SHARE_MISSING_SONG && clientNum != 0 && !CurrentSongInfo.title.empty() &&
+			Client[clientNum]->inNetMusicSelect && !Client[clientNum]->autoShareTried)
+		{
+			Client[clientNum]->autoShareTried = true;
+			EnqueueShare(0, clientNum, false, false);
+		}
 	}
 
 	//If client has song
@@ -1120,7 +1045,7 @@ void StepManiaLanServer::ClearHasSong()
 	for (unsigned int x = 0; x < Client.size(); ++x)
 	{
 		Client[x]->hasSong = false;
-		Client[x]->usingShareSongSystem = false;
+		Client[x]->autoShareTried = false;
 	}
 }
 
@@ -1291,29 +1216,6 @@ CString StepManiaLanServer::ListPlayers()
 	return list;
 }
 
-void StepManiaLanServer::CommandShare(CString &command, const unsigned int clientNum)
-{
-	// LOG->Info("command.GetLength() %d", command.GetLength());
-	Client[clientNum]->filefilter = (command.compare("share") == 0) ? true : false;
-	if (command.GetLength() == CString("share").GetLength() ||
-		command.GetLength() == CString("sharefull").GetLength()) // no arg, share all
-	{
-		Client[clientNum]->shareAll = true;
-		if (CheckShare(clientNum, 0, true))
-		{
-			ShareAll(clientNum, Packet.fromIp);
-		}
-	}
-	else
-	{
-		int index = atof(command.substr(command.find(" ") + 1).c_str());
-		if (CheckShare(clientNum, index, false))
-		{
-			ShareSong(clientNum, index, Packet.fromIp);
-		}
-	}
-}
-
 void StepManiaLanServer::Have(const unsigned int clientNum)
 {
 	CString message = "";
@@ -1468,6 +1370,349 @@ void StepManiaLanServer::CheckLowerJudge(const unsigned int clientNum)
 				Client[clientNum]->lowerJudge = true;
 		}
 }
+
+/* ---------------- Song sharing (server side) ---------------- */
+
+CString StepManiaLanServer::ClientDisplayName( unsigned int clientNum )
+{
+	if( clientNum >= Client.size() )
+		return "?";
+	CString name = Client[clientNum]->Player[0].name;
+	if( !Client[clientNum]->Player[1].name.empty() )
+	{
+		if( !name.empty() )
+			name += "&";
+		name += Client[clientNum]->Player[1].name;
+	}
+	if( name.empty() )
+		name = ssprintf( "Player %u", clientNum );
+	return name;
+}
+
+bool StepManiaLanServer::IsShareParty( unsigned int clientNum ) const
+{
+	return m_Share.active && ((int)clientNum == m_Share.sender || (int)clientNum == m_Share.receiver);
+}
+
+/* /share [N]      send the song without video to everyone (or N) who lacks it
+ * /sharefull [N]  send the song with video; players who already have the song
+ *                 only get the video files they are missing */
+void StepManiaLanServer::CommandShare( bool includeVideo, const CString &arg, const unsigned int clientNum )
+{
+	if( CurrentSongInfo.title.empty() )
+	{
+		ServerChatOne( "No song has been selected yet.", clientNum );
+		return;
+	}
+	if( !Client[clientNum]->inNetMusicSelect )
+	{
+		ServerChatOne( "You are not in the room.", clientNum );
+		return;
+	}
+	if( !Client[clientNum]->hasSong )
+	{
+		ServerChatOne( "You don't have the selected song.", clientNum );
+		return;
+	}
+
+	vector<unsigned int> targets;
+	if( arg.empty() )
+	{
+		for( unsigned int x = 0; x < Client.size(); ++x )
+			if( x != clientNum && Client[x]->inNetMusicSelect && (includeVideo || !Client[x]->hasSong) )
+				targets.push_back( x );
+		if( targets.empty() )
+		{
+			ServerChatOne( includeVideo ? "Nobody else is in the room." : "Everyone already has the song.", clientNum );
+			return;
+		}
+	}
+	else
+	{
+		bool isNumber = arg.find_first_not_of( "0123456789" ) == string::npos && arg.size() < 4;
+		unsigned int index = isNumber ? (unsigned int)atoi( arg.c_str() ) : (unsigned int)Client.size();
+		if( index >= Client.size() || index == clientNum )
+		{
+			ServerChatOne( "The share song parameter is invalid.", clientNum );
+			return;
+		}
+		if( !Client[index]->inNetMusicSelect )
+		{
+			ServerChatOne( "The client is not in the room.", clientNum );
+			return;
+		}
+		if( !includeVideo && Client[index]->hasSong )
+		{
+			ServerChatOne( ClientDisplayName( index ) + " already has the song. Use /sharefull " + arg + " to send the video.", clientNum );
+			return;
+		}
+		targets.push_back( index );
+	}
+
+	for( unsigned int i = 0; i < targets.size(); ++i )
+		EnqueueShare( clientNum, targets[i], includeVideo, true );
+	if( m_Share.active )
+		ServerChatOne( ssprintf( "Another song transfer is running, %u queued.", (unsigned int)targets.size() ), clientNum );
+}
+
+void StepManiaLanServer::CommandCancel( const unsigned int clientNum )
+{
+	if( !m_Share.active && m_ShareQueue.empty() )
+	{
+		ServerChatOne( "No song transfer in progress.", clientNum );
+		return;
+	}
+	if( clientNum != 0 && !IsShareParty( clientNum ) )
+	{
+		ServerChatOne( "Only the host or the players in the transfer can cancel it.", clientNum );
+		return;
+	}
+	CString message = "Song transfer cancelled by " + ClientDisplayName( clientNum ) + ".";
+	if( clientNum == 0 )
+		m_ShareQueue.clear();	// the host cancels everything, others only the running transfer
+	if( m_Share.active )
+		EndShareSession( message, true );
+	else
+		ServerChat( message );
+}
+
+void StepManiaLanServer::EnqueueShare( unsigned int sender, unsigned int receiver, bool includeVideo, bool manual )
+{
+	if( m_Share.active && m_Share.receiver == (int)receiver && (m_Share.includeVideo || !includeVideo) )
+		return;	// already being served
+	for( unsigned int i = 0; i < m_ShareQueue.size(); ++i )
+	{
+		ShareJob &job = m_ShareQueue[i];
+		if( job.receiver == (int)receiver )
+		{
+			job.sender = (int)sender;
+			job.includeVideo = job.includeVideo || includeVideo;
+			job.manual = job.manual || manual;
+			return;
+		}
+	}
+	ShareJob job;
+	job.sender = (int)sender;
+	job.receiver = (int)receiver;
+	job.includeVideo = includeVideo;
+	job.manual = manual;
+	job.queuedAt = GetTickCount();
+	m_ShareQueue.push_back( job );
+}
+
+void StepManiaLanServer::ProcessShareQueue()
+{
+	while( !m_Share.active && !m_ShareQueue.empty() )
+	{
+		ShareJob job = m_ShareQueue.front();
+		if( job.sender < 0 || job.receiver < 0 || job.sender >= (int)Client.size() ||
+			job.receiver >= (int)Client.size() || job.sender == job.receiver )
+		{
+			m_ShareQueue.erase( m_ShareQueue.begin() );
+			continue;
+		}
+		GameClient *pSender = Client[job.sender];
+		GameClient *pReceiver = Client[job.receiver];
+		if( !pSender->hasSong && !job.manual && GetTickCount() - job.queuedAt < SHARE_AUTO_WAIT_MS )
+			return;	// the host's "I have it" report may still be on its way
+		m_ShareQueue.erase( m_ShareQueue.begin() );
+		if( !pSender->hasSong || !pSender->inNetMusicSelect || !pReceiver->inNetMusicSelect )
+			continue;
+		if( !job.includeVideo && pReceiver->hasSong )
+			continue;	// got it in the meantime
+		StartShareSession( job );
+	}
+}
+
+void StepManiaLanServer::StartShareSession( const ShareJob &job )
+{
+	m_Share.active = true;
+	m_Share.id = m_iNextShareId;
+	m_iNextShareId = (m_iNextShareId % 255) + 1;	// 1..255
+	m_Share.sender = job.sender;
+	m_Share.receiver = job.receiver;
+	m_Share.includeVideo = job.includeVideo;
+	m_Share.manual = job.manual;
+	m_Share.ready = false;
+	m_Share.lastActivity = GetTickCount();
+	m_Share.doneKB = 0;
+	m_Share.totalKB = 0;
+
+	Reply.ClearPacket();
+	Reply.Write1( NSSOffer + NSServerOffset );
+	Reply.Write1( (uint8_t)m_Share.id );
+	Reply.Write1( (uint8_t)m_Share.receiver );
+	Reply.Write1( m_Share.includeVideo ? 1 : 0 );
+	SendNetPacket( m_Share.sender, Reply );
+
+	//As before: once a song was shared the host has to confirm "Play ...?" again
+	ResetLastSongInfo();
+
+	BroadcastShareProgress( true );
+
+	CString what;
+	if( m_Share.includeVideo && Client[m_Share.receiver]->hasSong )
+		what = "the video of \"" + CurrentSongInfo.title + "\"";
+	else
+		what = "\"" + CurrentSongInfo.title + "\"" + (m_Share.includeVideo ? " (with video)" : " (without video)");
+	ServerChat( ClientDisplayName( m_Share.sender ) + " is sending " + what + " to " +
+		ClientDisplayName( m_Share.receiver ) + "..." );
+}
+
+void StepManiaLanServer::EndShareSession( const CString &message, bool notifyParties )
+{
+	if( !m_Share.active )
+		return;
+	m_Share.active = false;
+	if( notifyParties )
+	{
+		Reply.ClearPacket();
+		Reply.Write1( NSSCancel + NSServerOffset );
+		Reply.Write1( (uint8_t)m_Share.id );
+		if( m_Share.sender >= 0 && m_Share.sender < (int)Client.size() )
+			SendNetPacket( m_Share.sender, Reply );
+		if( m_Share.receiver >= 0 && m_Share.receiver < (int)Client.size() )
+			SendNetPacket( m_Share.receiver, Reply );
+	}
+	BroadcastShareProgress( false );
+	if( !message.empty() )
+		ServerChat( message );
+	// The next queued job starts from ServerUpdate().
+}
+
+void StepManiaLanServer::CancelAllShares( const CString &message )
+{
+	m_ShareQueue.clear();
+	EndShareSession( message, true );
+}
+
+void StepManiaLanServer::BroadcastShareProgress( bool active )
+{
+	Reply.ClearPacket();
+	Reply.Write1( NSSProgress + NSServerOffset );
+	Reply.Write1( (uint8_t)(m_Share.sender >= 0 ? m_Share.sender : 0) );
+	Reply.Write1( (uint8_t)(m_Share.receiver >= 0 ? m_Share.receiver : 0) );
+	Reply.Write4( m_Share.doneKB );
+	Reply.Write4( m_Share.totalKB );
+	Reply.Write1( active ? 1 : 0 );
+	SendToAllClients( Reply );
+}
+
+void StepManiaLanServer::CheckShareTimeout()
+{
+	unsigned long now = GetTickCount();
+	unsigned long gap = now - m_iLastShareCheck;
+	m_iLastShareCheck = now;
+	if( !m_Share.active )
+		return;
+	/* The host's game may have been busy (loading a screen); don't count that against the transfer. */
+	if( gap > 2000 )
+		m_Share.lastActivity += gap;
+	unsigned long idle = now - m_Share.lastActivity;
+	if( !m_Share.ready && idle > SHARE_READY_TIMEOUT_MS )
+		EndShareSession( "Song transfer to " + ClientDisplayName( m_Share.receiver ) + " failed: the sender did not respond.", true );
+	else if( idle > SHARE_IDLE_TIMEOUT_MS )
+		EndShareSession( "Song transfer to " + ClientDisplayName( m_Share.receiver ) + " timed out.", true );
+}
+
+/* Called before a client is removed from Client[]: stop its transfer and fix the indices. */
+void StepManiaLanServer::ShareOnClientRemoved( unsigned int clientNum )
+{
+	if( IsShareParty( clientNum ) )
+		EndShareSession( "Song transfer cancelled: " + ClientDisplayName( clientNum ) + " left.", true );
+	if( m_Share.active )
+	{
+		if( m_Share.sender > (int)clientNum )
+			--m_Share.sender;
+		if( m_Share.receiver > (int)clientNum )
+			--m_Share.receiver;
+	}
+	for( unsigned int i = 0; i < m_ShareQueue.size(); )
+	{
+		ShareJob &job = m_ShareQueue[i];
+		if( job.sender == (int)clientNum || job.receiver == (int)clientNum )
+		{
+			m_ShareQueue.erase( m_ShareQueue.begin() + i );
+			continue;
+		}
+		if( job.sender > (int)clientNum )
+			--job.sender;
+		if( job.receiver > (int)clientNum )
+			--job.receiver;
+		++i;
+	}
+}
+
+void StepManiaLanServer::ShareReady( PacketFunctions &Packet, unsigned int clientNum )
+{
+	int id = Packet.Read1();
+	unsigned int port = Packet.Read2();
+	unsigned int token = Packet.Read4();
+	CString reportedIp = Packet.ReadNT();
+	if( !m_Share.active || id != m_Share.id || (int)clientNum != m_Share.sender )
+		return;
+	if( m_Share.receiver < 0 || m_Share.receiver >= (int)Client.size() )
+		return;
+	m_Share.ready = true;
+	m_Share.lastActivity = GetTickCount();
+
+	/* When the sender runs on the server's machine (usually the host) the receiver
+	 * should use the address it already uses for the server; "127.0.0.1" tells it so. */
+	EzSockets &sock = Client[clientNum]->clientSocket;
+	CString observedIp = sock.getPeerIp();
+	bool sameMachine = observedIp.Left(4) == "127." || observedIp == sock.getIp();
+
+	Reply.ClearPacket();
+	Reply.Write1( NSSReady + NSServerOffset );
+	Reply.Write1( (uint8_t)id );
+	Reply.Write1( (uint8_t)m_Share.sender );
+	Reply.Write2( (uint16_t)port );
+	Reply.Write4( token );
+	Reply.WriteNT( sameMachine ? CString("127.0.0.1") : reportedIp );
+	Reply.WriteNT( sameMachine ? reportedIp : observedIp );
+	SendNetPacket( m_Share.receiver, Reply );
+}
+
+void StepManiaLanServer::ShareProgress( PacketFunctions &Packet, unsigned int clientNum )
+{
+	int id = Packet.Read1();
+	unsigned int doneKB = Packet.Read4();
+	unsigned int totalKB = Packet.Read4();
+	if( !m_Share.active || id != m_Share.id || (int)clientNum != m_Share.receiver )
+		return;
+	if( doneKB != m_Share.doneKB || totalKB != m_Share.totalKB )
+		m_Share.lastActivity = GetTickCount();
+	m_Share.doneKB = doneKB;
+	m_Share.totalKB = totalKB;
+	BroadcastShareProgress( true );
+}
+
+void StepManiaLanServer::ShareResult( PacketFunctions &Packet, unsigned int clientNum )
+{
+	int id = Packet.Read1();
+	bool isReceiver = Packet.Read1() != 0;
+	int result = Packet.Read1();
+	CString message = Packet.ReadNT();
+	if( !m_Share.active || id != m_Share.id )
+		return;
+	const bool failed = result != ShareSongTransfer::RESULT_OK && result != ShareSongTransfer::RESULT_NOTHING_NEEDED;
+	CString name = ClientDisplayName( m_Share.receiver );
+	if( isReceiver && (int)clientNum == m_Share.receiver )
+	{
+		if( failed )
+			EndShareSession( "Song transfer to " + name + " failed: " + message, true );
+		else if( result == ShareSongTransfer::RESULT_OK )
+			EndShareSession( name + " received the song.", false );
+		else
+			EndShareSession( name + " already has all the files.", false );
+	}
+	else if( !isReceiver && (int)clientNum == m_Share.sender && failed )
+	{
+		/* A successful sender waits for the receiver's report. */
+		EndShareSession( "Song transfer to " + name + " failed: " + message, true );
+	}
+}
+
 #endif
 
 /*

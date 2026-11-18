@@ -865,6 +865,41 @@ void SongManager::RevertFromDisk( Song *pSong, bool bAllowNotesLoss )
 	}
 }
 
+Song *SongManager::LoadOrReloadSong( CString sSongDir )
+{
+	if( sSongDir.Right(1) != "/" )
+		sSongDir += "/";
+
+	/* The files were written behind RageFile's back. */
+	FlushDirCache();
+
+	for( unsigned i = 0; i < m_pSongs.size(); ++i )
+	{
+		if( m_pSongs[i]->GetSongDir().CompareNoCase( sSongDir ) == 0 )
+		{
+			RevertFromDisk( m_pSongs[i] );
+			return m_pSongs[i];
+		}
+	}
+
+	/* Don't trust a cache entry left over from an older folder with the same name. */
+	Song *pNewSong = new Song;
+	const bool bOldFastLoad = PREFSMAN->m_bFastLoad;
+	PREFSMAN->m_bFastLoad = false;
+	const bool bLoaded = pNewSong->LoadFromSongDir( sSongDir );
+	PREFSMAN->m_bFastLoad = bOldFastLoad;
+	if( !bLoaded )
+	{
+		delete pNewSong;
+		return NULL;
+	}
+
+	m_pSongs.push_back( pNewSong );
+	AddGroup( SONGS_DIR, pNewSong->m_sGroupName );
+	BANNERCACHE->CacheBanner( GetGroupBannerPath( pNewSong->m_sGroupName ) );
+	return pNewSong;
+}
+
 void SongManager::RegenerateNonFixedCourses()
 {
 	for( unsigned i=0; i < m_pCourses.size(); i++ )

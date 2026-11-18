@@ -127,6 +127,7 @@ public:
 	CString address;
 
 	CString getIp();
+	CString getPeerIp();	//Address of the other end of a connected socket
 
 private:
 
