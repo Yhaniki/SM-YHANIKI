@@ -285,7 +285,20 @@ bool Song::LoadFromSongDir( CString sDir )
 			return false;
 		}
 
-		bool success = ld->LoadFromDir( sDir, *this );
+		/* The loaders throw when they can't read a file, e.g. one whose name the
+		 * system code page can't represent: the directory listing turns those
+		 * characters into '?', so opening the file fails.  Skip that one song
+		 * instead of taking the whole game down. */
+		bool success;
+		try
+		{
+			success = ld->LoadFromDir( sDir, *this );
+		}
+		catch( const RageException &e )
+		{
+			LOG->Warn( "Skipping the song in '%s': %s", sDir.c_str(), e.what() );
+			success = false;
+		}
 		BlacklistedImages = ld->GetBlacklistedImages();
 
 		if(!success)
