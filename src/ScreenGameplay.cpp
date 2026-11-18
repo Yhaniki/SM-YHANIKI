@@ -872,7 +872,8 @@ void ScreenGameplay::SetupSong( PlayerNumber p, int iSongIndex )
 	GAMESTATE->m_fLastDrawnBeat[p] = -100;
 	GAMESTATE->m_pCurSteps[p] = m_vpStepsQueue[p][iSongIndex];
 
-	/* .gn 的每個難度可以有自己的 BPM 表，玩哪個難度就用哪一份。 */
+	/* Each .gn difficulty can have its own BPM table; use the one for the difficulty
+	 * being played. */
 	if( GAMESTATE->m_pCurSong != NULL )
 		GAMESTATE->m_pCurSong->UseTimingOf( GAMESTATE->m_pCurSteps[p] );
 

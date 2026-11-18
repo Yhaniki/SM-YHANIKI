@@ -184,8 +184,8 @@ NotesLoader *Song::MakeLoader( CString sDir ) const
 	if(ret->Loadable( sDir )) return ret;
 	delete ret;
 
-	/* SDO 系列的 .gn。排在最後：資料夾裡若已經有 .sm（例如編輯過後存出來的），
-	 * 就以 .sm 為準，那份 .sm 裡也記著它是從哪個 .gn 來的。 */
+	/* SDO-series .gn. This comes last: if the folder already has a .sm (for example one
+	 * saved after editing), the .sm wins, and that .sm also records which .gn it came from. */
 	ret = new GNLoader;
 	if(ret->Loadable( sDir )) return ret;
 	delete ret;
@@ -1042,7 +1042,8 @@ void Song::Save()
 	SaveToSMFile( GetSongFilePath(), false );
 	SaveToDWIFile();
 
-	/* 從 .gn 讀進來的就一併寫回去，不然編輯的結果只會留在 .sm 裡。 */
+	/* If the song was loaded from a .gn, write that back too; otherwise the edits would
+	 * only end up in the .sm. */
 	if( IsFromGN() )
 	{
 		CString sErr;
@@ -1139,7 +1140,7 @@ bool Song::SaveToGNFile( CString &sErrOut )
 		return false;
 	}
 
-	/* 先備份原檔，跟 SaveToSMFile 一樣放在 FileBackup/ 底下。 */
+	/* Back up the original file first, under FileBackup/ like SaveToSMFile does. */
 	{
 		time_t now = time(0);
 		char filename[100];

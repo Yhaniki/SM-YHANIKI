@@ -30,7 +30,8 @@ void NotesWriterSM::WriteGlobalTags( CString &f, const Song &out )
 	PutLine( f, ssprintf( "#LYRICSPATH:%s;", out.m_sLyricsFile.c_str() ) );
 	PutLine( f, ssprintf( "#CDTITLE:%s;", out.m_sCDTitleFile.c_str() ) );
 	PutLine( f, ssprintf( "#MUSIC:%s;", out.m_sMusicFile.c_str() ) );
-	/* 記住這首歌是從哪個 .gn 來的，之後即使改走 .sm／cache 也還能寫回去。 */
+	/* Remember which .gn this song came from, so it can still be written back later even
+	 * when the song is loaded through the .sm / cache instead. */
 	if( out.IsFromGN() )
 		PutLine( f, ssprintf( "#GNFILE:%s;", out.m_sGNFileName.c_str() ) );
 	PutLine( f, ssprintf( "#OFFSET:%.6f;", out.m_Timing.m_fBeat0OffsetInSeconds ) );
@@ -155,9 +156,10 @@ static void WriteLineList( CString &f, vector<CString> &lines, bool SkipLeadingB
 	}
 }
 
-/* .gn 的每個難度可以有自己的 BPM 表，但 .sm 只有一份全曲 timing。
- * 為了讓下次從 .sm／cache 讀回來時不遺失，這裡把難度自己的 timing 寫在
- * 它的 #NOTES 前面。其他格式的譜面沒有這個 tag，行為完全不變。 */
+/* Each .gn difficulty can have its own BPM table, but a .sm has only one timing for
+ * the whole song. So that it is not lost the next time the song is read back from the
+ * .sm / cache, the difficulty's own timing is written here, before its #NOTES. Charts
+ * in other formats do not have this tag, so their behavior is completely unchanged. */
 static void WriteStepsTimingTag( const Steps &in, CString &f )
 {
 	const TimingData *pTiming = in.GetOwnTiming();

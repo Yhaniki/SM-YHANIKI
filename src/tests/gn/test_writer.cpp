@@ -1,9 +1,11 @@
-/* 驗證 NotesWriterGN::BuildFrames：
- * 拿真的 .gn 譜面 → 用跟 loader 一樣的方式攤成 NoteData/TimingData
- * → BuildFrames 重建 frames → 比對音符集合、BPM 事件與檔案結構。
+/* Tests NotesWriterGN::BuildFrames:
+ * take a real .gn chart -> unpack it into NoteData/TimingData the same way the loader
+ * does -> rebuild the frames with BuildFrames -> compare the note sets, BPM events and
+ * file structure.
  *
- * 這裡的「攤成 NoteData」是 loader 邏輯的複製品（loader 本身依賴太多引擎物件，
- * 沒辦法脫離遊戲編譯），所以測到的是 writer 這一側。 */
+ * The "unpack into NoteData" step here is a copy of the loader logic (the loader itself
+ * depends on too many engine objects to compile outside the game), so what gets tested
+ * is the writer side. */
 #include "global.h"
 #include "GNFile.h"
 #include "NotesWriterGN.h"
@@ -40,7 +42,7 @@ int GNLoader::ColToFrameType( int iCol )
 
 bool GNLoader::ReadGNFile( CString, GNFile::StepFile &, GNFile::ContainerInfo &, CString & )
 {
-	return false;	// 這個測試不走 Write()
+	return false;	// this test does not go through Write()
 }
 
 static bool ReadWhole( const char *szPath, std::string &sOut )
@@ -57,7 +59,8 @@ static bool ReadWhole( const char *szPath, std::string &sOut )
 	return got == (size_t) n;
 }
 
-/* 一顆音符：(欄位, row, 種類)。用來比對往返前後是否一致。 */
+/* One note: (column, row, kind). Used to check that notes match before and after the
+ * round trip. */
 typedef std::set< std::pair< std::pair<int,int>, int > > NoteSet;
 
 static void CollectNotes( const vector<GNFile::Frame> &v, NoteSet &out )
@@ -96,7 +99,8 @@ static void CollectBPMs( const vector<GNFile::Frame> &v, std::map<int,float> &ou
 	}
 }
 
-/* loader 那側的等價轉換（複製自 NotesLoaderGN::FramesToNoteData 的行為）。 */
+/* Equivalent of the loader-side conversion (copies the behaviour of
+ * NotesLoaderGN::FramesToNoteData). */
 static void FramesToNoteData( const vector<GNFile::Frame> &vFrames, NoteData &out )
 {
 	out.SetNumTracks( 4 );
@@ -136,7 +140,7 @@ static void FramesToNoteData( const vector<GNFile::Frame> &vFrames, NoteData &ou
 				}
 				else
 				{
-					/* 沒頭的 hold 結尾：當成單顆音符（與 loader 相同）。 */
+					/* Hold end with no start: treat it as a single tap (same as the loader). */
 					out.SetTapNote( iCol, iRow, MakeTap(TapNote::tap) );
 				}
 				break;
@@ -191,7 +195,7 @@ int main( int argc, char **argv )
 			NoteData nd;
 			FramesToNoteData( vOrig, nd );
 
-			/* timing：表頭 BPM 當基準，加上這個難度自己的變速事件。 */
+			/* timing: the header BPM as the base, plus this difficulty's own BPM changes. */
 			TimingData timing;
 			timing.m_BPMSegments.push_back( BPMSegment(0, sf.fBPM > 0 ? sf.fBPM : 120) );
 			for( std::map<int,float>::const_iterator it = mapOrigBPM.begin(); it != mapOrigBPM.end(); ++it )
@@ -208,7 +212,8 @@ int main( int argc, char **argv )
 			CollectNotes( vNew, setNew );
 
 			char buf[192];
-			/* 位置集合必須一模一樣；種類可能因為原始資料有壞掉的 hold 而退化成單顆音符。 */
+			/* The sets of positions must be identical; the kind may degrade to a single tap
+			 * because the original data has broken holds. */
 			std::set< std::pair<int,int> > posOrig, posNew;
 			int iKindDiff = 0;
 			for( NoteSet::const_iterator it = setOrig.begin(); it != setOrig.end(); ++it )
@@ -244,7 +249,7 @@ int main( int argc, char **argv )
 				}
 			}
 
-			/* BPM 事件也要留住（表頭那一個除外，它由 fBPM 表達）。 */
+			/* BPM events must survive too (except the header one, which fBPM expresses). */
 			std::map<int,float> mapNewBPM;
 			CollectBPMs( vNew, mapNewBPM );
 			bool bBPMOK = true;
@@ -259,7 +264,7 @@ int main( int argc, char **argv )
 			sprintf( buf, "diff%d: %u bpm events survive", d, (unsigned) mapOrigBPM.size() );
 			Check( bBPMOK, buf );
 
-			/* 小節線之類的控制 frame 一個都不能少。 */
+			/* Not a single control frame (bar lines and the like) may go missing. */
 			int iCtrlOrig = 0, iCtrlNew = 0;
 			for( unsigned f = 0; f < vOrig.size(); f++ )
 				if( vOrig[f].iType != GNFile::FRAME_BPM && GNLoader::FrameTypeToCol(vOrig[f].iType) < 0 )
@@ -270,7 +275,8 @@ int main( int argc, char **argv )
 			sprintf( buf, "diff%d: control frames kept (%d -> %d)", d, iCtrlOrig, iCtrlNew );
 			Check( iCtrlNew >= iCtrlOrig, buf );
 
-			/* frame 必須照 (measurement, type) 排好，原檔就是這個順序。 */
+			/* Frames must be sorted by (measurement, type), which is the order of the
+			 * original file. */
 			bool bSorted = true;
 			for( unsigned f = 1; f < vNew.size(); f++ )
 			{
@@ -282,7 +288,7 @@ int main( int argc, char **argv )
 			sprintf( buf, "diff%d: frames sorted by (measurement, type)", d );
 			Check( bSorted, buf );
 
-			/* 重建出來的檔案要能再被解析回來。 */
+			/* The rebuilt file must parse back again. */
 			GNFile::StepFile sf2 = sf;
 			sf2.avFrames[d] = vNew;
 			std::string sBody2;

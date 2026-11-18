@@ -1,4 +1,5 @@
-/* GNFile 的獨立驗證：解密 → 解析 → 序列化 → 重新加密，逐步跟原檔比對。 */
+/* Standalone check of GNFile: decrypt -> parse -> serialize -> re-encrypt, comparing
+ * against the original file at each step. */
 #include "global.h"
 #include "GNFile.h"
 #include <stdio.h>
@@ -116,13 +117,13 @@ int main( int argc, char **argv )
 			printf( "\n    bpm events: %s\n", sBPMs.empty() ? "(none)" : sBPMs.c_str() );
 		}
 
-		/* 1. 解析後原樣序列化，應該跟解密出來的本文一模一樣。 */
+		/* 1. Serializing the parsed result unchanged should give exactly the decrypted body. */
 		std::string sReBody;
 		GNFile::Serialize( sf, sReBody );
 		const std::string sBodyNoTrailing = sBody.substr( 0, sf.aiAddress[3] );
 		Check( sReBody == sBodyNoTrailing, "serialize(parse(body)) == body" );
 
-		/* 2. 原樣包回去，應該跟原檔一模一樣。 */
+		/* 2. Wrapping it back unchanged should give exactly the original file. */
 		std::string sReRaw;
 		if( !GNFile::Encrypt(sReBody, info, true, sReRaw, &sErr) )
 		{
@@ -135,7 +136,7 @@ int main( int argc, char **argv )
 			Check( sReRaw == sRaw, "encrypt(serialize(parse(x))) == x" );
 		}
 
-		/* 3. 不保大小的路徑也要能被自己讀回來。 */
+		/* 3. The path that does not keep the file size must also be readable by us again. */
 		std::string sGrowRaw;
 		if( !GNFile::Encrypt(sReBody, info, false, sGrowRaw, &sErr) )
 		{

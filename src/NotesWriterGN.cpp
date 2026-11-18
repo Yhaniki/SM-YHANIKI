@@ -14,11 +14,13 @@
 
 static const int GN_ROWS_PER_MEASUREMENT = ROWS_PER_BEAT * GNFile::BEATS_PER_MEASUREMENT;
 
-/* GN 允許的 interval。愈小檔案愈小，所以挑「放得下所有音符」的最小值。 */
+/* The intervals GN allows. Smaller means a smaller file, so pick the smallest one that
+ * still fits all the notes. */
 static const int g_aiIntervals[] = { 4, 8, 12, 16, 24, 32, 48, 64, 96, 192 };
 
-/* 一個 (measurement, type) 對應一個 frame；先按小節內的 row 收集，最後再決定 interval。 */
-typedef std::map<int, GNFile::Slot> SlotMap;			// 小節內 row (0..191) -> slot
+/* Each (measurement, type) maps to one frame; slots are collected by row within the
+ * measure first, and the interval is decided at the end. */
+typedef std::map<int, GNFile::Slot> SlotMap;			// row within the measure (0..191) -> slot
 typedef std::map<std::pair<int,int>, SlotMap> FrameMap;	// (measurement, type) -> slots
 
 static void AddSlot( FrameMap &m, int iRow, int iType, const GNFile::Slot &slot )
@@ -30,7 +32,7 @@ static void AddSlot( FrameMap &m, int iRow, int iType, const GNFile::Slot &slot 
 	m[std::make_pair(iMeasurement, iType)][iRowIn] = slot;
 }
 
-/* 找出放得下這些 row 的最小 interval。 */
+/* Find the smallest interval that can hold these rows. */
 static int PickInterval( const SlotMap &slots )
 {
 	for( unsigned i = 0; i < RageARRAYSIZE(g_aiIntervals); i++ )
@@ -57,7 +59,7 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 {
 	FrameMap mapFrames;
 
-	// ---- 音符 ----
+	// ---- Notes ----
 	const int iLastRow = nd.GetLastRow();
 	for( int t = 0; t < nd.GetNumTracks() && t < 4; t++ )
 	{
@@ -66,7 +68,7 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 		{
 			const TapNote tn = nd.GetTapNote( t, r );
 			if( tn.type == TapNote::empty || tn.type == TapNote::mine )
-				continue;	// GN 沒有地雷
+				continue;	// GN has no mines
 			AddSlot( mapFrames, r, iType, GNFile::Slot(1, 0, GNFile::NOTE_ARROW) );
 		}
 	}
@@ -81,8 +83,9 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 		AddSlot( mapFrames, hn.iEndRow,   iType, GNFile::Slot(1, 0, GNFile::NOTE_HOLD_END) );
 	}
 
-	// ---- BPM 變化 ----
-	/* 第 0 拍的 BPM 由表頭表達；只有跟表頭不同時才另外寫一個 type 1。 */
+	// ---- BPM changes ----
+	/* The BPM at beat 0 is given by the header; write a separate type 1 only when it
+	 * differs from the header. */
 	for( unsigned i = 0; i < timing.m_BPMSegments.size(); i++ )
 	{
 		const BPMSegment &seg = timing.m_BPMSegments[i];
@@ -94,15 +97,15 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 		AddSlot( mapFrames, iRow, GNFile::FRAME_BPM, GNFile::BPMToSlot(seg.m_fBPM) );
 	}
 
-	// ---- 控制用 frame（小節線、音樂起止…）原樣保留 ----
+	// ---- Control frames (bar lines, music start/end, ...) are kept as-is ----
 	int iMaxBarlineMeasurement = -1;
-	int iBarlineStep = 2;		// 原檔相鄰兩條小節線的間隔
-	int iNextBarlineValue = -1;	// 原檔小節線的編號是遞增的
+	int iBarlineStep = 2;		// spacing between two adjacent bar lines in the original file
+	int iNextBarlineValue = -1;	// bar line numbers in the original file increase
 	for( unsigned f = 0; f < vOriginal.size(); f++ )
 	{
 		const GNFile::Frame &fr = vOriginal[f];
 		if( fr.iType == GNFile::FRAME_BPM || GNLoader::FrameTypeToCol(fr.iType) >= 0 )
-			continue;	// 音符與 BPM 由上面重建
+			continue;	// notes and BPMs are rebuilt above
 
 		vOut.push_back( fr );
 
@@ -117,7 +120,7 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 		}
 	}
 
-	/* 譜面被改長了就照原本的間隔把小節線補上去。 */
+	/* If the chart was made longer, add bar lines at the original spacing. */
 	int iMaxMeasurement = 0;
 	for( FrameMap::const_iterator it = mapFrames.begin(); it != mapFrames.end(); ++it )
 		iMaxMeasurement = max( iMaxMeasurement, it->first.first );
@@ -133,7 +136,7 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 		}
 	}
 
-	// ---- 把收集到的 slot 變成 frame ----
+	// ---- Turn the collected slots into frames ----
 	for( FrameMap::const_iterator it = mapFrames.begin(); it != mapFrames.end(); ++it )
 	{
 		const int iMeasurement = it->first.first;
@@ -152,7 +155,7 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 		vOut.push_back( fr );
 	}
 
-	// ---- 原檔的順序是 (measurement, type) 由小到大 ----
+	// ---- The original file is ordered by (measurement, type), ascending ----
 	struct Sorter
 	{
 		static bool Less( const GNFile::Frame &a, const GNFile::Frame &b )
@@ -194,7 +197,8 @@ static bool WriteWholeFile( CString sPath, const std::string &s )
 
 bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, CString &sErrOut )
 {
-	/* 以原檔當骨架：表頭沒解讀的欄位、控制 frame 都留著。 */
+	/* Use the original file as the skeleton: uninterpreted header fields and control
+	 * frames are kept. */
 	GNFile::StepFile sf;
 	GNFile::ContainerInfo info;
 	if( !GNLoader::ReadGNFile( sPath, sf, info, sErrOut ) )
@@ -205,7 +209,7 @@ bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, 
 		DIFFICULTY_EASY, DIFFICULTY_MEDIUM, DIFFICULTY_HARD
 	};
 
-	/* 表頭 BPM 沿用最難那個難度的起始 BPM。 */
+	/* The header BPM takes the starting BPM of the hardest difficulty. */
 	for( int d = GNFile::NUM_DIFFS - 1; d >= 0; d-- )
 	{
 		const Steps *pSteps = song.GetStepsByDifficulty( STEPS_TYPE_DANCE_SINGLE, aDiffs[d], false );
@@ -223,7 +227,7 @@ bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, 
 	{
 		const Steps *pSteps = song.GetStepsByDifficulty( STEPS_TYPE_DANCE_SINGLE, aDiffs[d], false );
 		if( pSteps == NULL )
-			continue;	// 這個難度沒載進來（.gn 裡是空的），原樣保留
+			continue;	// this difficulty was not loaded (it is empty in the .gn); keep it as-is
 
 		NoteData nd;
 		pSteps->GetNoteData( &nd );
@@ -237,13 +241,16 @@ bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, 
 		sf.aiNoteCount[d] = CountNotesInFrames( vNew );
 		sf.aiMeasurements[d] = (int) vNew.size();
 
-		/* 等級：GN 的 level 跟 SM 的 meter 是同一個數字，在編輯器改過就寫回去。
-		 * 原本表頭沒填（0）的就別動，免得把 Steps::TidyUpData 猜出來的數字寫進檔案。 */
+		/* Level: GN's level and SM's meter are the same number, so write it back if it was
+		 * changed in the editor. Leave it alone if the header originally had none (0), so
+		 * that a number guessed by Steps::TidyUpData does not end up in the file. */
 		if( sf.aiLevel[d] > 0 && pSteps->GetMeter() > 0 )
 			sf.aiLevel[d] = (int16_t) GNLoader::MeterToGNLevel( pSteps->GetMeter() );
 
-		/* aiExtra52 / aiDuration 的確切語意還沒完全弄清楚（實測 extra52 既不是
-		 * 最大小節也不是小節數），亂寫可能讓原版遊戲算錯速度，所以原樣保留。 */
+		/* The exact meaning of aiExtra52 / aiDuration is not fully understood yet (testing
+		 * shows extra52 is neither the highest measure nor the measure count); writing
+		 * arbitrary values could make the original game compute the wrong speed, so they
+		 * are kept as-is. */
 	}
 
 	std::string sBody;

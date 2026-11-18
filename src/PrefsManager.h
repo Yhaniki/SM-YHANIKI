@@ -44,8 +44,9 @@ public:
 	bool			m_bPalettedBannerCache;
 	bool			m_bFastLoad;
 
-	/* 寫回 .gn 時是否堅持維持原檔大小（SDOM／熱舞版的容器原本靠補零維持長度）。
-	 * 預設關閉：譜面變大就讓檔案跟著變大。 */
+	/* Whether writing back a .gn insists on keeping the original file size (the SDOM /
+	 * Dance Online containers originally keep their length by zero padding).
+	 * Off by default: if the chart grows, the file grows with it. */
 	bool			m_bGNKeepFileSize;
 
 	bool			m_bOnlyDedicatedMenuButtons;

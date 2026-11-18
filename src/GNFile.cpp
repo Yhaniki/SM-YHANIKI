@@ -8,7 +8,7 @@ namespace GNFile
 {
 
 // =============================================================================
-// 小工具：little-endian 存取（GN 全檔皆為小端序）
+// Helpers: little-endian access (everything in a GN file is little-endian)
 // =============================================================================
 
 static inline uint32_t GetU32( const std::string &s, size_t o )
@@ -75,7 +75,7 @@ static void SetErr( std::string *psErrOut, const char *sFmt, ... )
 }
 
 // =============================================================================
-// CRC32 (IEEE) 與「改最後 4 bytes 湊出指定 CRC」
+// CRC32 (IEEE) and "rewrite the last 4 bytes to hit a given CRC"
 // =============================================================================
 
 static uint32_t g_aCrcTable[256];
@@ -111,10 +111,11 @@ static uint32_t CrcInternal( const uint8_t *p, size_t iLen )
 	uint32_t crc = 0xFFFFFFFFu;
 	for( size_t i = 0; i < iLen; i++ )
 		crc = g_aCrcTable[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
-	return crc;	// 不做最終 XOR
+	return crc;	// no final XOR
 }
 
-/* 已知某 byte 與該步之後的狀態，反推該步之前的狀態。找不到回 false。 */
+/* Given a byte and the state after that step, work out the state before it.
+ * Returns false if none is found. */
 static bool ReverseCrcStep( uint32_t iStateAfter, uint8_t iByte, uint32_t &iStateBeforeOut )
 {
 	InitCrcTable();
@@ -133,7 +134,7 @@ static bool ReverseCrcStep( uint32_t iStateAfter, uint8_t iByte, uint32_t &iStat
 	return false;
 }
 
-/* 改寫 sData 的最後 4 bytes，使 CRC32(sData) == iTargetCrc。 */
+/* Rewrite the last 4 bytes of sData so that CRC32(sData) == iTargetCrc. */
 static bool Crc32FixLast4( std::string &sData, uint32_t iTargetCrc )
 {
 	if( sData.size() < 4 )
@@ -143,7 +144,8 @@ static bool Crc32FixLast4( std::string &sData, uint32_t iTargetCrc )
 	const uint32_t iPrefix = CrcInternal( (const uint8_t *) sData.data(), sData.size() - 4 );
 	const uint32_t iTargetInternal = iTargetCrc ^ 0xFFFFFFFFu;
 
-	/* 前半：列舉最後四個 byte 中的前兩個，記下走完兩步後的狀態。 */
+	/* First half: enumerate the first two of the last four bytes and record the state
+	 * after those two steps. */
 	std::unordered_map<uint32_t, uint32_t> mapForward;	// state -> (b0 << 8 | b1)
 	mapForward.reserve( 70000 );
 	for( int b0 = 0; b0 < 256; b0++ )
@@ -156,7 +158,8 @@ static bool Crc32FixLast4( std::string &sData, uint32_t iTargetCrc )
 		}
 	}
 
-	/* 後半：從目標狀態往回推兩步，看看能不能接上前半。 */
+	/* Second half: step back twice from the target state and see whether it meets the
+	 * first half. */
 	for( int b3 = 0; b3 < 256; b3++ )
 	{
 		uint32_t s3;
@@ -182,7 +185,7 @@ static bool Crc32FixLast4( std::string &sData, uint32_t iTargetCrc )
 }
 
 // =============================================================================
-// LCG 串流加解密
+// LCG stream encryption / decryption
 // =============================================================================
 
 const uint32_t MULTIPLIER = 0x3D09;
@@ -200,18 +203,19 @@ void LCGTransform( uint32_t iSeed, std::string &sData, bool bEncrypt )
 	}
 }
 
-/* 0x3D09 在 mod 2^32 下的乘法反元素，用來把狀態往回推。 */
+/* Multiplicative inverse of 0x3D09 mod 2^32, used to step the state backwards. */
 static uint32_t ModInverseMultiplier()
 {
-	/* 牛頓迭代：x_{n+1} = x_n * (2 - a * x_n) */
+	/* Newton iteration: x_{n+1} = x_n * (2 - a * x_n) */
 	uint32_t x = 1;
 	for( int i = 0; i < 6; i++ )
 		x *= 2u - MULTIPLIER * x;
 	return x;
 }
 
-/* 已知明文攻擊：iKs 是 iNumKs 個連續的 keystream byte（密文 - 明文），
- * 還原出產生第一個 byte 之前的 seed。搜尋空間 2^24。 */
+/* Known-plaintext attack: iKs holds iNumKs consecutive keystream bytes (ciphertext -
+ * plaintext); recovers the seed from before the first byte was generated. The search
+ * space is 2^24. */
 static bool RecoverSeed( const uint8_t *pKs, int iNumKs, uint32_t &iSeedOut )
 {
 	if( iNumKs < 4 )
@@ -222,7 +226,8 @@ static bool RecoverSeed( const uint8_t *pKs, int iNumKs, uint32_t &iSeedOut )
 		const uint32_t base = (hi << 24) | ((uint32_t) pKs[0] << 16);
 		for( uint32_t lo = 0; lo < 65536; lo++ )
 		{
-			/* state 即產生 pKs[0] 的那一步狀態，其 bit16-23 必等於 pKs[0]。 */
+			/* state is the state at the step that produced pKs[0], so its bits 16-23 must
+			 * equal pKs[0]. */
 			const uint32_t state = base | lo;
 			uint32_t s = state * MULTIPLIER;
 			if( (uint8_t)((s >> 16) & 0xFF) != pKs[1] )
@@ -247,7 +252,7 @@ static bool RecoverSeed( const uint8_t *pKs, int iNumKs, uint32_t &iSeedOut )
 			}
 			if( !bOK )
 				continue;
-			iSeedOut = state * iInv;	// 回推一步，得到 LCGTransform 要吃的 seed
+			iSeedOut = state * iInv;	// step back once to get the seed LCGTransform takes
 			return true;
 		}
 	}
@@ -255,7 +260,7 @@ static bool RecoverSeed( const uint8_t *pKs, int iNumKs, uint32_t &iSeedOut )
 }
 
 // =============================================================================
-// 容器辨識與解密
+// Container detection and decryption
 // =============================================================================
 
 const uint32_t DDRM_MAGIC = 0x6D726464;	// 'ddrm'
@@ -270,7 +275,7 @@ const int DDRM_B1_OFF_CRC2 = 0x08;
 const int OFF_FILE_TYPE = 4;
 const int OFF_ADDRESS_EASY = 284;
 
-/* 表頭看起來是不是一份合法的 StepFile 表頭。 */
+/* Whether the header looks like a valid StepFile header. */
 static bool HeaderLooksValid( const std::string &s, size_t off, size_t iAvail )
 {
 	if( off + HEADER_SIZE > s.size() )
@@ -290,7 +295,8 @@ static bool HeaderLooksValid( const std::string &s, size_t off, size_t iAvail )
 	return true;
 }
 
-/* SDOM：檔首是資源檔名表，往後掃描第一個像 StepFile 表頭的位置（常見為 0x1C8）。 */
+/* SDOM: the file starts with a resource file name table; scan forward for the first
+ * position that looks like a StepFile header (commonly 0x1C8). */
 static int FindSdomInnerOffset( const std::string &sRaw )
 {
 	const int iScanMax = 0x4000;
@@ -325,7 +331,8 @@ static bool DecryptDDRM( const std::string &sRaw, std::string &sBodyOut, Contain
 	info.type = CONTAINER_DDRM;
 	info.iSeed1 = s1;
 	info.iSeed2 = s2;
-	/* 表頭與 block1 裡我們沒解讀的欄位原樣留著，寫回時只改長度與 CRC。 */
+	/* Fields in the header and block1 that we do not interpret are kept as-is; write-back
+	 * changes only the length and CRC. */
 	info.sDDRMHeader = sRaw.substr( 0, DDRM_HEADER_SIZE );
 	info.sDDRMBlock1 = sBlock1;
 	return true;
@@ -335,7 +342,7 @@ static bool DecryptSDOM( const std::string &sRaw, std::string &sBodyOut, Contain
 {
 	const int iInnerOff = FindSdomInnerOffset( sRaw );
 	if( iInnerOff < 0 )
-		return false;	// 不是 SDOM，交給下一種容器試
+		return false;	// not SDOM; let the next container type try
 
 	const std::string sInner = sRaw.substr( iInnerOff );
 	if( sInner.size() < (size_t) HEADER_SIZE + 16 )
@@ -343,7 +350,8 @@ static bool DecryptSDOM( const std::string &sRaw, std::string &sBodyOut, Contain
 		SetErr( psErrOut, "SDOM: encrypted region is too short" );
 		return false;
 	}
-	/* 加密區的明文開頭就是同一份 300 bytes 表頭，拿來當已知明文。 */
+	/* The plaintext of the encrypted region starts with the same 300-byte header; use it
+	 * as known plaintext. */
 	const std::string sHeader = sInner.substr( 0, HEADER_SIZE );
 	const std::string sEnc = sInner.substr( HEADER_SIZE );
 
@@ -382,7 +390,8 @@ static bool DecryptREWU( const std::string &sRaw, std::string &sBodyOut, Contain
 		SetErr( psErrOut, "file is shorter than 300 bytes" );
 		return false;
 	}
-	/* 整檔加密，offset 4-7 的明文一定是 "gn\0\0" 或 "GN\0\0"。 */
+	/* The whole file is encrypted; the plaintext at offset 4-7 is always "gn\0\0" or
+	 * "GN\0\0". */
 	const char *aExpected[2] = { "gn\0\0", "GN\0\0" };
 	const uint32_t iInv = ModInverseMultiplier();
 
@@ -408,7 +417,8 @@ static bool DecryptREWU( const std::string &sRaw, std::string &sBodyOut, Contain
 				if( (uint8_t)((s >> 16) & 0xFF) != aKs[3] )
 					continue;
 
-				/* state 是產生 offset 4 那個 byte 的狀態，往回推 5 步得到檔首的 seed。 */
+				/* state is the one that produced the byte at offset 4; stepping back 5 times
+				 * gives the seed for the start of the file. */
 				uint32_t iSeed = state;
 				for( int k = 0; k < 5; k++ )
 					iSeed *= iInv;
@@ -451,7 +461,8 @@ bool LooksLikeGN( const std::string &sRaw )
 		return true;
 	if( FindSdomInnerOffset( sRaw ) >= 0 )
 		return true;
-	/* 熱舞版整檔加密，看不出特徵；副檔名對就當作候選，真正判斷留給 Decrypt。 */
+	/* The Dance Online version encrypts the whole file, so it has no visible signature; if
+	 * the extension matches, treat it as a candidate and leave the real check to Decrypt. */
 	return true;
 }
 
@@ -487,7 +498,8 @@ bool Decrypt( const std::string &sRaw, std::string &sBodyOut, ContainerInfo &inf
 		return false;
 	}
 
-	/* StepFile 之後若還有殘留位元組，原樣留著，寫回時接上。 */
+	/* If there are leftover bytes after the StepFile, keep them as-is and append them
+	 * again on write-back. */
 	const uint32_t aend = GetU32( sBodyOut, OFF_ADDRESS_EASY + 12 );
 	if( sBodyOut.size() > aend )
 		infoOut.sTrailing = sBodyOut.substr( aend );
@@ -496,11 +508,11 @@ bool Decrypt( const std::string &sRaw, std::string &sBodyOut, ContainerInfo &inf
 }
 
 // =============================================================================
-// 包回原容器
+// Wrapping back into the original container
 // =============================================================================
 
-/* SDOM 的檔首多半是資源檔名表，但少數檔案在那裡放的是另一份表頭；
- * 只有後者才需要把統計欄位同步過去。 */
+/* The start of an SDOM file is usually a resource file name table, but a few files put
+ * another copy of the header there; only those need the stats fields synced over. */
 static void SyncSdomPrefix( std::string &sPrefix, const std::string &sBody )
 {
 	if( sPrefix.size() < (size_t) HEADER_SIZE )
@@ -544,7 +556,8 @@ bool Encrypt( const std::string &sBodyIn, const ContainerInfo &info, bool bKeepF
 		LCGTransform( info.iSeed2, sBodyCt, true );
 		const uint32_t iCrc2 = CRC32( sBodyCt.data(), sBodyCt.size() );
 
-		/* 原檔的 block1 與表頭裡還有我們沒解讀的位元組，留著別動。 */
+		/* block1 and the header of the original file still hold bytes we do not interpret;
+		 * leave them alone. */
 		std::string sBlock1 = info.sDDRMBlock1;
 		sBlock1.resize( DDRM_BLOCK1_LEN, '\0' );
 		PutU32( sBlock1, DDRM_B1_OFF_SEED2, info.iSeed2 );
@@ -586,8 +599,10 @@ bool Encrypt( const std::string &sBodyIn, const ContainerInfo &info, bool bKeepF
 
 	case CONTAINER_SDOM:
 	{
-		/* 加密區的明文＝完整 StepFile（含表頭），檔案裡另外再放一份明文表頭。
-		 * 比原本短就補零補回去；長了就只能讓檔案變大。 */
+		/* The plaintext of the encrypted region = the full StepFile (header included); the
+		 * file also holds a separate plaintext copy of the header.
+		 * If it is shorter than before, pad it back with zeros; if longer, the file has to
+		 * grow. */
 		std::string sPadded = sBody;
 		if( sPadded.size() > info.iOrigEncLen )
 		{
@@ -597,7 +612,7 @@ bool Encrypt( const std::string &sBodyIn, const ContainerInfo &info, bool bKeepF
 					(unsigned) sPadded.size(), (unsigned) info.iOrigEncLen );
 				return false;
 			}
-			sPadded.append( 4, '\0' );	// 留 4 bytes 給 CRC 修補
+			sPadded.append( 4, '\0' );	// leave 4 bytes for the CRC patch
 		}
 		else
 		{
@@ -606,8 +621,9 @@ bool Encrypt( const std::string &sBodyIn, const ContainerInfo &info, bool bKeepF
 
 		std::string sEnc = sPadded;
 		LCGTransform( info.iSeed, sEnc, true );
-		/* 遊戲會檢查加密區的 CRC32，所以要把它湊回原本的值。
-		 * 剛好已經對上（例如原封不動存回）時就別再動尾端 4 bytes。 */
+		/* The game checks the CRC32 of the encrypted region, so force it back to the
+		 * original value. If it already matches (e.g. saved back unchanged), leave the
+		 * last 4 bytes alone. */
 		if( CRC32(sEnc.data(), sEnc.size()) != info.iOrigCrc &&
 			!Crc32FixLast4( sEnc, info.iOrigCrc ) )
 		{
@@ -629,7 +645,7 @@ bool Encrypt( const std::string &sBodyIn, const ContainerInfo &info, bool bKeepF
 }
 
 // =============================================================================
-// StepFile 本體
+// The StepFile itself
 // =============================================================================
 
 StepFile::StepFile()

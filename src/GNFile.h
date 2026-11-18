@@ -1,14 +1,17 @@
-﻿/* GNFile - 讀寫 SDO 系列的 .gn (StepFile) 譜面檔。
+﻿/* GNFile - reads and writes SDO-series .gn (StepFile) chart files.
  *
- * 這一層只處理位元組，不依賴 Song / Steps / NoteData，方便單獨測試。
- * 支援四種容器：
- *   PLAIN  未加密，開頭即 StepFile
- *   DDRM   'ddrm' 表頭 (0x54 bytes) + LCG 加密本文
- *   SDOM   檔首資源檔名表 + 內嵌 StepFile 表頭(明文 300) + LCG 加密全文
- *   REWU   熱舞 Online，整檔 LCG 加密
- * 三者的 LCG 乘數皆為 0x3D09；SDOM / REWU 需以已知明文還原 seed。
+ * This layer deals only with bytes and does not depend on Song / Steps / NoteData,
+ * so it can be tested on its own.
+ * Four containers are supported:
+ *   PLAIN  unencrypted; the file starts with the StepFile
+ *   DDRM   'ddrm' header (0x54 bytes) + LCG-encrypted body
+ *   SDOM   resource file name table at the start of the file + embedded StepFile
+ *          header (300 bytes, plaintext) + LCG-encrypted whole StepFile
+ *   REWU   Dance Online; the whole file is LCG-encrypted
+ * All three encrypted containers use the LCG multiplier 0x3D09; SDOM / REWU have
+ * to recover the seed from known plaintext.
  *
- * 格式細節見 docs/GN_FORMAT.md。
+ * See docs/GN_FORMAT.md for format details.
  */
 
 #ifndef GN_FILE_H
@@ -20,14 +23,15 @@
 
 namespace GNFile
 {
-	/* StepFile 表頭固定 300 bytes，且 address_easy 必為 300。 */
+	/* The StepFile header is always 300 bytes, and address_easy must be 300. */
 	const int HEADER_SIZE = 300;
 
-	/* GN 一個 measurement = 4 拍，最細切到 192 格（與 SM 的 ROWS_PER_MEASURE 相同）。 */
+	/* One GN measurement = 4 beats, divided into at most 192 slots (same as SM's
+	 * ROWS_PER_MEASURE). */
 	const int BEATS_PER_MEASUREMENT = 4;
 	const int MAX_INTERVAL = 192;
 
-	/* 三個難度在檔案中的排列順序。 */
+	/* Order in which the three difficulties are stored in the file. */
 	enum Difficulty { DIFF_EASY = 0, DIFF_NORMAL = 1, DIFF_HARD = 2, NUM_DIFFS = 3 };
 
 	enum Container
@@ -42,16 +46,17 @@ namespace GNFile
 	/* step_frame_type */
 	enum FrameType
 	{
-		FRAME_BPM     = 1,	// slot 的 4 bytes 直接是 float BPM
-		/* 上下這兩軌的編號：SM_GN_NOTE_FORMAT.md 的表格寫成 3=上、4=下，
-		 * 但實際存回遊戲後上下是顛倒的；以實測與 gn_master_core.py 的
-		 * COL_TO_FRAME_TYPE=(2,3,4,5)（左下上右）為準。 */
+		FRAME_BPM     = 1,	// the slot's 4 bytes are a float BPM
+		/* Numbering of the up and down lanes: the table in SM_GN_NOTE_FORMAT.md says
+		 * 3=up, 4=down, but after saving back to the game up and down come out
+		 * swapped; we go by testing and by COL_TO_FRAME_TYPE=(2,3,4,5)
+		 * (left, down, up, right) in gn_master_core.py. */
 		FRAME_LEFT    = 2,
 		FRAME_DOWN    = 3,
 		FRAME_UP      = 4,
 		FRAME_RIGHT   = 5,
-		FRAME_BARLINE = 9,	// 小節線，放在奇數 measurement
-		FRAME_MUSIC   = 10	// 音樂起止標記
+		FRAME_BARLINE = 9,	// bar line, placed in odd measurements
+		FRAME_MUSIC   = 10	// music start/end marker
 	};
 
 	/* step_note_type */
@@ -66,7 +71,7 @@ namespace GNFile
 	{
 		Slot() : u0(0), u1(0), nt(0) { }
 		Slot( int16_t a, uint8_t b, uint8_t c ) : u0(a), u1(b), nt(c) { }
-		int16_t u0;		// 非 0 表示此格有音符
+		int16_t u0;		// non-zero means this slot has a note
 		uint8_t u1;
 		uint8_t nt;		// NoteKind
 		bool IsEmpty() const { return u0 == 0 && u1 == 0 && nt == 0; }
@@ -78,10 +83,10 @@ namespace GNFile
 		Frame( int32_t m, int16_t t, int iInterval ) : iMeasurement(m), iType(t), vSlots(iInterval) { }
 		int32_t				iMeasurement;
 		int16_t				iType;			// FrameType
-		std::vector<Slot>	vSlots;			// 大小即 interval
+		std::vector<Slot>	vSlots;			// size is the interval
 
 		int GetInterval() const { return (int) vSlots.size(); }
-		/* slot 在整首歌中的位置（以拍為單位，第 0 拍為譜面原點）。 */
+		/* Position of the slot in the whole song (in beats; beat 0 is the chart origin). */
 		float GetSlotBeat( int iSlot ) const
 		{
 			const int iInterval = GetInterval();
@@ -92,29 +97,29 @@ namespace GNFile
 		}
 	};
 
-	/* 300 bytes 表頭 + 三難度的 StepFrame 串列。
-	 * 表頭中我們不解讀的欄位原樣保留，寫回時照原樣送出。 */
+	/* 300-byte header + the StepFrame lists of the three difficulties.
+	 * Header fields we do not interpret are kept as-is and written back unchanged. */
 	struct StepFile
 	{
 		StepFile();
 
 		int32_t		iFileId;
-		char		szFileType[8];			// 通常是 "gn"
-		uint8_t		aHeader8_15[8];			// 未解讀
-		float		fBPM;					// 表頭基準 BPM
+		char		szFileType[8];			// usually "gn"
+		uint8_t		aHeader8_15[8];			// not interpreted
+		float		fBPM;					// base BPM from the header
 		int16_t		aiLevel[NUM_DIFFS];
-		uint8_t		aHeader26_39[14];		// 未解讀
-		int32_t		aiNoteCount[NUM_DIFFS];	// 只計 type 2/3/4/5
-		int32_t		aiExtra52[NUM_DIFFS];	// 實測為小節數，遊戲用來推有效 BPM
-		int32_t		aiMeasurements[NUM_DIFFS];	// StepFrame 個數
+		uint8_t		aHeader26_39[14];		// not interpreted
+		int32_t		aiNoteCount[NUM_DIFFS];	// counts only types 2/3/4/5
+		int32_t		aiExtra52[NUM_DIFFS];	// measure count per testing; the game derives the effective BPM from it
+		int32_t		aiMeasurements[NUM_DIFFS];	// number of StepFrames
 		uint8_t		aStrings[6][32];		// unknown0, title, unknown1, writer, producer, filename
 		int32_t		iUnknown19;
-		int32_t		aiDuration[NUM_DIFFS];	// 秒
+		int32_t		aiDuration[NUM_DIFFS];	// seconds
 		uint32_t	aiAddress[4];			// easy, normal, hard, end
 
 		std::vector<Frame>	avFrames[NUM_DIFFS];
 
-		/* 表頭字串（去掉尾端 \0）。 */
+		/* Header strings (trailing \0 stripped). */
 		std::string GetTitle() const		{ return GetString(1); }
 		std::string GetWriter() const		{ return GetString(3); }
 		std::string GetProducer() const		{ return GetString(4); }
@@ -123,43 +128,47 @@ namespace GNFile
 		void SetString( int i, const std::string &s );
 	};
 
-	/* 解密時記下的容器資訊，寫回時要用同一把鑰匙。 */
+	/* Container info recorded while decrypting; writing back must use the same key. */
 	struct ContainerInfo
 	{
 		ContainerInfo();
 		Container	type;
 		uint32_t	iSeed;			// SDOM / REWU
 		uint32_t	iSeed1, iSeed2;	// DDRM
-		std::string	sPrefix;		// SDOM 檔首那段明文資源表
-		std::string	sDDRMHeader;	// DDRM 原本的 0x54 bytes 表頭（寫回時只改長度與 CRC）
-		std::string	sDDRMBlock1;	// DDRM 表頭裡那段 0x20 bytes 區塊的明文
+		std::string	sPrefix;		// SDOM: the plaintext resource table at the start of the file
+		std::string	sDDRMHeader;	// DDRM: the original 0x54-byte header (only length and CRC change on write-back)
+		std::string	sDDRMBlock1;	// DDRM: plaintext of the 0x20-byte block inside the header
 		size_t		iOrigFileSize;
-		size_t		iOrigEncLen;	// SDOM：加密區原長度
-		uint32_t	iOrigCrc;		// SDOM：加密區原 CRC32
-		std::string	sTrailing;		// StepFile 結尾之後殘留的位元組（少見，原樣保留）
+		size_t		iOrigEncLen;	// SDOM: original length of the encrypted region
+		uint32_t	iOrigCrc;		// SDOM: original CRC32 of the encrypted region
+		std::string	sTrailing;		// leftover bytes after the end of the StepFile (rare; kept as-is)
 	};
 
-	/* 看起來像不像 .gn（只檢查容器，不解析譜面）。用來快速篩掉不相干的檔案。 */
+	/* Whether this looks like a .gn (checks only the container, does not parse the chart).
+	 * Used to quickly filter out unrelated files. */
 	bool LooksLikeGN( const std::string &sRaw );
 
-	/* 解密／剝殼，取得 StepFile 明文本文。失敗時 psErrOut 會填入原因。
-	 * SDOM 與 REWU 需要還原 seed（各約 2^24 次搜尋），單檔數十毫秒。 */
+	/* Decrypt / unwrap the container to get the plaintext StepFile body. On failure,
+	 * psErrOut is filled with the reason.
+	 * SDOM and REWU need the seed recovered (about 2^24 tries each), which takes a few
+	 * tens of milliseconds per file. */
 	bool Decrypt( const std::string &sRaw, std::string &sBodyOut, ContainerInfo &infoOut, std::string *psErrOut = NULL );
 
-	/* 用原本的鑰匙把本文包回原容器。
-	 * bKeepFileSize：SDOM 與 REWU 會把輸出補到與原檔完全相同的大小，
-	 *                譜面變大塞不下時直接失敗；預設 false，允許檔案變大。 */
+	/* Wrap the body back into its original container with the original key.
+	 * bKeepFileSize: SDOM and REWU pad the output to exactly the original file size,
+	 *                and fail outright if the chart grew and no longer fits; false by
+	 *                default, which lets the file grow. */
 	bool Encrypt( const std::string &sBody, const ContainerInfo &info, bool bKeepFileSize,
 		std::string &sRawOut, std::string *psErrOut = NULL );
 
 	bool Parse( const std::string &sBody, StepFile &out, std::string *psErrOut = NULL );
 	void Serialize( const StepFile &sf, std::string &sOut );
 
-	/* type 1 的 slot 4 bytes 就是一個 little-endian float。 */
+	/* The 4 bytes of a type 1 slot are simply a little-endian float. */
 	float SlotToBPM( const Slot &s );
 	Slot BPMToSlot( float fBPM );
 
-	/* 供測試／工具使用。 */
+	/* For tests / tools. */
 	uint32_t CRC32( const void *pData, size_t iLen );
 	void LCGTransform( uint32_t iSeed, std::string &sData, bool bEncrypt );
 }

@@ -88,7 +88,7 @@ bool ConvertString(CString &str, const CString &encodings)
 			continue;
 		}
 
-		/* .gn 的表頭字串多為 GBK；台版少數為 Big5。 */
+		/* .gn header strings are mostly GBK; a few Taiwanese releases use Big5. */
 		if( lst[i] == "chinese" )
 		{
 			if(AttemptChineseConversion(str))

@@ -289,7 +289,8 @@ bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out 
 	unsigned uPendingHash = 0;
 	bool bHasPendingHash = false;
 
-	/* #STEPSTIMING 寫在它所屬的 #NOTES 前面（見 NotesWriterSM），先收著等 #NOTES 出現。 */
+	/* #STEPSTIMING is written before the #NOTES it belongs to (see NotesWriterSM), so
+	 * hold on to it until that #NOTES shows up. */
 	TimingData PendingTiming;
 	CString sPendingTimingType, sPendingTimingDiff;
 	bool bHasPendingTiming = false;
@@ -449,11 +450,12 @@ bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out 
 			bHasPendingHash = true;
 		}
 
-		/* 這首歌是從 .gn 讀進來的；記住檔名，存檔時才知道要寫回哪個檔。 */
+		/* This song was loaded from a .gn; remember the file name so that saving knows
+		 * which file to write back to. */
 		else if( 0==stricmp(sValueName,"GNFILE") )
 			out.m_sGNFileName = sParams[1];
 
-		/* 單一難度自己的 timing：type:difficulty:offset:bpms:stops */
+		/* A single difficulty's own timing: type:difficulty:offset:bpms:stops */
 		else if( 0==stricmp(sValueName,"STEPSTIMING") )
 		{
 			if( iNumParams < 5 )

@@ -1,5 +1,6 @@
-/* 讓 NotesWriterGN.cpp 能脫離 StepMania 編譯的最小替身。
- * 只要能編譯並跑 BuildFrames 就好；Write() 用到的東西給空殼即可。 */
+/* Minimal stand-ins that let NotesWriterGN.cpp compile outside StepMania.
+ * It only needs to compile and run BuildFrames; whatever Write() uses can be an
+ * empty shell. */
 #ifndef GN_TEST_STUBS_H
 #define GN_TEST_STUBS_H
 

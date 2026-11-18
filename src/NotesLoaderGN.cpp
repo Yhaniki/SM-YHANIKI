@@ -8,7 +8,8 @@
 #include "NoteTypes.h"
 #include "GameManager.h"
 
-/* GN 的 measurement 是 4 拍，SM 一拍 48 row，剛好對上 GN 一小節最細的 192 格。 */
+/* A GN measurement is 4 beats and SM has 48 rows per beat, which lines up exactly with
+ * GN's finest division of 192 slots per measure. */
 static const int GN_ROWS_PER_MEASUREMENT = ROWS_PER_BEAT * GNFile::BEATS_PER_MEASUREMENT;
 
 int GNLoader::FrameTypeToCol( int iFrameType )
@@ -35,15 +36,17 @@ int GNLoader::ColToFrameType( int iCol )
 	}
 }
 
-/* GN 的 level 就是譜面等級本身，跟 SM 的 meter 一對一（工具端從 .sm 注入 .gn 時
- * 也是直接把 meter 寫進 level，見 gn_master_core.py）。SDO 的等級可以到 30、40，
- * 遠超過 SM 的 MAX_METER，這裡不做壓縮，否則畫面顯示的難度會跟原譜對不起來。 */
+/* GN's level is the chart's difficulty level itself and maps one-to-one to SM's meter
+ * (the tool that injects a .sm into a .gn also writes the meter straight into level; see
+ * gn_master_core.py). SDO levels can reach 30 or 40, far beyond SM's MAX_METER; we do not
+ * compress them here, otherwise the difficulty shown on screen would not match the
+ * original chart. */
 const int GN_LEVEL_MAX = 99;
 
 int GNLoader::GNLevelToMeter( int iLevel )
 {
 	if( iLevel <= 0 )
-		return 0;	// 表頭沒填，讓 Steps::TidyUpData 自己去猜
+		return 0;	// not set in the header; let Steps::TidyUpData guess
 	return min( iLevel, GN_LEVEL_MAX );
 }
 
@@ -82,7 +85,7 @@ void GNLoader::FramesToTimingData( const vector<GNFile::Frame> &vFrames, float f
 	out.m_StopSegments.clear();
 	out.m_fBeat0OffsetInSeconds = 0;
 
-	/* 基準 BPM 取表頭；表頭沒填就用第一個變速事件。 */
+	/* The base BPM comes from the header; if the header has none, use the first BPM change. */
 	float fBaseBPM = fHeaderBPM;
 	if( fBaseBPM <= 0 )
 	{
@@ -109,7 +112,7 @@ void GNLoader::FramesToTimingData( const vector<GNFile::Frame> &vFrames, float f
 
 	out.AddBPMSegment( BPMSegment(0, fBaseBPM) );
 
-	/* type 1 的每個非空 slot 就是一次變速。 */
+	/* Every non-empty type 1 slot is a BPM change. */
 	for( unsigned f = 0; f < vFrames.size(); f++ )
 	{
 		const GNFile::Frame &fr = vFrames[f];
@@ -121,16 +124,18 @@ void GNLoader::FramesToTimingData( const vector<GNFile::Frame> &vFrames, float f
 				continue;
 			const float fBPM = GNFile::SlotToBPM( fr.vSlots[i] );
 			if( fBPM <= 0 || fBPM > 5000 )
-				continue;	// 不是合理的 BPM，多半是我們誤讀了 slot
+				continue;	// not a plausible BPM; most likely we misread the slot
 			const float fBeat = max( 0.f, fr.GetSlotBeat(i) );
-			/* 很多譜面會在開頭再標一次跟表頭一樣的 BPM；那不是變速，別留下多餘的 segment。 */
+			/* Many charts mark the header BPM again at the start; that is not a BPM change,
+			 * so don't leave a redundant segment. */
 			if( fabsf(out.GetBPMAtBeat(fBeat) - fBPM) < 0.001f )
 				continue;
 			out.SetBPMAtBeat( fBeat, fBPM );
 		}
 	}
 
-	/* 音樂的第 0 秒對到 type-10 那一拍；換算成 SM 的 beat 0 偏移。 */
+	/* Second 0 of the music lines up with the type-10 beat; convert that into SM's
+	 * beat 0 offset. */
 	float fMusicStartBeat = -1;
 	for( unsigned f = 0; f < vFrames.size(); f++ )
 	{
@@ -180,7 +185,7 @@ void GNLoader::FramesToNoteData( const vector<GNFile::Frame> &vFrames, NoteData 
 		{
 			const GNFile::Slot &sl = fr.vSlots[i];
 			if( sl.u0 == 0 )
-				continue;	// 空格
+				continue;	// empty slot
 
 			const int iRow = fr.iMeasurement * GN_ROWS_PER_MEASUREMENT +
 				(int) roundf( GN_ROWS_PER_MEASUREMENT * i / (float) iInterval );
@@ -190,7 +195,7 @@ void GNLoader::FramesToNoteData( const vector<GNFile::Frame> &vFrames, NoteData 
 			switch( sl.nt )
 			{
 			case GNFile::NOTE_HOLD_START:
-				/* 前一個 hold 沒收尾就把它當成單顆音符。 */
+				/* If the previous hold was never closed, treat it as a single tap. */
 				if( aiHoldStartRow[iCol] != -1 )
 					out.SetTapNote( iCol, aiHoldStartRow[iCol], TAP_ORIGINAL_TAP );
 				aiHoldStartRow[iCol] = iRow;
@@ -204,14 +209,15 @@ void GNLoader::FramesToNoteData( const vector<GNFile::Frame> &vFrames, NoteData 
 				}
 				else if( aiHoldStartRow[iCol] != -1 )
 				{
-					/* 長度為零的 hold，退化成單顆音符。 */
+					/* Zero-length hold; degrade it to a single tap. */
 					out.SetTapNote( iCol, aiHoldStartRow[iCol], TAP_ORIGINAL_TAP );
 					aiHoldStartRow[iCol] = -1;
 				}
 				else
 				{
-					/* 少數譜面有沒頭的 hold 結尾（原始資料就是這樣）。
-					 * SM 沒有對應的表示法，當成單顆音符，總比整顆消失好。 */
+					/* A few charts have hold ends with no start (that is how the original
+					 * data is). SM has no way to represent this, so make it a single tap;
+					 * better than having the note vanish entirely. */
 					out.SetTapNote( iCol, iRow, TAP_ORIGINAL_TAP );
 				}
 				break;
@@ -223,7 +229,8 @@ void GNLoader::FramesToNoteData( const vector<GNFile::Frame> &vFrames, NoteData 
 		}
 	}
 
-	/* 沒有收尾的 hold 一律當單顆音符，免得整條音符消失。 */
+	/* Holds that were never closed always become single taps, so the whole note does not
+	 * disappear. */
 	for( int c = 0; c < 4; c++ )
 		if( aiHoldStartRow[c] != -1 )
 			out.SetTapNote( c, aiHoldStartRow[c], TAP_ORIGINAL_TAP );
@@ -241,7 +248,7 @@ CString GNLoader::PickMainGNFile( CString sDir )
 
 	SortCStringArray( as );
 
-	/* 一首歌常有成對的 xxxK.gn / xxxT.gn；K 是我們要的單人譜。 */
+	/* A song often comes as a pair, xxxK.gn / xxxT.gn; K is the single-player chart we want. */
 	for( unsigned i = 0; i < as.size(); i++ )
 	{
 		CString sStem = SetExtension( as[i], "" );
@@ -294,7 +301,8 @@ bool GNLoader::ReadGNFile( CString sPath, GNFile::StepFile &sfOut, GNFile::Conta
 	return true;
 }
 
-/* .gn 的表頭字串沒有標示編碼，實測多半是 GBK，少數台版是 Big5。 */
+/* .gn header strings do not declare their encoding; in practice they are mostly GBK, and
+ * a few Taiwanese releases use Big5. */
 static CString GNStringToUTF8( const std::string &s )
 {
 	CString sOut = s.c_str();
@@ -305,8 +313,9 @@ static CString GNStringToUTF8( const std::string &s )
 	return sOut;
 }
 
-/* 找出這首歌的音樂檔：先照表頭裡的檔名，再照 .gn 的檔名（去掉結尾的 K/T），
- * 最後退而求其次用資料夾裡任何一個音樂檔。 */
+/* Find this song's music file: first by the file name in the header, then by the .gn
+ * file name (with the trailing K/T removed), and as a last resort any music file in the
+ * folder. */
 static CString FindMusicFile( CString sDir, CString sGNFileName, const GNFile::StepFile &sf )
 {
 	CStringArray asStems;
@@ -395,7 +404,7 @@ bool GNLoader::LoadFromDir( CString sDir, Song &out )
 
 	out.m_sMusicFile = FindMusicFile( sDir, sGNFileName, sf );
 
-	/* 三個難度各自建 Steps，每個都帶著自己的 BPM 表。 */
+	/* Build a Steps for each of the three difficulties, each carrying its own BPM table. */
 	static const Difficulty aDiffs[GNFile::NUM_DIFFS] =
 	{
 		DIFFICULTY_EASY, DIFFICULTY_MEDIUM, DIFFICULTY_HARD
@@ -408,7 +417,7 @@ bool GNLoader::LoadFromDir( CString sDir, Song &out )
 	{
 		const vector<GNFile::Frame> &vFrames = sf.avFrames[d];
 		if( CountNotes(vFrames) == 0 )
-			continue;	// 這個難度是空的（很多檔案只放了 Hard）
+			continue;	// this difficulty is empty (many files only contain Hard)
 
 		TimingData timing;
 		FramesToTimingData( vFrames, sf.fBPM, timing );
@@ -426,7 +435,8 @@ bool GNLoader::LoadFromDir( CString sDir, Song &out )
 		pSteps->TidyUpData();
 		out.AddSteps( pSteps );
 
-		/* Song 本身的 timing 用最難的那個難度；玩到哪個難度再換成它自己的。 */
+		/* The Song's own timing comes from the hardest difficulty; whichever difficulty is
+		 * played then switches to its own. */
 		if( iSongTimingFrom < d )
 		{
 			out.m_Timing = timing;

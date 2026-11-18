@@ -81,15 +81,17 @@ public:
 	void SaveToCacheFile();
 	void SaveToDWIFile();
 
-	/* 這首歌是從 .gn 讀進來的（NotesLoaderGN）；存檔時要一併寫回同一個 .gn。
-	 * 空字串代表不是，這時下面幾個函式都不做事。 */
+	/* This song was loaded from a .gn (NotesLoaderGN); saving must also write back to
+	 * the same .gn. An empty string means it was not, in which case the functions below
+	 * do nothing. */
 	CString	m_sGNFileName;
 	bool IsFromGN() const { return !m_sGNFileName.empty(); }
 	CString GetGNPath() const;
 	bool SaveToGNFile( CString &sErrOut );
 
-	/* .gn 的每個難度可以有各自的 BPM 表，所以切到某個難度時要把它的 timing
-	 * 套到 Song 上；其他格式的譜面沒有自己的 timing，呼叫這個等於沒事發生。 */
+	/* Each .gn difficulty can have its own BPM table, so switching to a difficulty has to
+	 * apply its timing to the Song; charts in other formats have no timing of their own,
+	 * so calling this does nothing for them. */
 	void UseTimingOf( const Steps *pSteps );
 
 	const CString &GetSongFilePath() const;

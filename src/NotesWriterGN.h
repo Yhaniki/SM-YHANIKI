@@ -1,4 +1,4 @@
-﻿/* NotesWriterGN - 把一首 Song 寫回原本的 .gn 檔。 */
+﻿/* NotesWriterGN - writes a Song back to its original .gn file. */
 
 #ifndef NOTES_WRITER_GN_H
 #define NOTES_WRITER_GN_H
@@ -13,16 +13,20 @@ class NoteData;
 class NotesWriterGN
 {
 public:
-	/* 以 sPath 這個既有的 .gn 當骨架，把 song 的音符與 BPM 寫回去，覆蓋原檔。
-	 * 表頭裡我們沒解讀的欄位、type 9/10 這類控制 frame 都原樣保留。
+	/* Use the existing .gn at sPath as a skeleton, write the song's notes and BPMs back
+	 * into it, and overwrite the original file. Header fields we do not interpret and
+	 * control frames such as type 9/10 are kept as-is.
 	 *
-	 * bKeepFileSize：輸出必須與原檔一模一樣大（SDOM 容器本來就靠補零維持大小；
-	 *                譜面塞不下時直接失敗）。預設 false，也就是不管大小直接寫回。
+	 * bKeepFileSize: the output must be exactly the same size as the original file (the
+	 *                SDOM container already relies on zero padding to keep its size;
+	 *                fails outright if the chart does not fit). False by default, i.e.
+	 *                write back regardless of size.
 	 *
-	 * 失敗時回傳 false 並填入 sErrOut，原檔不會被動到。 */
+	 * On failure, returns false and fills in sErrOut; the original file is not touched. */
 	static bool Write( CString sPath, const Song &song, bool bKeepFileSize, CString &sErrOut );
 
-	/* 把單一難度的音符與 timing 套進骨架的 frame 串列（保留控制用 frame）。 */
+	/* Fit a single difficulty's notes and timing into the skeleton's frame list
+	 * (control frames are kept). */
 	static void BuildFrames( const NoteData &nd, const TimingData &timing, float fHeaderBPM,
 		const vector<GNFile::Frame> &vOriginal, vector<GNFile::Frame> &vOut );
 };

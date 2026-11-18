@@ -278,8 +278,9 @@ float g_fLastInsertAttackDurationSeconds = -1;
 ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 {
 	LOG->Trace( "ScreenEdit::ScreenEdit()" );
-	/* 把 human 那邊的譜面複製給另一邊；來源是空的就別覆蓋，
-	 * 不然從 P2 開始玩時會把 PLAYER_1 已經設好的譜面洗成 NULL。 */
+	/* Copy the human side's chart to the other side; don't overwrite if the source is
+	 * empty, otherwise starting from P2 would wipe the chart already set on PLAYER_1
+	 * to NULL. */
 	{
 		Steps *pHumanSteps = GAMESTATE->m_pCurSteps[ GAMESTATE->GetFirstHumanPlayer() ];
 		if( pHumanSteps == NULL )
@@ -1290,7 +1291,8 @@ void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType typ
 			Steps* pSteps = GAMESTATE->m_pCurSteps[PLAYER_1];
 			ASSERT( pSteps );
 			pSteps->SetNoteData( &m_NoteFieldEdit );
-			/* 切走之前先把 Song 上被改過的 BPM 收回這個難度。 */
+			/* Before switching away, pull the BPMs edited on the Song back into this
+			 * difficulty. */
 			if( pSteps->HasOwnTiming() )
 				pSteps->SetOwnTiming( GAMESTATE->m_pCurSong->m_Timing );
 
@@ -1330,7 +1332,8 @@ void ScreenEdit::InputEdit( const DeviceInput& DeviceI, const InputEventType typ
 			pSteps = *it;
 			GAMESTATE->m_pCurSteps[PLAYER_1] = m_pSteps = pSteps;
 			pSteps->GetNoteData( &m_NoteFieldEdit );
-			/* 換難度時，.gn 的譜面要跟著換成該難度自己的 BPM 表。 */
+			/* When switching difficulty, a .gn chart must also switch to that difficulty's
+			 * own BPM table. */
 			GAMESTATE->m_pCurSong->UseTimingOf( pSteps );
 			SCREENMAN->SystemMessage( ssprintf(
 				"Switched to %s %s '%s'",
@@ -2287,7 +2290,8 @@ void ScreenEdit::HandleMainMenuChoice( MainMenuChoice c, int* iAnswers )
 				ASSERT( pSteps );
 
 				pSteps->SetNoteData( &m_NoteFieldEdit );
-				/* 編輯期間改的 BPM／停頓在 Song 上，先收回這個難度自己的 timing。 */
+				/* BPM / stop changes made while editing live on the Song; pull them back into
+				 * this difficulty's own timing first. */
 				if( pSteps->HasOwnTiming() )
 					pSteps->SetOwnTiming( GAMESTATE->m_pCurSong->m_Timing );
 				GAMESTATE->m_pCurSong->Save();

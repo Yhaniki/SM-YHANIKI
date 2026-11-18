@@ -62,10 +62,12 @@ public:
 	void TidyUpData();
 	int GetNumTapNotesformSetp();
 
-	/* 這個難度自己的 timing。
-	 * .gn 的每個難度可以帶各自的 BPM 表（見 NotesLoaderGN），所以難度之間的
-	 * 節奏未必一致；有值時，切到這個難度就要把它套用到 Song 上（Song::UseTimingOf）。
-	 * NULL 表示沿用 Song 原本的 timing，也就是絕大多數譜面的情況。 */
+	/* This difficulty's own timing.
+	 * Each .gn difficulty can carry its own BPM table (see NotesLoaderGN), so the tempo
+	 * is not necessarily the same across difficulties; when set, switching to this
+	 * difficulty must apply it to the Song (Song::UseTimingOf).
+	 * NULL means the Song's own timing is used, which is the case for the vast majority
+	 * of charts. */
 	const TimingData *GetOwnTiming() const	{ return Real()->m_pTiming; }
 	bool HasOwnTiming() const				{ return Real()->m_pTiming != NULL; }
 	void SetOwnTiming( const TimingData &timing );
@@ -98,7 +100,7 @@ protected:
 	Difficulty		m_Difficulty;		// difficulty classification
 	int				m_iMeter;			// difficulty rating from MIN_METER to MAX_METER
 	RadarValues		m_RadarValues;
-	TimingData		*m_pTiming;			// NULL 表示沿用 Song 的 timing
+	TimingData		*m_pTiming;			// NULL means use the Song's timing
 };
 
 #endif
