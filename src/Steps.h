@@ -36,7 +36,9 @@ public:
 	int GetMeter() const { return Real()->m_iMeter; }
 	const RadarValues& GetRadarValues() const { return Real()->m_RadarValues; }
 
-	void SetFile( CString fn );
+	/* iIndexInFile: which #NOTES in the file this Steps is.  Decompress uses it
+	 * to tell apart steps that look the same. */
+	void SetFile( CString fn, int iIndexInFile = -1 );
 	void SetDescription(CString desc);
 	void SetDifficulty(Difficulty d);
 	void SetLoadedFromProfile( ProfileSlot slot ) { m_LoadedFromProfile = slot; }
@@ -72,6 +74,7 @@ protected:
 	const Steps *Real() const;
 
 	CString			m_sFilename;
+	int				m_iIndexInFile;		// which #NOTES in m_sFilename; -1 if unknown
 
 	/* These values are pulled from the autogen source first, if there is one. */
 	ProfileSlot		m_LoadedFromProfile;	// PROFILE_SLOT_INVALID if wasn't loaded from a profile

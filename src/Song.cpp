@@ -274,9 +274,11 @@ bool Song::LoadFromSongDir( CString sDir )
 
 
 	
+	/* At this point m_vpSteps holds only the steps from the file (no autogen
+	 * steps or profile edits yet), in the same order as the cache file's #NOTES. */
 	for( unsigned i=0; i<m_vpSteps.size(); i++ )
 	{
-		m_vpSteps[i]->SetFile( GetCacheFilePath() );
+		m_vpSteps[i]->SetFile( GetCacheFilePath(), i );
 
 		/* Compress all Steps.  During initial caching, this will remove cached NoteData;
 		 * during cached loads, this will just remove cached SMData. */
@@ -1033,6 +1035,18 @@ void Song::SaveToCacheFile()
 {
 	SONGINDEX->AddCacheIndex(m_sSongDir, GetHashForDirectory(m_sSongDir));
 	SaveToSMFile( GetCacheFilePath(), true );
+
+	/* The cache file was rewritten (steps may have been added or deleted in the
+	 * editor), so update each Steps' position in it.  The order matches what
+	 * NotesWriterSM writes: autogen steps and profile edits are skipped. */
+	int iIndexInFile = 0;
+	for( unsigned i=0; i<m_vpSteps.size(); i++ )
+	{
+		Steps *pSteps = m_vpSteps[i];
+		if( pSteps->IsAutogen() || pSteps->WasLoadedFromProfile() )
+			continue;
+		pSteps->SetFile( GetCacheFilePath(), iIndexInFile++ );
+	}
 }
 
 void Song::SaveToDWIFile()
