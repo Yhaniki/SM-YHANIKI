@@ -1395,6 +1395,11 @@ void ScreenSelectMusic::AfterStepsChange( PlayerNumber pn )
 
 	GAMESTATE->m_pCurSteps[pn] = pSteps;
 
+	/* Each .gn difficulty has its own BPM table; display the one for whichever difficulty
+	 * is selected. */
+	if( pSong != NULL )
+		pSong->UseTimingOf( pSteps );
+
 	int iScore = 0;
 	if( pSteps )
 	{

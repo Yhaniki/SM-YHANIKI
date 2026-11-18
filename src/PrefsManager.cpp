@@ -180,6 +180,7 @@ void PrefsManager::Init()
 	m_BannerCache = BNCACHE_LOW_RES;
 	m_bPalettedBannerCache = false;
 	m_bFastLoad = true;
+	m_bGNKeepFileSize = false;
 	m_MusicWheelUsesSections = ALWAYS;
 	m_iMusicWheelSwitchSpeed = 10;
 	m_bEasterEggs = true;
@@ -473,6 +474,7 @@ void PrefsManager::ReadPrefsFromFile( CString sIni )
 	ini.GetValue( "Options", "BannerCache",						(int&)m_BannerCache );
 	ini.GetValue( "Options", "PalettedBannerCache",				m_bPalettedBannerCache );
 	ini.GetValue( "Options", "FastLoad",						m_bFastLoad );
+	ini.GetValue( "Options", "GNKeepFileSize",					m_bGNKeepFileSize );
 	ini.GetValue( "Options", "MusicWheelUsesSections",			(int&)m_MusicWheelUsesSections );
 	ini.GetValue( "Options", "MusicWheelSwitchSpeed",			m_iMusicWheelSwitchSpeed );
 	ini.GetValue( "Options", "SoundDrivers",					m_sSoundDrivers );
@@ -719,6 +721,7 @@ void PrefsManager::SaveGlobalPrefsToDisk() const
 	ini.SetValue( "Options", "BannerCache",						m_BannerCache );
 	ini.SetValue( "Options", "PalettedBannerCache",				m_bPalettedBannerCache );
 	ini.SetValue( "Options", "FastLoad",						m_bFastLoad );
+	ini.SetValue( "Options", "GNKeepFileSize",					m_bGNKeepFileSize );
 	ini.SetValue( "Options", "MusicWheelUsesSections",			m_MusicWheelUsesSections );
 	ini.SetValue( "Options", "MusicWheelSwitchSpeed",			m_iMusicWheelSwitchSpeed );
 	ini.SetValue( "Options", "EasterEggs",						m_bEasterEggs );

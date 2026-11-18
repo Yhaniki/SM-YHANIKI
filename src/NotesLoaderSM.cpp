@@ -289,6 +289,12 @@ bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out 
 	unsigned uPendingHash = 0;
 	bool bHasPendingHash = false;
 
+	/* #STEPSTIMING is written before the #NOTES it belongs to (see NotesWriterSM), so
+	 * hold on to it until that #NOTES shows up. */
+	TimingData PendingTiming;
+	CString sPendingTimingType, sPendingTimingDiff;
+	bool bHasPendingTiming = false;
+
 	for( unsigned i=0; i<msd.GetNumValues(); i++ )
 	{
 		int iNumParams = msd.GetNumParams(i);
@@ -444,6 +450,52 @@ bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out 
 			bHasPendingHash = true;
 		}
 
+		/* This song was loaded from a .gn; remember the file name so that saving knows
+		 * which file to write back to. */
+		else if( 0==stricmp(sValueName,"GNFILE") )
+			out.m_sGNFileName = sParams[1];
+
+		/* A single difficulty's own timing: type:difficulty:offset:bpms:stops */
+		else if( 0==stricmp(sValueName,"STEPSTIMING") )
+		{
+			if( iNumParams < 5 )
+			{
+				LOG->Trace( "'%s': #STEPSTIMING has too few fields (%d)", sPath.c_str(), iNumParams );
+				continue;
+			}
+			sPendingTimingType = sParams[1];
+			sPendingTimingDiff = sParams[2];
+			PendingTiming = TimingData();
+			PendingTiming.m_fBeat0OffsetInSeconds = strtof( sParams[3], NULL );
+
+			CStringArray as;
+			split( sParams[4], ",", as );
+			for( unsigned b=0; b<as.size(); b++ )
+			{
+				CStringArray asPair;
+				split( as[b], "=", asPair );
+				if( asPair.size() != 2 )
+					continue;
+				PendingTiming.AddBPMSegment( BPMSegment(strtof(asPair[0],NULL), strtof(asPair[1],NULL)) );
+			}
+
+			if( iNumParams >= 6 )
+			{
+				as.clear();
+				split( sParams[5], ",", as );
+				for( unsigned b=0; b<as.size(); b++ )
+				{
+					CStringArray asPair;
+					split( as[b], "=", asPair );
+					if( asPair.size() != 2 )
+						continue;
+					PendingTiming.AddStopSegment( StopSegment(strtof(asPair[0],NULL), strtof(asPair[1],NULL)) );
+				}
+			}
+
+			bHasPendingTiming = !PendingTiming.m_BPMSegments.empty();
+		}
+
 		else if( 0==stricmp(sValueName,"NOTES") )
 		{
 			if( iNumParams < 7 )
@@ -462,6 +514,14 @@ bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out 
 			if( bHasPendingHash )
 				pNewNotes->SetHash( uPendingHash );
 			bHasPendingHash = false;
+
+			if( bHasPendingTiming &&
+				0==stricmp( GameManager::StepsTypeToString(pNewNotes->m_StepsType), sPendingTimingType ) &&
+				0==stricmp( DifficultyToString(pNewNotes->GetDifficulty()), sPendingTimingDiff ) )
+			{
+				pNewNotes->SetOwnTiming( PendingTiming );
+			}
+			bHasPendingTiming = false;
 
 			out.AddSteps( pNewNotes );
 		}

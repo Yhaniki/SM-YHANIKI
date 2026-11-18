@@ -30,7 +30,11 @@ void NotesWriterSM::WriteGlobalTags( CString &f, const Song &out )
 	PutLine( f, ssprintf( "#LYRICSPATH:%s;", out.m_sLyricsFile.c_str() ) );
 	PutLine( f, ssprintf( "#CDTITLE:%s;", out.m_sCDTitleFile.c_str() ) );
 	PutLine( f, ssprintf( "#MUSIC:%s;", out.m_sMusicFile.c_str() ) );
-	PutLine( f, ssprintf( "#OFFSET:%.3f;", out.m_Timing.m_fBeat0OffsetInSeconds ) );
+	/* Remember which .gn this song came from, so it can still be written back later even
+	 * when the song is loaded through the .sm / cache instead. */
+	if( out.IsFromGN() )
+		PutLine( f, ssprintf( "#GNFILE:%s;", out.m_sGNFileName.c_str() ) );
+	PutLine( f, ssprintf( "#OFFSET:%.6f;", out.m_Timing.m_fBeat0OffsetInSeconds ) );
 	PutLine( f, ssprintf( "#SAMPLESTART:%.3f;", out.m_fMusicSampleStartSeconds ) );
 	PutLine( f, ssprintf( "#SAMPLELENGTH:%.3f;", out.m_fMusicSampleLengthSeconds ) );
 
@@ -152,8 +156,39 @@ static void WriteLineList( CString &f, vector<CString> &lines, bool SkipLeadingB
 	}
 }
 
+/* Each .gn difficulty can have its own BPM table, but a .sm has only one timing for
+ * the whole song. So that it is not lost the next time the song is read back from the
+ * .sm / cache, the difficulty's own timing is written here, before its #NOTES. Charts
+ * in other formats do not have this tag, so their behavior is completely unchanged. */
+static void WriteStepsTimingTag( const Steps &in, CString &f )
+{
+	const TimingData *pTiming = in.GetOwnTiming();
+	if( pTiming == NULL )
+		return;
+
+	CStringArray asBPMs;
+	for( unsigned i = 0; i < pTiming->m_BPMSegments.size(); i++ )
+		asBPMs.push_back( ssprintf("%.3f=%.3f",
+			pTiming->m_BPMSegments[i].m_fStartBeat, pTiming->m_BPMSegments[i].m_fBPM) );
+
+	CStringArray asStops;
+	for( unsigned i = 0; i < pTiming->m_StopSegments.size(); i++ )
+		asStops.push_back( ssprintf("%.3f=%.3f",
+			pTiming->m_StopSegments[i].m_fStartBeat, pTiming->m_StopSegments[i].m_fStopSeconds) );
+
+	PutLine( f, "" );
+	PutLine( f, ssprintf( "#STEPSTIMING:%s:%s:%.6f:%s:%s;",
+		GameManager::StepsTypeToString(in.m_StepsType).c_str(),
+		DifficultyToString(in.GetDifficulty()).c_str(),
+		pTiming->m_fBeat0OffsetInSeconds,
+		join(",",asBPMs).c_str(),
+		join(",",asStops).c_str() ) );
+}
+
 void NotesWriterSM::WriteSMNotesTag( const Steps &in, CString &f, bool bSavingCache, bool bOmitNoteData )
 {
+	WriteStepsTimingTag( in, f );
+
 	/* The song index has no note data; store the hash of the cache file's notes
 	 * instead.  Steps::Decompress reads the notes back from the cache file when
 	 * they're needed, and EDIT steps are matched by this hash. */

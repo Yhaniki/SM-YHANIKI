@@ -81,6 +81,19 @@ public:
 	void SaveToCacheFile();
 	void SaveToDWIFile();
 
+	/* This song was loaded from a .gn (NotesLoaderGN); saving must also write back to
+	 * the same .gn. An empty string means it was not, in which case the functions below
+	 * do nothing. */
+	CString	m_sGNFileName;
+	bool IsFromGN() const { return !m_sGNFileName.empty(); }
+	CString GetGNPath() const;
+	bool SaveToGNFile( CString &sErrOut );
+
+	/* Each .gn difficulty can have its own BPM table, so switching to a difficulty has to
+	 * apply its timing to the Song; charts in other formats have no timing of their own,
+	 * so calling this does nothing for them. */
+	void UseTimingOf( const Steps *pSteps );
+
 	const CString &GetSongFilePath() const;
 	CString GetCacheFilePath() const;
 

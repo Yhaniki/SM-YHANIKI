@@ -872,6 +872,11 @@ void ScreenGameplay::SetupSong( PlayerNumber p, int iSongIndex )
 	GAMESTATE->m_fLastDrawnBeat[p] = -100;
 	GAMESTATE->m_pCurSteps[p] = m_vpStepsQueue[p][iSongIndex];
 
+	/* Each .gn difficulty can have its own BPM table; use the one for the difficulty
+	 * being played. */
+	if( GAMESTATE->m_pCurSong != NULL )
+		GAMESTATE->m_pCurSong->UseTimingOf( GAMESTATE->m_pCurSteps[p] );
+
 	/* Load new NoteData into Player.  Do this before 
 	 * RebuildPlayerOptionsFromActiveAttacks or else transform mods will get
 	 * propogated to GAMESTATE->m_PlayerOptions too early and be double-applied

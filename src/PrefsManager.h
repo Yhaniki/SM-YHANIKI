@@ -44,6 +44,11 @@ public:
 	bool			m_bPalettedBannerCache;
 	bool			m_bFastLoad;
 
+	/* Whether writing back a .gn insists on keeping the original file size (the SDOM /
+	 * Dance Online containers originally keep their length by zero padding).
+	 * Off by default: if the chart grows, the file grows with it. */
+	bool			m_bGNKeepFileSize;
+
 	bool			m_bOnlyDedicatedMenuButtons;
 	bool			m_bMenuTimer;
 	bool			m_bShowDanger;

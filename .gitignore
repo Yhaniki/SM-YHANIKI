@@ -33,3 +33,5 @@ ThirdParty-pack.zip
 ThirdParty-pack.zip.tmp
 Assets-pack.zip
 Assets-pack.zip.tmp
+# Build output of the .gn offline tests
+src/tests/gn/build/

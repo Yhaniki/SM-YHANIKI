@@ -106,7 +106,16 @@ void ScreenEditMenu::MenuStart( PlayerNumber pn )
 
 	GAMESTATE->m_pCurSong = pSong;
 	GAMESTATE->m_pCurStyle = GAMEMAN->GetEditorStyleForStepsType( st );
-	GAMESTATE->m_pCurSteps[PLAYER_1] = pSteps;
+	/* The editor style is ONE_PLAYER_ONE_CREDIT, so only m_MasterPlayerNumber counts as
+	 * human, and the master is "the side that inserted a coin first". When playing from
+	 * P2, setting only PLAYER_1 would leave ScreenEdit without a chart (it picks the chart
+	 * by GetFirstHumanPlayer()), so set both sides. */
+	FOREACH_PlayerNumber( p )
+		GAMESTATE->m_pCurSteps[p] = pSteps;
+	/* Each .gn difficulty has its own BPM table; apply the one being edited before
+	 * entering the editor. */
+	if( pSong != NULL )
+		pSong->UseTimingOf( pSteps );
 
 	//
 	// handle error cases
