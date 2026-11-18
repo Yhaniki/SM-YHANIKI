@@ -2,11 +2,31 @@
 #define SONG_CACHE_INDEX_H
 
 #include "IniFile.h"
+#include <map>
 
 class SongCacheIndex
 {
 	IniFile CacheIndex;
 	static CString MangleName( const CString &Name );
+
+	/* The song index (Cache/songs.idx): for each song, its cache file contents
+	 * with the note data stripped (NotesWriterSM::GetCacheMetaText).  At startup
+	 * complete Song and Steps objects are built from it, without opening and
+	 * parsing every cache file under Cache/Songs/; notes are read from the cache
+	 * file by Steps::Decompress only when they're needed.
+	 *
+	 * uCacheHash is GetCacheHash(song dir) at the time the data was generated.
+	 * Whenever the cache file is rewritten (Song::SaveToCacheFile), GetCacheHash
+	 * changes too, and the entry is ignored from then on. */
+	struct SongMeta
+	{
+		unsigned uCacheHash;
+		CString sData;
+	};
+	map<CString, SongMeta> m_SongMeta;
+	bool m_bSongMetaDirty;
+
+	void ReadSongMeta();
 
 public:
 	SongCacheIndex();
@@ -15,6 +35,12 @@ public:
 	void ReadCacheIndex();
 	void AddCacheIndex( const CString &path, unsigned hash );
 	unsigned GetCacheHash( const CString &path ) const;
+
+	/* Returns true only if the entry exists and its cache hash matches. */
+	bool GetSongMeta( const CString &sSongDir, unsigned uCacheHash, CString &sDataOut ) const;
+	void SetSongMeta( const CString &sSongDir, unsigned uCacheHash, const CString &sData );
+	/* Keep only the songs in vsSongDirs; write the file only if something changed. */
+	void SaveSongMeta( const vector<CString> &vsSongDirs );
 };
 
 extern SongCacheIndex *SONGINDEX;	// global and accessable from anywhere in our program

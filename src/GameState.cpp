@@ -60,6 +60,25 @@ GameState::GameState()
 	FOREACH_PlayerNumber( p )
 		m_bSideIsJoined[p] = false; // used by GetNumSidesJoined before the first screen
 
+	/* SONGMAN->InitAll() runs before the first Reset() (which waits for
+	 * ResetGame()), and loading or reloading songs reads the members below, so
+	 * they have to be set here.  They used to be left uninitialized, and a
+	 * leftover non-zero m_bLoadPackConnect sometimes made startup load only the
+	 * "connect" folder. */
+	m_bEditing = false;
+	m_bLoadPackConnect = false;
+	m_bfastLoadInScreenSelectMusic = false;
+	m_bDemonstrationOrJukebox = false;
+	m_pCurSong = NULL;
+	m_pPreferredSong = NULL;
+	m_pCurCourse = NULL;
+	m_pPreferredCourse = NULL;
+	FOREACH_PlayerNumber( p )
+	{
+		m_pCurSteps[p] = NULL;
+		m_pCurTrail[p] = NULL;
+	}
+
 	/* Don't reset yet; let the first screen do it, so we can
 	 * use PREFSMAN and THEME. */
 //	Reset();

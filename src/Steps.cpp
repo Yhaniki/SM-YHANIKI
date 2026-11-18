@@ -44,6 +44,7 @@ Steps::Steps()
 	notes = NULL;
 	notes_comp = NULL;
 	parent = NULL;
+	m_iIndexInFile = -1;
 }
 
 Steps::~Steps()
@@ -211,7 +212,25 @@ void Steps::Decompress() const
 		StepsID ID;
 		ID.FromSteps( this );
 
-		Steps *pSteps = ID.ToSteps( &s, true, false );	// don't use cache
+		/* Look it up by its position in the file first.  StepsID only compares
+		 * the steps type and difficulty (plus the description for EDIT), so when
+		 * a song has two or more steps that look the same (e.g. several EDIT
+		 * steps with blank descriptions) it always finds the first one, and saving
+		 * overwrote the others with the first one's notes.  Use the steps at that
+		 * position only if its type, difficulty and description all match;
+		 * otherwise fall back to StepsID. */
+		Steps *pSteps = NULL;
+		const vector<Steps*> &vInFile = s.GetAllSteps();
+		if( m_iIndexInFile >= 0 && m_iIndexInFile < (int) vInFile.size() )
+		{
+			Steps *pCandidate = vInFile[m_iIndexInFile];
+			if( pCandidate->m_StepsType == m_StepsType &&
+				pCandidate->GetDifficulty() == GetDifficulty() &&
+				pCandidate->GetDescription() == GetDescription() )
+				pSteps = pCandidate;
+		}
+		if( pSteps == NULL )
+			pSteps = ID.ToSteps( &s, true, false );	// don't use cache
 		if( pSteps == NULL )
 		{
 			LOG->Warn( "Couldn't find %s in \"%s\"", ID.ToString().c_str(), m_sFilename.c_str() );
@@ -318,9 +337,10 @@ bool Steps::IsAutogen() const
 	return parent != NULL;
 }
 
-void Steps::SetFile( CString fn )
+void Steps::SetFile( CString fn, int iIndexInFile )
 {
 	m_sFilename = fn;
+	m_iIndexInFile = iIndexInFile;
 }
 
 void Steps::SetDescription(CString desc)

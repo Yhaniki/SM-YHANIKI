@@ -264,8 +264,30 @@ bool SMLoader::LoadFromSMFile( CString sPath, Song &out )
 	if( !msd.ReadFile( sPath ) )
 		RageException::Throw( "Error opening file \"%s\": %s", sPath.c_str(), msd.GetError().c_str() );
 
+	return LoadFromMsd( msd, sPath, out );
+}
+
+bool SMLoader::LoadFromSMBuffer( const CString &sData, const CString &sPath, Song &out )
+{
+	/* The song index holds cache files with the note data stripped, so always
+	 * read it as cache. */
+	FromCache = true;
+
+	MsdFile msd;
+	msd.ReadFromString( sData );
+
+	return LoadFromMsd( msd, sPath, out );
+}
+
+bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out )
+{
 	out.m_Timing.m_sFile = sPath;
 	LoadTimingFromSMFile( msd, out.m_Timing );
+
+	/* #STEPSHASH only appears in the song index; hold on to it and apply it to
+	 * the next #NOTES. */
+	unsigned uPendingHash = 0;
+	bool bHasPendingHash = false;
 
 	for( unsigned i=0; i<msd.GetNumValues(); i++ )
 	{
@@ -414,6 +436,14 @@ bool SMLoader::LoadFromSMFile( CString sPath, Song &out )
 			}
 		}
 
+		/* The index has no note data, so it stores the hash of the notes in the
+		 * cache file here (see NotesWriterSM::GetCacheMetaText). */
+		else if( 0==stricmp(sValueName,"STEPSHASH") )
+		{
+			uPendingHash = strtoul( sParams[1], NULL, 10 );
+			bHasPendingHash = true;
+		}
+
 		else if( 0==stricmp(sValueName,"NOTES") )
 		{
 			if( iNumParams < 7 )
@@ -425,9 +455,13 @@ bool SMLoader::LoadFromSMFile( CString sPath, Song &out )
 			Steps* pNewNotes = new Steps;
 			ASSERT( pNewNotes );
 
-			LoadFromSMTokens( 
+			LoadFromSMTokens(
 				sParams[1], sParams[2], sParams[3], sParams[4], sParams[5], sParams[6], (iNumParams>=8)?sParams[7]:CString(""),
 				*pNewNotes);
+
+			if( bHasPendingHash )
+				pNewNotes->SetHash( uPendingHash );
+			bHasPendingHash = false;
 
 			out.AddSteps( pNewNotes );
 		}

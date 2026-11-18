@@ -8,11 +8,18 @@ class Steps;
 class RageFile;
 class NotesWriterSM
 {
-	void WriteGlobalTags( RageFile &f, const Song &out );
-	void WriteSMNotesTag( const Steps &in, RageFile &f, bool bSavingCache );
+	void WriteGlobalTags( CString &f, const Song &out );
+	void WriteCacheTags( CString &f, const Song &out );
+	void WriteSMNotesTag( const Steps &in, CString &f, bool bSavingCache, bool bOmitNoteData );
+	void WriteAllSteps( CString &f, const Song &out, bool bSavingCache, bool bOmitNoteData );
 
 public:
 	bool Write( CString sPath, const Song &out, bool bSavingCache );
+
+	/* The same text as the cache file, except that #NOTES carry no note data
+	 * (a hash of the notes is stored instead).  This is what the song index
+	 * keeps, so startup can parse it without opening every cache file. */
+	static CString GetCacheMetaText( const Song &out );
 };
 
 #endif

@@ -18,6 +18,9 @@ public:
 
 	// Returns true if successful, false otherwise.
 	bool ReadFile( CString sFilePath );
+	/* Parse data that is already in memory (e.g. a song header from the song
+	 * index) instead of reading a file. */
+	void ReadFromString( const CString &sData );
 	CString GetError() const { return error; }
 
 	unsigned GetNumValues() const { return values.size(); }

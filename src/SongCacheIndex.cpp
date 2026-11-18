@@ -4,7 +4,9 @@
 #include "RageLog.h"
 #include "RageUtil.h"
 #include "RageFileManager.h"
+#include "RageFile.h"
 #include "song.h"
+#include <cstring>
 
 /*
  * A quick explanation of song cache hashes: Each song has two hashes; a hash of the
@@ -25,13 +27,62 @@
  */
 #define CACHE_DIR "Cache/"
 #define CACHE_INDEX CACHE_DIR "index.cache"
+#define SONG_META_FILE CACHE_DIR "songs.idx"
+
+/* songs.idx layout (all numbers are little-endian 32-bit unsigned integers):
+ *   "SMIX" | format version | FILE_CACHE_VERSION | entry count
+ *   each entry: dir length | dir | uCacheHash | data length | data
+ *   end marker
+ * If any read fails, a length is unreasonable or a version differs, the whole
+ * file is ignored and rebuilt later. */
+static const char SONG_META_MAGIC[4] = { 'S', 'M', 'I', 'X' };
+static const unsigned SONG_META_FORMAT = 1;
+static const unsigned SONG_META_END = 0x58494D53;	/* "SMIX" */
+static const unsigned SONG_META_MAX_DIR = 4096;
+static const unsigned SONG_META_MAX_DATA = 16*1024*1024;
+
+static void PutU32( CString &s, unsigned v )
+{
+	const char b[4] = { char(v & 0xFF), char((v >> 8) & 0xFF), char((v >> 16) & 0xFF), char((v >> 24) & 0xFF) };
+	s.append( b, 4 );
+}
+
+static void PutStr( CString &s, const CString &str )
+{
+	PutU32( s, str.size() );
+	s.append( str.data(), str.size() );
+}
+
+static bool GetU32( const CString &s, unsigned &pos, unsigned &v )
+{
+	if( pos > s.size() || s.size() - pos < 4 )
+		return false;
+	const unsigned char *p = (const unsigned char *) s.data() + pos;
+	v = unsigned(p[0]) | (unsigned(p[1]) << 8) | (unsigned(p[2]) << 16) | (unsigned(p[3]) << 24);
+	pos += 4;
+	return true;
+}
+
+static bool GetStr( const CString &s, unsigned &pos, CString &out, unsigned iMaxLen )
+{
+	unsigned len;
+	if( !GetU32(s, pos, len) )
+		return false;
+	if( len > iMaxLen || s.size() - pos < len )
+		return false;
+	out.assign( s.data() + pos, len );
+	pos += len;
+	return true;
+}
 
 
 SongCacheIndex *SONGINDEX;
 
 SongCacheIndex::SongCacheIndex()
 {
+	m_bSongMetaDirty = false;
 	ReadCacheIndex();
+	ReadSongMeta();
 }
 
 SongCacheIndex::~SongCacheIndex()
@@ -67,6 +118,10 @@ void SongCacheIndex::ReadCacheIndex()
 	EmptyDir( CACHE_DIR "Songs/" );
 
 	CacheIndex.Reset();
+
+	/* songs.idx was deleted above as well; it described the cache files we just removed. */
+	m_SongMeta.clear();
+	m_bSongMetaDirty = false;
 }
 
 void SongCacheIndex::AddCacheIndex(const CString &path, unsigned hash)
@@ -94,6 +149,135 @@ CString SongCacheIndex::MangleName( const CString &Name )
 	CString ret = Name;
 	ret.Replace( "=", "");
 	return ret;
+}
+
+void SongCacheIndex::ReadSongMeta()
+{
+	m_SongMeta.clear();
+	m_bSongMetaDirty = false;
+
+	RageFile f;
+	if( !f.Open( SONG_META_FILE, RageFile::READ ) )
+		return;	/* no index yet; it's built on the first run */
+
+	CString sBuf;
+	if( f.Read( sBuf ) == -1 )
+	{
+		LOG->Warn( "Couldn't read song index \"%s\": %s", SONG_META_FILE, f.GetError().c_str() );
+		return;
+	}
+	f.Close();
+
+	unsigned pos = 0;
+	unsigned uFormat, uCacheVersion, uCount;
+	if( sBuf.size() < sizeof(SONG_META_MAGIC) || memcmp( sBuf.data(), SONG_META_MAGIC, sizeof(SONG_META_MAGIC) ) )
+	{
+		LOG->Warn( "Song index \"%s\" isn't a song index; rebuilding it.", SONG_META_FILE );
+		return;
+	}
+	pos += sizeof(SONG_META_MAGIC);
+
+	if( !GetU32(sBuf, pos, uFormat) || !GetU32(sBuf, pos, uCacheVersion) || !GetU32(sBuf, pos, uCount) )
+	{
+		LOG->Warn( "Song index \"%s\" is truncated; rebuilding it.", SONG_META_FILE );
+		return;
+	}
+	if( uFormat != SONG_META_FORMAT || uCacheVersion != (unsigned) FILE_CACHE_VERSION )
+	{
+		LOG->Trace( "Song index \"%s\" is out of date (format %u, cache %u); rebuilding it.", SONG_META_FILE, uFormat, uCacheVersion );
+		return;
+	}
+
+	map<CString, SongMeta> Loaded;
+	for( unsigned i = 0; i < uCount; ++i )
+	{
+		CString sDir;
+		SongMeta meta;
+		if( !GetStr(sBuf, pos, sDir, SONG_META_MAX_DIR) ||
+			!GetU32(sBuf, pos, meta.uCacheHash) ||
+			!GetStr(sBuf, pos, meta.sData, SONG_META_MAX_DATA) )
+		{
+			LOG->Warn( "Song index \"%s\" is damaged at entry %u; rebuilding it.", SONG_META_FILE, i );
+			return;
+		}
+		Loaded[sDir] = meta;
+	}
+
+	unsigned uEnd;
+	if( !GetU32(sBuf, pos, uEnd) || uEnd != SONG_META_END )
+	{
+		LOG->Warn( "Song index \"%s\" is missing its end marker; rebuilding it.", SONG_META_FILE );
+		return;
+	}
+
+	m_SongMeta.swap( Loaded );
+	LOG->Trace( "Read %u entries from song index \"%s\".", (unsigned) m_SongMeta.size(), SONG_META_FILE );
+}
+
+bool SongCacheIndex::GetSongMeta( const CString &sSongDir, unsigned uCacheHash, CString &sDataOut ) const
+{
+	map<CString, SongMeta>::const_iterator it = m_SongMeta.find( sSongDir );
+	if( it == m_SongMeta.end() || it->second.uCacheHash != uCacheHash )
+		return false;
+	sDataOut = it->second.sData;
+	return true;
+}
+
+void SongCacheIndex::SetSongMeta( const CString &sSongDir, unsigned uCacheHash, const CString &sData )
+{
+	SongMeta &meta = m_SongMeta[sSongDir];
+	meta.uCacheHash = uCacheHash;
+	meta.sData = sData;
+	m_bSongMetaDirty = true;
+}
+
+void SongCacheIndex::SaveSongMeta( const vector<CString> &vsSongDirs )
+{
+	/* Drop songs that are no longer loaded (deleted or renamed). */
+	map<CString, SongMeta> Kept;
+	for( unsigned i = 0; i < vsSongDirs.size(); ++i )
+	{
+		map<CString, SongMeta>::iterator it = m_SongMeta.find( vsSongDirs[i] );
+		if( it != m_SongMeta.end() )
+			Kept[it->first] = it->second;
+	}
+	if( Kept.size() != m_SongMeta.size() )
+		m_bSongMetaDirty = true;
+	m_SongMeta.swap( Kept );
+
+	if( !m_bSongMetaDirty )
+		return;
+
+	CString sBuf;
+	sBuf.append( SONG_META_MAGIC, sizeof(SONG_META_MAGIC) );
+	PutU32( sBuf, SONG_META_FORMAT );
+	PutU32( sBuf, (unsigned) FILE_CACHE_VERSION );
+	PutU32( sBuf, m_SongMeta.size() );
+	for( map<CString, SongMeta>::const_iterator it = m_SongMeta.begin(); it != m_SongMeta.end(); ++it )
+	{
+		PutStr( sBuf, it->first );
+		PutU32( sBuf, it->second.uCacheHash );
+		PutStr( sBuf, it->second.sData );
+	}
+	PutU32( sBuf, SONG_META_END );
+
+	/* RageFile::WRITE writes to a temporary file and swaps it in on close, so a
+	 * crash halfway through never leaves a partial index behind. */
+	RageFile f;
+	if( !f.Open( SONG_META_FILE, RageFile::WRITE ) )
+	{
+		LOG->Warn( "Couldn't open song index \"%s\" for writing: %s", SONG_META_FILE, f.GetError().c_str() );
+		return;
+	}
+	if( f.Write( sBuf ) == -1 )
+	{
+		LOG->Warn( "Couldn't write song index \"%s\": %s", SONG_META_FILE, f.GetError().c_str() );
+		return;
+	}
+	f.Close();
+
+	m_bSongMetaDirty = false;
+	LOG->Trace( "Wrote %u entries to song index \"%s\".", (unsigned) m_SongMeta.size(), SONG_META_FILE );
 }
 
 /*

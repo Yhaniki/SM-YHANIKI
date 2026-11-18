@@ -72,6 +72,15 @@ void ScreenReloadSongs::Update( float fDeltaTime )
 	if( m_iUpdates != 2 )
 		return;
 	ASSERT( !IsFirstUpdate() );
+
+	/* Callers use these flags to tell this screen what to reload.  Read them and
+	 * clear them right away, so whichever path we take below, they can't leak
+	 * into a later reload. */
+	const bool bOnlyConnect = GAMESTATE->m_bLoadPackConnect;
+	const CString sOnlyGroup = bOnlyConnect? CString("connect") : GAMESTATE->m_pCurSongGroup;
+	GAMESTATE->m_bLoadPackConnect = false;
+	GAMESTATE->m_pCurSongGroup = "";
+
 	if(GAMESTATE->m_bfastLoadInScreenSelectMusic)//fast load in ScreenSelectMusic
 	{
 		// GAMESTATE->Reset();
@@ -81,18 +90,21 @@ void ScreenReloadSongs::Update( float fDeltaTime )
 			GAMESTATE->m_pCurSteps[p] = NULL;
 		GAMESTATE->m_pCurCourse = NULL;
 		GAMESTATE->m_pPreferredCourse = NULL;
-		if(GAMESTATE->m_pCurSongGroup=="")
+		FOREACH_PlayerNumber( p )
+			GAMESTATE->m_pCurTrail[p] = NULL;
+		if( sOnlyGroup.empty() )
 		{
 			LOG->Info("Fast reload all group");
 			SONGMAN->FastReload(m_LoadingWindow);
 		}
 		else
 		{
-			LOG->Info("Fast reload group %s",GAMESTATE->m_pCurSongGroup.c_str());
-			SONGMAN->FreeSongsFromGroup(GAMESTATE->m_pCurSongGroup);
-			SONGMAN->InitSongsFromDisk( m_LoadingWindow );
+			LOG->Info("Fast reload group %s",sOnlyGroup.c_str());
+			SONGMAN->ReloadGroup( sOnlyGroup, m_LoadingWindow );
 		}
 		UNLOCKMAN->UpdateSongs();
+		SONGMAN->UpdateBest();
+		SONGMAN->UpdateShuffled();
 		//===========
 		FOREACH_HumanPlayer( pn )
 		{
@@ -107,33 +119,34 @@ void ScreenReloadSongs::Update( float fDeltaTime )
 				GAMESTATE->m_pPreferredCourse = pProfile->m_lastCourse.ToCourse();
 		}
 		//===========
-		GAMESTATE->m_pCurSongGroup="";
 		GAMESTATE->PlayersFinalized();
-		SCREENMAN->SetNewScreen( "ScreenSelectMusic" );
 		GAMESTATE->m_bfastLoadInScreenSelectMusic=false;
+		SCREENMAN->SetNewScreen( "ScreenSelectMusic" );
 		return;
 	}
 	else if(GAMESTATE->m_bEditing)//fast load
 	{
 		// fast reload
-		if (GAMESTATE->m_bLoadPackConnect)
-		{
-			SONGMAN->FreeSongsFromGroup("connect");
-			SONGMAN->InitSongsFromDisk(m_LoadingWindow);
-		}
-		else if (!GAMESTATE->m_pCurSongGroup.empty())
-		{
-			SONGMAN->FreeSongsFromGroup(GAMESTATE->m_pCurSongGroup);
-			SONGMAN->InitSongsFromDisk(m_LoadingWindow);
-		}
+		if( !sOnlyGroup.empty() )
+			SONGMAN->ReloadGroup( sOnlyGroup, m_LoadingWindow );
 		else
 		{
+			/* A full reload deletes every song; GAMESTATE must not keep pointing at them. */
+			GAMESTATE->m_pCurSong = NULL;
+			GAMESTATE->m_pPreferredSong = NULL;
+			FOREACH_PlayerNumber( p )
+			{
+				GAMESTATE->m_pCurSteps[p] = NULL;
+				GAMESTATE->m_pCurTrail[p] = NULL;
+			}
+			GAMESTATE->m_pCurCourse = NULL;
+			GAMESTATE->m_pPreferredCourse = NULL;
 			SONGMAN->FastReload(m_LoadingWindow);
 		}
-		GAMESTATE->m_pCurSongGroup = "";
 		UNLOCKMAN->UpdateSongs();
+		SONGMAN->UpdateBest();
+		SONGMAN->UpdateShuffled();
 		SCREENMAN->PopTopScreen();
-		GAMESTATE->m_bLoadPackConnect = false; // only reload connect package
 	}
 	else
 	{

@@ -31,6 +31,8 @@
 #include "Foreach.h"
 #include "StageStats.h"
 #include "Style.h"
+#include "SongCacheIndex.h"
+#include "RageTimer.h"
 #include <vector>
 SongManager*	SONGMAN = NULL;	// global and accessable from anywhere in our program
 
@@ -101,6 +103,17 @@ void SongManager::InitAll( LoadingWindow *ld )
 	SaveCatalogXml();
 }
 
+void SongManager::SaveSongIndex()
+{
+	/* Keep only the songs that are currently loaded.  Symlinked songs borrow
+	 * another song's data and have no cache file of their own, so skip them. */
+	vector<CString> vsSongDirs;
+	for( unsigned i = 0; i < m_pSongs.size(); ++i )
+		if( !m_pSongs[i]->m_bIsSymLink )
+			vsSongDirs.push_back( m_pSongs[i]->GetSongDir() );
+	SONGINDEX->SaveSongMeta( vsSongDirs );
+}
+
 void SongManager::Reload( LoadingWindow *ld )
 {
 	FlushDirCache();
@@ -153,8 +166,98 @@ void SongManager::InitSongsFromDisk( LoadingWindow *ld )
 {
 	RageTimer tm;
 	FlushDirCache();
-	LoadStepManiaSongDir( SONGS_DIR, ld );
-	LOG->Trace( "Found %d songs in %f seconds.", (int)m_pSongs.size(), tm.GetDeltaTime() );
+	Song::ResetLoadStats();
+	LoadStepManiaSongDir( SONGS_DIR, ld, "" );
+	SaveSongIndex();
+
+	const Song::LoadStats stats = Song::GetLoadStats();
+	LOG->Trace( "Found %d songs in %f seconds (song index: %d, cache files: %d, song files: %d).",
+		(int)m_pSongs.size(), tm.GetDeltaTime(), stats.iFromIndex, stats.iFromCacheFile, stats.iFromSongFile );
+}
+
+void SongManager::ReloadGroup( const CString &sGroupName, LoadingWindow *ld )
+{
+	RageTimer tm;
+	FlushDirCache();
+
+	/* GAMESTATE may point at songs in this group.  Remember their directories
+	 * and StepsIDs so we can point it at the reloaded objects afterwards. */
+	Song *pOldCur = GAMESTATE->m_pCurSong;
+	const bool bCurInGroup = pOldCur != NULL && pOldCur->m_sGroupName == sGroupName;
+	const CString sCurSongDir = bCurInGroup? pOldCur->GetSongDir() : CString();
+	StepsID OldCurSteps[NUM_PLAYERS];
+	if( bCurInGroup )
+		FOREACH_PlayerNumber( p )
+			OldCurSteps[p].FromSteps( GAMESTATE->m_pCurSteps[p] );
+
+	Song *pOldPreferred = GAMESTATE->m_pPreferredSong;
+	const bool bPreferredInGroup = pOldPreferred != NULL && pOldPreferred->m_sGroupName == sGroupName;
+	const CString sPreferredSongDir = bPreferredInGroup? pOldPreferred->GetSongDir() : CString();
+
+	/* Take this group's songs out of the song list.  Courses, the last stage's
+	 * stats and so on may still point at them, so don't delete them yet; keep
+	 * them in m_pRetiredSongs until the next FreeSongs(). */
+	for( vector<Song*>::iterator it = m_pSongs.begin(); it != m_pSongs.end(); )
+	{
+		if( (*it)->m_sGroupName == sGroupName )
+		{
+			m_pRetiredSongs.push_back( *it );
+			it = m_pSongs.erase( it );
+		}
+		else
+			++it;
+	}
+
+	/* The point of reloading one group is to pick up charts that were changed
+	 * or added in it, so every song has to be checked.  With FastLoad on,
+	 * LoadFromSongDir uses the cache whenever one exists and never looks at the
+	 * directory hash, so edited charts would never show up; turn it off for now.
+	 * Only songs whose directory hash changed are parsed again, the rest still
+	 * come from the song index.  This lists every song directory, but only in
+	 * this one group. */
+	const bool bOldFastLoad = PREFSMAN->m_bFastLoad;
+	PREFSMAN->m_bFastLoad = false;
+	Song::ResetLoadStats();
+	LoadStepManiaSongDir( SONGS_DIR, ld, sGroupName );
+	PREFSMAN->m_bFastLoad = bOldFastLoad;
+
+	/* If every song in the group is gone, drop the group too.  Groups that are
+	 * still there keep their position (group colors and the order of groups in
+	 * the network room depend on it). */
+	bool bGroupHasSongs = false;
+	for( unsigned i = 0; i < m_pSongs.size() && !bGroupHasSongs; ++i )
+		bGroupHasSongs = m_pSongs[i]->m_sGroupName == sGroupName;
+	if( !bGroupHasSongs )
+	{
+		for( unsigned i = 0; i < m_sGroupNames.size(); ++i )
+		{
+			if( m_sGroupNames[i] != sGroupName )
+				continue;
+			m_sGroupNames.erase( m_sGroupNames.begin()+i );
+			m_sGroupBannerPaths.erase( m_sGroupBannerPaths.begin()+i );
+			break;
+		}
+	}
+
+	SaveSongIndex();
+
+	if( bCurInGroup )
+	{
+		Song *pNew = GetSongFromDir( sCurSongDir );
+		GAMESTATE->m_pCurSong = pNew;
+		FOREACH_PlayerNumber( p )
+			GAMESTATE->m_pCurSteps[p] = pNew? OldCurSteps[p].ToSteps( pNew, true ) : NULL;
+	}
+	if( bPreferredInGroup )
+		GAMESTATE->m_pPreferredSong = GetSongFromDir( sPreferredSongDir );
+
+	/* Courses hold Song pointers; rebuild them so they all point at the
+	 * reloaded songs. */
+	Invalidate( NULL );
+
+	const Song::LoadStats stats = Song::GetLoadStats();
+	LOG->Trace( "Reloaded group \"%s\" in %f seconds (song index: %d, cache files: %d, song files: %d).",
+		sGroupName.c_str(), tm.GetDeltaTime(), stats.iFromIndex, stats.iFromCacheFile, stats.iFromSongFile );
 }
 
 void SongManager::SanityCheckGroupDir( CString sDir ) const
@@ -211,7 +314,7 @@ void SongManager::AddGroup( CString sDir, CString sGroupDirName )
 	m_sGroupBannerPaths.push_back(sBannerPath);
 }
 
-void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
+void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld, const CString &sOnlyGroup )
 {
 	/* Make sure sDir has a trailing slash. */
 	if( sDir.Right(1) != "/" )
@@ -222,21 +325,20 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 	GetDirListing( sDir+"*", arrayGroupDirs, true );
 	SortCStringArray( arrayGroupDirs );
 
+	/* Repainting the loading window for every song is wasteful with thousands
+	 * of songs; limit how often it happens. */
+	RageTimer LastPaint;
+	bool bPaintedOnce = false;
+
 	for( unsigned i=0; i< arrayGroupDirs.size(); i++ )	// for each dir in /Songs/
 	{
 		CString sGroupDirName = arrayGroupDirs[i];
 
-		if(GAMESTATE->m_bLoadPackConnect==true)//only read connect package 
-		{
-			//LOG->Info("GAMESTATE->m_bLoadPackConnect %d", GAMESTATE->m_bLoadPackConnect);
-			if(0 != stricmp( sGroupDirName, "connect" ))
-				continue;
-		}
-		if(GAMESTATE->m_pCurSongGroup!="")
-		{
-			if(0 != stricmp( sGroupDirName, GAMESTATE->m_pCurSongGroup ))
-				continue;
-		}
+		/* When reloading a single group (ReloadGroup), skip the others.  This
+		 * used to read GAMESTATE's m_bLoadPackConnect / m_pCurSongGroup directly,
+		 * so a flag left set made a full reload load only that one group. */
+		if( !sOnlyGroup.empty() && 0 != stricmp( sGroupDirName, sOnlyGroup ) )
+			continue;
 		if( 0 == stricmp( sGroupDirName, "cvs" ) )	// the directory called "CVS"
 			continue;		// ignore it
 
@@ -258,7 +360,10 @@ void SongManager::LoadStepManiaSongDir( CString sDir, LoadingWindow *ld )
 				continue;		// ignore it
 
 			// this is a song directory.  Load a new song!
-			if( ld ) {
+			if( ld && (!bPaintedOnce || LastPaint.PeekDeltaTime() >= 1/30.0f) )
+			{
+				LastPaint.Touch();
+				bPaintedOnce = true;
 				ld->SetText( ssprintf("Loading songs...\n%s\n%s",
 					Basename(sGroupDirName).c_str(),
 					Basename(sSongDirName).c_str()));
@@ -359,22 +464,17 @@ void SongManager::FreeSongs()
 		SAFE_DELETE( m_pSongs[i] );
 	m_pSongs.clear();
 
+	/* Songs replaced by ReloadGroup.  Freeing everything invalidates every
+	 * Song pointer anyway, so this is the point where they can be deleted. */
+	for( unsigned i=0; i<m_pRetiredSongs.size(); i++ )
+		SAFE_DELETE( m_pRetiredSongs[i] );
+	m_pRetiredSongs.clear();
+
 	m_sGroupBannerPaths.clear();
 
 	for( int i = 0; i < NUM_PROFILE_SLOTS; ++i )
 		m_pBestSongs[i].clear();
 	m_pShuffledSongs.clear();
-}
-void SongManager::FreeSongsFromGroup(CString GroupName)
-{
-	vector<Song*>::iterator it;
-	for(it=m_pSongs.begin();it!=m_pSongs.end();)
-	{
-		if((*it)->m_sGroupName==GroupName)
-			it=m_pSongs.erase(it);
-		else
-			it++;
-	}
 }
 CString SongManager::GetGroupBannerPath( CString sGroupName )
 {

@@ -16,6 +16,7 @@
 #include "RageSurface.h"
 #include "RageSurfaceUtils.h"
 #include "RageSurfaceUtils_Palettize.h"
+#include <set>
 
 #include "Banner.h"
 
@@ -217,6 +218,20 @@ RageTextureID BannerCache::LoadCachedBanner( CString BannerPath )
 	/* Hack: make sure Banner::Load doesn't change our return value and end up
 	 * reloading. */
 	ID = Sprite::SongBannerTexture(ID);
+
+	/* Songs no longer preload thousands of low-res banners when they load;
+	 * load this one the first time it's shown (it's a small image, and it stays
+	 * in memory afterwards).  Remember banners that fail so we don't retry every
+	 * time we pass them: a failed LoadBanner regenerates the cache image, which
+	 * is slow. */
+	static set<CString> s_FailedBanners;
+	if( g_BannerPathToImage.find(BannerPath) == g_BannerPathToImage.end() &&
+		s_FailedBanners.find(BannerPath) == s_FailedBanners.end() )
+	{
+		LoadBanner( BannerPath );
+		if( g_BannerPathToImage.find(BannerPath) == g_BannerPathToImage.end() )
+			s_FailedBanners.insert( BannerPath );
+	}
 
 	/* It's not in a texture.  Do we have it loaded? */
 	if( g_BannerPathToImage.find(BannerPath) == g_BannerPathToImage.end() )

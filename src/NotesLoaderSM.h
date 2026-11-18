@@ -23,6 +23,8 @@ class SMLoader: public NotesLoader
 
 	bool FromCache;
 
+	bool LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out );
+
 public:
 	SMLoader() { FromCache = false; }
 	bool LoadFromSMFile( CString sPath, Song &out );
@@ -31,6 +33,9 @@ public:
 		FromCache=cache;
 		return LoadFromSMFile( sPath, out );
 	}
+	/* Load cache-format data from memory (used by the song index).  sPath is
+	 * only used for log messages and as the timing data's source file. */
+	bool LoadFromSMBuffer( const CString &sData, const CString &sPath, Song &out );
 
 	void GetApplicableFiles( CString sPath, CStringArray &out );
 	bool LoadFromDir( CString sPath, Song &out );

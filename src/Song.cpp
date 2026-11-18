@@ -189,6 +189,19 @@ NotesLoader *Song::MakeLoader( CString sDir ) const
  * pull in <set> into Song.h, which is heavily used. */
 static set<istring> BlacklistedImages;
 
+/* Where each song was loaded from; SongManager logs it after each load pass. */
+static Song::LoadStats g_LoadStats;
+
+void Song::ResetLoadStats()
+{
+	g_LoadStats = LoadStats();
+}
+
+Song::LoadStats Song::GetLoadStats()
+{
+	return g_LoadStats;
+}
+
 /*
  * If PREFSMAN->m_bFastLoad is true, always load from cache if possible. Don't read
  * the contents of sDir if we can avoid it.  That means we can't call HasMusic(),
@@ -222,23 +235,41 @@ bool Song::LoadFromSongDir( CString sDir )
 	bool bUseCache = true;
 	if( !DoesFileExist(GetCacheFilePath()) )
 		bUseCache = false;
+	/* As before, FastLoad skips the directory hash check (it lists every song
+	 * directory, which is slow).  "Reload songs" from the menu and reloading a
+	 * single group turn FastLoad off temporarily, so the check happens then. */
 	if( !PREFSMAN->m_bFastLoad && GetHashForDirectory(m_sSongDir) != uDirHash )
-		bUseCache = false; // this cache is out of date 
-	// if(GAMESTATE->m_pCurSongGroup==m_sGroupName)
-	// {
-	// 	bUseCache = false;
-	// }
-	
+		bUseCache = false; // this cache is out of date
+
 	if( bUseCache )
 	{
-		// if(GAMESTATE->m_pCurSongGroup!="")//fast load only load new songs
-		// {
-		// 	return false;
-		// }
 //		LOG->Trace( "Loading '%s' from cache file '%s'.", m_sSongDir.c_str(), GetCacheFilePath().c_str() );
 		SMLoader ld;
-		ld.LoadFromSMFile( GetCacheFilePath(), *this, true );
-		ld.TidyUpData( *this, true );
+		CString sMeta;
+		if( SONGINDEX->GetSongMeta( m_sSongDir, uDirHash, sMeta ) )
+		{
+			/* The song index has this song, and the cache file it describes hasn't
+			 * been rewritten since: use the header from the index without opening
+			 * the cache file.  Steps::Decompress reads the cache file only when the
+			 * notes are needed. */
+			ld.LoadFromSMBuffer( sMeta, GetCacheFilePath(), *this );
+			ld.TidyUpData( *this, true );
+			++g_LoadStats.iFromIndex;
+		}
+		else
+		{
+			ld.LoadFromSMFile( GetCacheFilePath(), *this, true );
+			ld.TidyUpData( *this, true );
+
+			/* The state just parsed from the cache file is exactly what loading from
+			 * the index must reproduce (each Steps' hash is the hash of the cache
+			 * file's notes, too), so record it in the index.  Songs without music
+			 * are rejected below and never loaded, so they would only be pruned
+			 * again; skip them. */
+			if( m_bHasMusic )
+				SONGINDEX->SetSongMeta( m_sSongDir, uDirHash, NotesWriterSM::GetCacheMetaText(*this) );
+			++g_LoadStats.iFromCacheFile;
+		}
 	}
 	else
 	{
@@ -270,22 +301,25 @@ bool Song::LoadFromSongDir( CString sDir )
 
 		// save a cache file so we don't have to parse it all over again next time
 		SaveToCacheFile();
+		++g_LoadStats.iFromSongFile;
 	}
 
 
 	
+	/* At this point m_vpSteps holds only the steps from the file (no autogen
+	 * steps or profile edits yet), in the same order as the cache file's #NOTES. */
 	for( unsigned i=0; i<m_vpSteps.size(); i++ )
 	{
-		m_vpSteps[i]->SetFile( GetCacheFilePath() );
+		m_vpSteps[i]->SetFile( GetCacheFilePath(), i );
 
 		/* Compress all Steps.  During initial caching, this will remove cached NoteData;
 		 * during cached loads, this will just remove cached SMData. */
 		m_vpSteps[i]->Compress();
 	}
 
-	/* Load the cached banners, if it's not loaded already. */
-	if( m_bHasBanner )
-		BANNERCACHE->LoadBanner( GetBannerPath() );
+	/* Low-res banners aren't preloaded here (thousands of songs means thousands
+	 * of images); BannerCache::LoadCachedBanner loads each one the first time
+	 * it's shown. */
 
 	/* Add AutoGen pointers.  (These aren't cached.) */
 	AddAutoGenNotes();
@@ -986,7 +1020,6 @@ void Song::Save()
 	/* Save the new files.  These calls make backups on their own. */
 	SaveToSMFile( GetSongFilePath(), false );
 	SaveToDWIFile();
-	SaveToCacheFile();
 
 	/* We've safely written our files and created backups.  Rename non-SM and non-DWI
 	 * files to avoid confusion. */
@@ -1006,6 +1039,11 @@ void Song::Save()
 		} else
 			FILEMAN->Remove( sOldPath );
 	}
+
+	/* Write the cache last.  SaveToCacheFile records the directory hash, which
+	 * has to reflect the finished save (the .sm/.dwi written and .bms/.ksf
+	 * renamed above); otherwise the next group reload sees the song as changed. */
+	SaveToCacheFile();
 }
 
 
@@ -1031,8 +1069,24 @@ void Song::SaveToSMFile( CString sPath, bool bSavingCache )
 
 void Song::SaveToCacheFile()
 {
+	/* Files in the song directory may have just been written, so the directory
+	 * cache can still hold old sizes and times.  Flush it so the recorded hash
+	 * matches what the next group reload will compute. */
+	FILEMAN->FlushDirCache( m_sSongDir );
 	SONGINDEX->AddCacheIndex(m_sSongDir, GetHashForDirectory(m_sSongDir));
 	SaveToSMFile( GetCacheFilePath(), true );
+
+	/* The cache file was rewritten (steps may have been added or deleted in the
+	 * editor), so update each Steps' position in it.  The order matches what
+	 * NotesWriterSM writes: autogen steps and profile edits are skipped. */
+	int iIndexInFile = 0;
+	for( unsigned i=0; i<m_vpSteps.size(); i++ )
+	{
+		Steps *pSteps = m_vpSteps[i];
+		if( pSteps->IsAutogen() || pSteps->WasLoadedFromProfile() )
+			continue;
+		pSteps->SetFile( GetCacheFilePath(), iIndexInFile++ );
+	}
 }
 
 void Song::SaveToDWIFile()
