@@ -85,8 +85,6 @@ private:
 	int			m_iChannels;
 	int			m_iBinFrames;		// frames per level-0 bin (~2ms)
 	double		m_fBinsPerSecond;
-	/* Music seconds to shift the PCM look-up by; see DetectMp3FrameAlignSeconds(). */
-	float		m_fAlignSeconds;
 	float		m_fLengthSeconds;	// as reported by the reader; only for progress
 
 	/* How long loading took (logged when done, to tune the per-frame budget). */

@@ -2,7 +2,6 @@
 #include "WaveformDisplay.h"
 #include "RageDisplay.h"
 #include "RageLog.h"
-#include "RageFile.h"
 #include "RageTimer.h"
 #include "RageUtil.h"
 #include "RageSoundReader_FileReader.h"
@@ -39,75 +38,6 @@ static const float ROW_HEIGHT		= 2.f;
 static const int   MAX_ROWS			= 1500;
 /* RageDisplay_D3D draws quads with 16-bit indices; keep each batch well under that. */
 static const int   MAX_VERTS_PER_DRAW = 4096*4;
-
-/*
- * Detect MP3s that are decoded ~one MPEG audio frame ahead of the actual music.
- *
- * StepMania's MP3 reader keeps a leading frame for files that carry a Xing/Info
- * header (to match DWI/BASS sync), but files WITHOUT such a header end up one
- * frame early in the decoded PCM we read for the waveform.  That makes the drawn
- * waveform sit ~26ms (1152 samples @ 44.1kHz) ahead of the note grid / music.
- * Return the duration of one MPEG frame in seconds for those files so we can
- * compensate; return 0 (no shift) for everything else.
- */
-static float DetectMp3FrameAlignSeconds( const CString &sPath )
-{
-	/* Only MP3s have the problem.  Scanning other formats for an MPEG frame sync
-	 * can find a false one in compressed data and shift them by mistake. */
-	CString sExt = GetExtension( sPath );
-	sExt.MakeLower();
-	if( sExt != "mp3" )
-		return 0.f;
-
-	RageFile file;
-	if( !file.Open( sPath ) )
-		return 0.f;
-
-	unsigned char buf[16384];
-	int got = file.Read( buf, sizeof(buf) );
-	if( got < 8 )
-		return 0.f;
-
-	int i = 0;
-	// Skip an ID3v2 tag if present (syncsafe 28-bit size).
-	if( got > 10 && buf[0]=='I' && buf[1]=='D' && buf[2]=='3' )
-		i = 10 + ( ((buf[6]&0x7f)<<21) | ((buf[7]&0x7f)<<14) | ((buf[8]&0x7f)<<7) | (buf[9]&0x7f) );
-
-	// Find the first MPEG audio frame sync (0xFF 0xEx/0xFx).
-	int ver = -1, srIdx = -1;
-	for( ; i < got-4; ++i )
-	{
-		if( buf[i]==0xFF && (buf[i+1]&0xE0)==0xE0 )
-		{
-			ver          = (buf[i+1]>>3)&3;	// 0=MPEG2.5, 2=MPEG2, 3=MPEG1
-			int layer    = (buf[i+1]>>1)&3;
-			srIdx        = (buf[i+2]>>2)&3;
-			if( ver!=1 && layer!=0 && srIdx!=3 )
-				break;
-		}
-	}
-	if( ver < 0 || i >= got-4 )
-		return 0.f;	// not a recognisable MP3 -> no shift
-
-	// If this first frame carries a Xing/Info header, the file is already aligned.
-	int end = min( got-4, i+200 );
-	for( int j = i; j < end; ++j )
-	{
-		if( (buf[j]=='X'&&buf[j+1]=='i'&&buf[j+2]=='n'&&buf[j+3]=='g') ||
-		    (buf[j]=='I'&&buf[j+1]=='n'&&buf[j+2]=='f'&&buf[j+3]=='o') )
-			return 0.f;
-	}
-
-	// No Xing/Info header: compute one MPEG frame's duration.
-	static const int rate1[4] = { 44100, 48000, 32000, 0 };
-	int rate = rate1[srIdx];
-	if( ver==2 )      rate /= 2;	// MPEG2
-	else if( ver==0 ) rate /= 4;	// MPEG2.5
-	if( rate <= 0 )
-		return 0.f;
-	int samplesPerFrame = (ver==3) ? 1152 : 576;	// MPEG1 vs MPEG2/2.5 (Layer III)
-	return (float)samplesPerFrame / (float)rate;
-}
 
 static inline void MergeBin( WaveformData::Bin &into, const WaveformData::Bin &b )
 {
@@ -150,7 +80,6 @@ WaveformData::WaveformData( const CString &sPath ):
 	m_iChannels( 2 ),
 	m_iBinFrames( 1 ),
 	m_fBinsPerSecond( 0 ),
-	m_fAlignSeconds( 0 ),
 	m_fLengthSeconds( 0 ),
 	m_fDecodeSeconds( 0 ),
 	m_iDecodeCalls( 0 ),
@@ -169,6 +98,14 @@ WaveformData::~WaveformData()
 
 bool WaveformData::Open()
 {
+	/* The same reader class the music is played with, read from the start, so
+	 * PCM frame n is exactly what the editor plays at n / rate seconds (its
+	 * accurate seek decodes up to the position from the first frame).  No shift
+	 * is needed for any file.  Don't add one to make the waveform match a chart:
+	 * a mismatch with the notes means the chart's offset is off.  (An MP3 without
+	 * a Xing/Info header used to be shifted one frame, ~26ms, later; that was
+	 * tuned to one chart that is ~35ms late, and it put every other such song's
+	 * waveform ~26ms behind the music.) */
 	CString sError;
 	m_pReader = SoundReader_FileReader::OpenFile( m_sPath, sError );
 	if( m_pReader == NULL )
@@ -192,7 +129,6 @@ bool WaveformData::Open()
 	 * from the music over the length of the song. */
 	m_iBinFrames = max( 1, (int) floor(iRate * BIN_SECONDS + 0.5) );
 	m_fBinsPerSecond = double(iRate) / m_iBinFrames;
-	m_fAlignSeconds = DetectMp3FrameAlignSeconds( m_sPath );
 
 	/* Reserve for the whole song up front so the vectors don't keep growing. */
 	const int iLengthMs = m_pReader->GetLength_Fast();
@@ -216,9 +152,9 @@ void WaveformData::Decode( float fMaxSeconds )
 	++m_iDecodeCalls;
 
 	if( m_bDone )
-		LOG->Trace( "Waveform: loaded \"%s\": %u bins, max peak %d, max rms %d, align %.4fs; "
+		LOG->Trace( "Waveform: loaded \"%s\": %u bins, max peak %d, max rms %d; "
 			"decoding took %.3fs over %d frames",
-			m_sPath.c_str(), (unsigned) m_Levels[0].size(), m_iMaxPeak, m_iMaxRms, m_fAlignSeconds,
+			m_sPath.c_str(), (unsigned) m_Levels[0].size(), m_iMaxPeak, m_iMaxRms,
 			m_fDecodeSeconds, m_iDecodeCalls );
 }
 
@@ -326,9 +262,8 @@ bool WaveformData::GetBin( float fStartSec, float fEndSec, Bin &out ) const
 	if( fEndSec < fStartSec )
 		swap( fStartSec, fEndSec );
 
-	/* Shift the look-up later by m_fAlignSeconds; see DetectMp3FrameAlignSeconds(). */
-	int iStart = (int) floor( (fStartSec - m_fAlignSeconds) * m_fBinsPerSecond );
-	int iEnd = (int) ceil( (fEndSec - m_fAlignSeconds) * m_fBinsPerSecond );
+	int iStart = (int) floor( fStartSec * m_fBinsPerSecond );
+	int iEnd = (int) ceil( fEndSec * m_fBinsPerSecond );
 	if( iEnd <= iStart )
 		iEnd = iStart + 1;
 	if( iEnd <= 0 || iStart >= iNumBins )
