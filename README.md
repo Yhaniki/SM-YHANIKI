@@ -1,198 +1,51 @@
-# StepMania 3.9 永和金城武版(YHANIKI)
-  + fork from [stepmania](https://github.com/stepmania/stepmania)
-    - [tag v390release](https://github.com/stepmania/stepmania/releases/tag/v390release)
-  + 部分功能沿用ddrtime編輯器版本StepMania
-    - [STEPMANIA 3.9 編輯器我流版](https://forum.gamer.com.tw/C.php?bsn=16862&snA=1184)
+# SM-YHANIKI
 
-<!-- TOC -->
+SM-YHANIKI 是以 [StepMania 3.9](https://github.com/stepmania/stepmania) 為基礎開發的 Windows 衍生專案，提供譜面編輯、網路對戰與獨立伺服器等功能。
 
-- [StepMania 3.9 永和金城武版(YHANIKI)](#stepmania-39-永和金城武版yhaniki)
-  - [VS-2019 Migration Notes](#vs-2019-migration-notes)
-  - [編譯環境建置](#編譯環境建置)
-  - [一般模式](#一般模式)
-  - [遊戲中](#遊戲中)
-  - [作譜模式](#作譜模式)
-  - [連線模式](#連線模式)
-  - [其他](#其他)
-  - [測試與共同開發人員](#測試與共同開發人員)
+部分譜面編輯功能源自 [ddrtime 編輯器版本的 StepMania](https://forum.gamer.com.tw/C.php?bsn=16862&snA=1184)。
 
-<!-- /TOC -->
- 
-## VS-2019 Migration Notes
-  ```
-    + In order to support modern libraries, we've moved to VS2019 with MSVC140.
-        VS2005/2008 will not work now.
-    + To ease maintenance, this version of YHANIKI targets only modern windows OSs.
-    + A bunch of compiler warnings have been ignored to reduce the workload of this migration.
-        They should be dealt with after the ongoing refactoring is completed.
-    + LibLua and SDL have been rebuilt with MSVC140 and are included in this repository (in folder ThirdParty_rebuild).
-    + Using C++14 now. Currently there are some problems with C++17.
-    + Old assets pack won't work with this source. Please contact devs for updated assets pack.
-  ```
- 
-## 編譯環境建置
-  1. 安裝 Visual Studio 2019，工作負載選「使用 C++ 的桌面開發」，並裝上 Windows 10 SDK。
-     - 用 VS 2022 以後的版本也可以，但要在 Visual Studio Installer 的「個別元件」加裝「MSVC v142 - VS 2019 C++ x64/x86 建置工具」。
-  2. clone 專案。
-  3. 向開發者索取素材包 `Assets-pack.zip`，放到 repo 根目錄，雙擊 `scripts\setup-assets.cmd`。
-     - 素材會解壓縮到 repo 根目錄（跟 `Program` 資料夾同一層），遊戲從這裡讀取，不能改位置。
-     - zip 放在別處：`scripts\setup-assets.cmd -Package D:\Downloads\Assets-pack.zip`
-     - 歌曲不在素材包裡，請自己放進 `Songs\`。
-  4. 向開發者索取第三方資源包 `ThirdParty-pack.zip`，放到 repo 根目錄，雙擊 `scripts\setup-thirdparty.cmd`。
-     - 想放到別的位置：`scripts\setup-thirdparty.cmd -ThirdPartyDir D:\deps\sm-thirdparty`
-     - zip 放在別處：`scripts\setup-thirdparty.cmd -Package D:\Downloads\ThirdParty-pack.zip`
-     - 腳本會把位置寫進 `src\ThirdParty.user.props`（只在本機、不進版控），VS 專案會從那個位置找 include / lib。
-  5. 用 VS 開啟 `src\SM-YHANIKI.sln`，方案組態選 `Release | x86`（或 `Debug | x86`）後建置。
-     - 產出：`Program\StepMania.exe`（Debug 為 `Program\StepMania-Debug.exe`）
+## 基本功能
 
-  維護者更新兩種包：
-  - 素材包：雙擊 `scripts\pack-assets.cmd`，從 repo 根目錄打包出 `Assets-pack.zip`。
-    包含 `Themes`、`NoteSkins`、`Characters`、`Courses` 等整個資料夾，`Data` 只帶內建資料與預設 Theme 設定（`GamePrefs.ini`），
-    不帶 `StepMania.ini`、`Keymaps.ini`、Profile 等個人設定；`Cache`、`Screenshots`、`Songs`、`Utils` 只建立空資料夾（保留資料夾原本的 `instructions.txt`，例如 `Songs\Instructions.txt`）。
-    清單定義在 `scripts\assets-common.ps1`。
-  - 第三方資源包：雙擊 `scripts\pack-thirdparty.cmd`，從目前設定的 ThirdParty 位置打包出 `ThirdParty-pack.zip`。
-    只包含編譯會用到的 8 個資料夾（`BaseClasses`、`dx80`、`ffmpeg`、`libjpeg`、`libpng`、`libresample`、`mad-0.15.1b`、`vorbis`），
-    清單定義在 `scripts\thirdparty-common.ps1`。
- 
-## 一般模式
-  | 快速鍵     | 功能                 |
-  | -----     | -----                |
-  | F4        | 更新指定歌曲          |
-  | F5        | 快速重讀歌曲          |
-  | Ctrl + F5 | 指定資料夾快速重讀歌曲 |
- 
-  + note流速不因歌曲倍速改變
-  + 結算成績畫面顯示歌曲倍速
-  + 修正使用AUTOPLAY或譜面無note會崩潰的問題
-  + hold結尾改為TNS_MARVELOUS(白光)
-  + Hold 結尾判定模式（Options → Machine Options → Hold 結尾判定，預設關閉）
-    - 放開按鍵的時間跟 hold 結尾差多少，像按下一樣判 Marvelous～Boo 並顯示毫秒
-    - 結尾算一顆獨立的 note：加 combo、算進結算的判定數量、分數與百分比（滿分會跟著變多）
-    - 在 Boo 範圍之前放開：hold 判 NG、結尾判 Miss；一直按著超過 Boo 範圍：結尾判 Boo
-    - 需要主題支援：`[ScreenMachineOptions]` 加 `conf,HoldEndJudge`，語言檔加 `HoldEndJudgeTitle` / `HoldEndJudgeHelp`
-  + 影片速度根據歌曲倍速改變
-  + combo數字圖層上移
-  + 遊戲大廳Note數改為顯示總按鍵數(原本為Tap + Hold)
-  + 使用Shift+f8顯示AutoPlayCPU、結算分數時為0分
-  + 修改NoteSkin:note/note(RV)長條發光模式
-  + 選歌畫面背景可換成目前選擇歌曲的背景圖（Options → Background Options → 選歌畫面 歌曲背景，預設關閉）
-    - 需要主題支援：在選歌背景的 `BGAnimation.ini` 加一層 `File=currentsongbackground`，搭配 `Condition=SelectMusicSongBackground()` 跟著開關，
-      並在 `[ScreenBackgroundOptions]` 加 `conf,SelectMusicSongBG`（語言檔要有 `SelectMusicSongBGTitle` / `SelectMusicSongBGHelp`）。
-    - CyberiaStyle 6 的作法：三個 `ScreenSelectMusic *background` 各加一層 `Layer25`（在 `over.png` 之上、六角閃光與面板之下），
-      這些主題檔案在素材包裡，要重新打包素材包才會帶給其他人。
-  + 打擊軌道背板（Player Options → 軌道背板、背板透明度），取代以前用 Characters 的 `SINGLES[L]` / `SINGLES[S]` 當背板的作法
-    - 背板畫在 note 軌道後面，從畫面頂端到底端，跟著軌道的位置、寬度、Mini 縮放與透視傾斜
-    - 歌曲用 `MoveX1`～`MoveX20`（例如 `#ATTACKS`）把軌道分開時，背板在分開的軌道之間切開，每一塊跟著自己的軌道移動
-    - 「黑色」是純黑背板；其他選項是根目錄 `Backplates` 資料夾裡的圖片（png / jpg / bmp / gif，檔名就是選項名稱），
-      圖片會拉成軌道的寬度、一個畫面的高度，上下重複
-    - 背板透明度 0%～90%，黑色和圖片都適用；設定跟其他玩家選項一樣存在 Profile
-    - 需要主題支援：`[ScreenPlayerOptions]` 加 `list,Backplates`、`list,BackplateTransparency`，`[ScreenOptionsMaster]` 加
-      `BackplateTransparency` 清單，語言檔加 `BackplatesTitle` / `BackplatesHelp`、`BackplateTransparencyTitle` / `BackplateTransparencyHelp`
-      與選項名稱 `BackplateSolid`、`BackplateTransparency0`～`BackplateTransparency90`。`Backplates` 資料夾在素材包裡。
-    - 舊設定自動轉換：Profile 裡存的人物 `SINGLES[L]` / `SINGLES[S]` 讀進來會變成 `Carbon` 背板（同一張圖），不再當人物畫
-    - CyberiaStyle 6（素材包）：「人物開關」那列換成這兩列，`Characters` 拿掉 `SINGLES[L]` / `SINGLES[S]`，
-      `ScreenGameplay Static Background` 改成 `staticbg/none`（舊的固定位置背板，不會跟著軌道）
+- 遊戲：歌曲倍速、Hold 結尾判定、打擊軌道背板、歌曲背景及中文輸入。
+- 譜面編輯：BPM、STOP、192nd 箭頭、Reverse 編輯、自動儲存與備份。
+- 網路對戰：玩家狀態同步、歌曲檔案傳送、聊天室指令及大廳背景。
+- 伺服器：提供可獨立執行的視窗化伺服器，不需同時開啟遊戲主程式。
 
-## 遊戲中
-  | 快速鍵     | 功能          |
-  | ----------| ------------- |
-  | F3        | 減速          |
-  | F4        | 加速          |
+## 快速建置
 
-## 作譜模式
-  + ddrtime
-    - BPM與STOP顯示最小可到小數點第三位 
-    - 右上方BEAT與時間顯示可到小數點第六位(特殊用) 
-    - 箭頭間距拉伸變更成以0.5倍為單位，範圍可到0.25x~8x 
-      + 若想整數拉伸可用ctrl+pageup與ctrl+pagedown鍵控制 
-    - STOP停拍可以變負數 
-    - N鍵轉換負數功能
-      + N鍵:建立一個BPM標籤 
-      + CTRL+N:轉換BPM為負數
-      + ALT+N:轉換STOP為負數 
-    - 支援192nd箭頭編輯 
-    - 增加直接編輯BPM與STOP功能 
-    - 可追朔以前的備份  
-      + 編輯的歌曲資料夾會多個FileBackup資料夾，並以時間戳記為檔案名稱 
-    - 自動儲存
-      + 可以選擇要儲存的時間間隔或關閉，預設自動儲存時間是5分鐘  
-    - Reverse逆流編輯環境下可直覺操作  
-    - Reverse逆流編輯直覺操作性可在Preferences下的Reverse Control Intuitive更改  
-    - 增加DisplayBPM編輯，可在Edit Song Info下找到
-  + 另外增加
-    - 修正影片預覽撥放位置
-    - 修正變速結尾bpm錯誤
-    - 修正變速長條截斷問題
-    - 修正開啟PlayerOptions, SongOptions 譜面還原問題(SONGMAN->Cleanup(); ignore)
-    - 修正多段變速bpm計算錯誤問題
-    - 修正多難度停拍位置
-    - 測試前緩衝調整選項(Preferences->play mode beats buffer)
-    - Preferences加入背景影片亮度調整功能(Screen Filter)
-    - Preferences加入預設Reverse功能(Default Scroll Reverse)
-    - 使用玩家預設NoteSkin(針對使用note(RV)玩家)
-    - 測試譜面時顯示歌詞、判定與連擊數
-    - 修正部分情況使用長條結尾當作假鍵(3號鍵)時閃退問題
-    - 修正add/edit bg change檔案名稱過長顯示跑版問題
-    - 歌曲 `#ATTACKS` 標籤：在 .sm 裡把 mod 排在時間軸上，所有玩家、所有難度都會套用
-      + 格式和 course 的 `#MODS` 相同：`TIME=開始秒數:LEN=持續秒數:MODS=mod 清單`，可接多段；
-        mod 前面加 `*N` 控制過渡速度（`*10000` 幾乎瞬間），百分比可以是負數
-      + 逐軌位移 mod `MoveX1`～`MoveX20`：100% = 一個箭頭寬，負數往左；接收箭頭、note、hold、判定一起移動，
-        軌道背板也會在分開的軌道之間切開
-      + 歌曲自帶的 attack 不播攻擊音效、不顯示在攻擊清單，battle／rave 的攻擊也不會清掉它；
-        打完最後一個 note 後的過關／失敗動畫期間繼續保留，離開遊戲畫面時才清掉；編輯器試玩時也會套用
-      + 例：666 在 85.87 秒把左兩軌往左、右兩軌往右各移 31.25%，到歌曲結束都維持分開
-        `#ATTACKS:TIME=85.870:LEN=9999.000:MODS=*10000 -31.25% movex1,*10000 -31.25% movex2,*10000 31.25% movex3,*10000 31.25% movex4;`
+需求：Windows 10 或更新版本、Visual Studio 2019 或含 v142 工具組的較新版本、Windows 10 SDK，以及 Win32 / x86 C++ 工具。
 
-## 連線模式
+### 1. 下載必要資源
 
-  | 快速鍵     | 功能             |
-  | -----     | -----            |
-  | F1        | 重讀connect資料夾 |
-  | F4        | 跳到當前選擇歌曲   |
-  | F5        | 快速重讀歌曲      |
-  | F8        | 開關玩家狀態列    |
-  | 同時按左右 | 切換一般模式選歌  |
-  
-  | 指令                      | 功能                                                  |
-  | -----                    | -----                                                 |
-  | /host {玩家名稱或玩家編號} | 更換房主                                               |
-  | /share [玩家編號]         | 傳送歌曲(過濾影片) 若不加玩家編號則傳送檔案給所有缺檔案玩家 |
-  | /sharefull [玩家編號]     | 傳送歌曲(包含影片) 若不加玩家編號則傳送檔案給所有缺檔案玩家 |
-  
-  + 缺歌檔案傳送功能(/share /sharefull)
-  + 修正CyberiaStyle 6連線模式無法顯示玩家名稱問題
-  + 修正歌包跳回ALL GROUPS問題
-  + 修正歌曲難度排序問題
-  + 結算成績畫面傳送玩家百分比
-  + 結算成績畫面傳送玩家血量graph
-  + 遊戲強制變更為不關門模式
-  + StandAloneServer(獨立執行伺服器，有視窗介面，說明見 [StandAloneServer/README.md](StandAloneServer/README.md))
-  + 確認所有玩家連線譜面相同(判斷譜面按鍵數)
-  + 大廳顯示玩家狀態(按F8開關)
-  + 不是置中的玩家，遊戲中成績列表會顯示在上方
-  + 大廳播放完整歌曲
-  + 大廳背景可換成目前選擇歌曲的背景圖（跟選歌畫面同一個開關：Options → Background Options → 選歌畫面 歌曲背景）
-    - 按住左右鍵換歌時不載入，放開、停在一首歌上才換，跟選歌畫面一樣
-    - 需要主題支援：CyberiaStyle 6 在 `ScreenNetSelectMusic background` 的共用背景（`Layer1`）和面板之間加一層
-      `File=currentsongbackground`（原本的 `Layer2`～`Layer6` 往後挪成 `Layer3`～`Layer7`）
+- [素材包 `Assets-pack.zip`](https://drive.google.com/file/d/1WMjjtO1CiMDN5yKbQ4CxyOb50TX7IsO8/view?usp=drive_link)
+- [第三方資源包 `ThirdParty-pack.zip`](https://drive.google.com/file/d/1mS1s-bfnuFG0_Snnzf2E15XQSKwRWeX8/view?usp=drive_link)
 
-## 其他
-   + 修正options玩家變更名稱錯誤問題
-   + options選預設charater(options->background options->danceing characters->static)
-   + 增加使用右邊數字鍵輸入數字功能
-   + options語言ini紀錄儲存
-   + 修正ScreenDemonstration無歌曲崩潰問題
-   + 遊戲內可以輸入中文：連線大廳的聊天、編輯器的文字輸入框（BPM、STOP 等）都能用輸入法打字
-     - 打字改從視窗的字元訊息讀，跟著鍵盤配置和輸入法；輸入法只在需要打字的畫面開啟，遊戲中不會跳出來
-     - 輸入法組字時，Enter、Esc、方向鍵只給輸入法用，不會順便送出訊息、離開大廳或換歌
+歌曲檔案不包含在素材包中，請自行放入 `Songs\`。
 
-## 測試與共同開發人員
-  + MKLUO
-  + 151
-  + sky
-  + Ameto
-  + HM
-  + Mochi
-  + Zelda-YEH
-  + Xiuer
-  
+### 2. 安裝資源
+
+```cmd
+git clone https://github.com/Yhaniki/SM-YHANIKI.git
+cd SM-YHANIKI
+scripts\setup-assets.cmd -Package D:\Downloads\Assets-pack.zip
+scripts\setup-thirdparty.cmd -Package D:\Downloads\ThirdParty-pack.zip
+```
+
+### 3. 建置
+
+使用 Visual Studio 開啟 [`src\SM-YHANIKI.sln`](src/SM-YHANIKI.sln)，選擇 `Release | x86` 並建置。
+
+輸出檔案為 `Program\StepMania.exe`；Debug 組態輸出為 `Program\StepMania-Debug.exe`。
+
+## 文件
+
+- [完整建置指南](docs/build.md)
+- [遊戲與譜面編輯器功能](docs/gameplay.md)
+- [網路功能](docs/network.md)
+- [獨立執行伺服器](StandAloneServer/README.md)
+
+## 致謝
+
+- [StepMania](https://github.com/stepmania/stepmania)
+- [ddrtime 編輯器版本的 StepMania](https://forum.gamer.com.tw/C.php?bsn=16862&snA=1184)
+- 感謝參與測試、回報問題及協助開發的貢獻者：MKLUO、151、sky、Ameto、HM、Mochi、Zelda-YEH、Xiuer。
