@@ -9,6 +9,7 @@ class Course;
 class Trail;
 
 #include "GameConstantsAndTypes.h"
+#include "NoteTypes.h"
 
 struct PlayerOptions
 {
@@ -113,6 +114,11 @@ struct PlayerOptions
 	/* If this is > 0, then the player must have life above this value at the end of
 	 * the song to pass.  This is independent of SongOptions::m_FailType. */
 	float		m_fPassmark,			m_SpeedfPassmark;
+
+	/* Per-column X offset ("MoveX1", "MoveX2", ...), in arrow widths: 1 = ARROW_SIZE
+	 * pixels, negative moves left.  Moves the whole column: receptors, notes, holds,
+	 * ghost arrows and hold judgments. */
+	float		m_fMoveX[MAX_NOTE_TRACKS],	m_SpeedfMoveX[MAX_NOTE_TRACKS];
 
 	bool		m_bTurns[NUM_TURNS];
 	bool		m_bTransforms[NUM_TRANSFORMS];

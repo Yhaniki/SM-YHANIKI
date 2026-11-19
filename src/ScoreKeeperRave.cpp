@@ -115,7 +115,7 @@ void ScoreKeeperRave::AddSuperMeterDelta( float fUnscaledPercentChange )
 		default:	ASSERT(0);
 		}
 		if( !bWinning )
-			GAMESTATE->RemoveActiveAttacksForPlayer( m_PlayerNumber );
+			GAMESTATE->RemoveActiveAttacksForPlayer( m_PlayerNumber, NUM_ATTACK_LEVELS, true );
 	}
 }
 
@@ -146,7 +146,7 @@ void ScoreKeeperRave::LaunchAttack( AttackLevel al )
 	a.sModifier = sAttackToGive;
 
 	// remove current attack (if any)
-	GAMESTATE->RemoveActiveAttacksForPlayer( pnToAttack );
+	GAMESTATE->RemoveActiveAttacksForPlayer( pnToAttack, NUM_ATTACK_LEVELS, true );
 
 	// apply new attack
 	GAMESTATE->LaunchAttack( pnToAttack, a );

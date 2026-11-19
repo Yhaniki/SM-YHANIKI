@@ -3073,6 +3073,11 @@ void ScreenEdit::SetupCourseAttacks()
 		for( unsigned i=0; i<Attacks.size(); ++i )
 			GAMESTATE->LaunchAttack( PLAYER_1, Attacks[i] );
 	}
+
+	/* The song's own #ATTACKS, same as in gameplay. */
+	for( unsigned i=0; i<m_pSong->m_Attacks.size(); ++i )
+		GAMESTATE->LaunchAttack( PLAYER_1, m_pSong->m_Attacks[i] );
+
 	GAMESTATE->RebuildPlayerOptionsFromActiveAttacks( PLAYER_1 );
 }
 

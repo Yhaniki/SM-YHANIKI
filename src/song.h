@@ -7,6 +7,7 @@
 #include "GameConstantsAndTypes.h"
 #include "Grade.h"
 #include "TimingData.h"
+#include "Attack.h"
 
 class Steps;
 class Style;
@@ -177,6 +178,9 @@ public:
 	 * judgments, combo and the rest of the gameplay UI. */
 	vector<BackgroundChange>	m_NoteLayerChanges;		// this must be sorted before gameplay
 	vector<LyricSegment>		m_LyricSegments;		// this must be sorted before gameplay
+	/* #ATTACKS: modifiers that turn on and off at fixed times in the song, for every
+	 * player and every difficulty (same format as a course's #MODS).  All have bFromSong. */
+	AttackArray					m_Attacks;
 
 	void AddBPMSegment( const BPMSegment &seg ) { m_Timing.AddBPMSegment( seg ); }
 	void AddStopSegment( const StopSegment &seg ) { m_Timing.AddStopSegment( seg ); }

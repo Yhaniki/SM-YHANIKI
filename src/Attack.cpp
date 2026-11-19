@@ -39,7 +39,8 @@ bool Attack::operator== ( const Attack &rhs ) const
 		EQUAL(fSecsRemaining) &&
 		EQUAL(sModifier) &&
 		EQUAL(bOn) &&
-		EQUAL(bGlobal);
+		EQUAL(bGlobal) &&
+		EQUAL(bFromSong);
 }
 
 bool Attack::ContainsTransformOrTurn() const
@@ -57,6 +58,41 @@ bool AttackArray::ContainsTransformOrTurn() const
 			return true;
 	}
 	return false;
+}
+
+void ParseAttackParams( const vector<CString> &asParams, Attack attack, AttackArray &out )
+{
+	float end = -9999;
+	for( unsigned j = 1; j < asParams.size(); ++j )
+	{
+		CStringArray sBits;
+		split( asParams[j], "=", sBits, false );
+		if( sBits.size() < 2 )
+			continue;
+
+		TrimLeft( sBits[0] );
+		TrimRight( sBits[0] );
+		if( !sBits[0].CompareNoCase("TIME") )
+			attack.fStartSecond = strtof( sBits[1], NULL );
+		else if( !sBits[0].CompareNoCase("LEN") )
+			attack.fSecsRemaining = strtof( sBits[1], NULL );
+		else if( !sBits[0].CompareNoCase("END") )
+			end = strtof( sBits[1], NULL );
+		else if( !sBits[0].CompareNoCase("MODS") )
+		{
+			if( end != -9999 )
+			{
+				attack.fSecsRemaining = end - attack.fStartSecond;
+				end = -9999;
+			}
+			/* Drop the line break before the next ":TIME=", or it is written back
+			 * as an extra blank line every time the file is saved. */
+			attack.sModifier = sBits[1];
+			TrimLeft( attack.sModifier );
+			TrimRight( attack.sModifier );
+			out.push_back( attack );
+		}
+	}
 }
 
 /*

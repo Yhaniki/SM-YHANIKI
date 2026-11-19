@@ -13,11 +13,15 @@ struct Attack
 	CString sModifier;
 	bool bOn; // for GAMESTATE
 	bool bGlobal; // true for song-wide course mods
+	/* From the song's own #ATTACKS: part of the chart's choreography, so it plays no
+	 * launch/end sounds, isn't listed in the attack displays, never changes the song
+	 * options, and battle/rave attacks don't remove it. */
+	bool bFromSong;
 
 	void GetAttackBeats( const Song *song, PlayerNumber pn, float &fStartBeat, float &fEndBeat ) const;
 	bool IsBlank() { return sModifier.empty(); }
 	void MakeBlank() { sModifier=""; }
-	Attack() { fStartSecond = -1; bOn = false; bGlobal = false; }
+	Attack() { fStartSecond = -1; bOn = false; bGlobal = false; bFromSong = false; }
 	bool operator== ( const Attack &rhs ) const;
 	bool ContainsTransformOrTurn() const;
 };
@@ -26,6 +30,12 @@ struct AttackArray : public vector<Attack>
 {
 	bool ContainsTransformOrTurn() const;
 };
+
+/* Reads the "TIME=s:LEN=s:MODS=mods[:TIME=...]" params of a course #MODS or a song
+ * #ATTACKS (asParams[0] is the tag name and is skipped) and appends one attack per
+ * MODS= to out.  END=s can be given instead of LEN.  TIME and LEN that aren't given
+ * again carry over from the previous attack; the first one starts out as proto. */
+void ParseAttackParams( const vector<CString> &asParams, Attack proto, AttackArray &out );
 
 #endif
 

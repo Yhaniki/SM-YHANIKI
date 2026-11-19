@@ -30,6 +30,7 @@ void PlayerOptions::Init()
 	m_fPerspectiveTilt = 0;		m_SpeedfPerspectiveTilt = 1.0f;
 	m_fSkew = 0;				m_SpeedfSkew = 1.0f;
 	m_fPassmark = 0;			m_SpeedfPassmark = 1.0f;
+	ZERO( m_fMoveX );			ONE( m_SpeedfMoveX );
 	ZERO( m_bTurns );
 	ZERO( m_bTransforms );
 	m_bProTiming = false;
@@ -52,6 +53,8 @@ void PlayerOptions::Approach( const PlayerOptions& other, float fDeltaSeconds )
 		APP( fAppearances[i] );
 	for( i=0; i<NUM_SCROLLS; i++ )
 		APP( fScrolls[i] );
+	for( i=0; i<MAX_NOTE_TRACKS; i++ )
+		APP( fMoveX[i] );
 	APP( fTimeSpacing );
 	APP( fScrollSpeed );
 	APP( fDark );
@@ -132,6 +135,12 @@ CString PlayerOptions::GetString() const
 	sReturn += AddPart( m_fCover,	"Cover");
 
 	sReturn += AddPart( m_fPassmark, "Passmark");
+
+	/* Not rounded to whole percents like AddPart, so that the string reads back
+	 * the same offsets.  Negative values are allowed. */
+	for( int c=0; c<MAX_NOTE_TRACKS; c++ )
+		if( m_fMoveX[c] != 0 )
+			sReturn += ssprintf( "%g%% MoveX%d, ", m_fMoveX[c]*100, c+1 );
 
 	if( m_bTurns[TURN_MIRROR] )			sReturn += "Mirror, ";
 	if( m_bTurns[TURN_LEFT] )			sReturn += "Left, ";
@@ -390,6 +399,34 @@ CString PlayerOptions::GetString3() const
 		sReturn.erase( sReturn.GetLength()-2 );	// delete the trailing ", "
 	return sReturn;
 }
+
+/* "150%", "-31.25%", ".5%": the level in front of a mod name.  A sign is
+ * allowed for mods that can go negative, like MoveX. */
+static bool IsLevelToken( const CString &s )
+{
+	unsigned i = 0;
+	if( i < s.size() && (s[i] == '-' || s[i] == '+') )
+		++i;
+	if( i < s.size() && s[i] == '.' )
+		++i;
+	return i < s.size() && isdigit( (unsigned char) s[i] );
+}
+
+/* "movex1" -> 0.  Returns -1 if sBit isn't "movex<column>". */
+static int GetMoveXColumn( const CString &sBit )
+{
+	const int iPrefixLen = 5;	// "movex"
+	if( sBit.Left(iPrefixLen) != "movex" )
+		return -1;
+	const CString sNumber = sBit.Right( sBit.size() - iPrefixLen );
+	if( !IsAnInt(sNumber) )
+		return -1;
+	const int iCol = atoi( sNumber ) - 1;
+	if( iCol < 0 || iCol >= MAX_NOTE_TRACKS )
+		return -1;
+	return iCol;
+}
+
 /* Options are added to the current settings; call Init() beforehand if
  * you don't want this. */
 void PlayerOptions::FromString( CString sOptions )
@@ -441,7 +478,7 @@ void PlayerOptions::FromString( CString sOptions )
 		{
 			if( asParts[j] == "no" )
 				level = 0;
-			else if( isdigit(asParts[j][0]) )
+			else if( IsLevelToken(asParts[j]) )
 			{
 				/* If the last character is a *, they probably said "123*" when
 				 * they meant "*123". */
@@ -505,6 +542,11 @@ void PlayerOptions::FromString( CString sOptions )
 		else if( sBit == "centered" || sBit == "converge" )	SET_FLOAT( fScrolls[SCROLL_CENTERED] )
 		else if( sBit == "noholds" || sBit == "nofreeze" )	m_bTransforms[TRANSFORM_NOHOLDS] = on;
 		else if( sBit == "nomines" )	m_bTransforms[TRANSFORM_NOMINES] = on;
+		else if( GetMoveXColumn(sBit) != -1 )
+		{
+			const int iCol = GetMoveXColumn( sBit );
+			SET_FLOAT( fMoveX[iCol] )
+		}
 		else if( sBit == "dark" )		SET_FLOAT( fDark )
 		else if( sBit == "blind" )		SET_FLOAT( fBlind )
 		else if( sBit == "cover" )		SET_FLOAT( fCover )
@@ -752,6 +794,8 @@ bool PlayerOptions::operator==( const PlayerOptions &other ) const
 		COMPARE(m_fAppearances[i]);
 	for( i = 0; i < PlayerOptions::NUM_SCROLLS; ++i )
 		COMPARE(m_fScrolls[i]);
+	for( i = 0; i < MAX_NOTE_TRACKS; ++i )
+		COMPARE(m_fMoveX[i]);
 	for( i = 0; i < PlayerOptions::NUM_TURNS; ++i )
 		COMPARE(m_bTurns[i]);
 	for( i = 0; i < PlayerOptions::NUM_TRANSFORMS; ++i )

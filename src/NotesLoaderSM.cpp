@@ -456,6 +456,30 @@ bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out 
 			}
 		}
 
+		/* Same format as a course's #MODS: TIME=s:LEN=s:MODS=mods[:TIME=...] */
+		else if( 0==stricmp(sValueName,"ATTACKS") )
+		{
+			Attack proto;
+			proto.level = NUM_ATTACK_LEVELS;	// not a battle attack; see GetSumOfActiveAttackLevels
+			proto.fStartSecond = 0;
+			proto.fSecsRemaining = 0;
+			proto.bFromSong = true;
+
+			AttackArray attacks;
+			ParseAttackParams( sParams.params, proto, attacks );
+			for( unsigned a=0; a<attacks.size(); a++ )
+			{
+				if( attacks[a].fStartSecond < 0 || attacks[a].fSecsRemaining <= 0 )
+				{
+					LOG->Warn( "The song file '%s' has an #ATTACKS entry with an invalid TIME or LEN "
+						"(TIME=%.3f, LEN=%.3f, MODS=%s); ignored.", sPath.c_str(),
+						attacks[a].fStartSecond, attacks[a].fSecsRemaining, attacks[a].sModifier.c_str() );
+					continue;
+				}
+				out.m_Attacks.push_back( attacks[a] );
+			}
+		}
+
 		/* The index has no note data, so it stores the hash of the notes in the
 		 * cache file here (see NotesWriterSM::GetCacheMetaText). */
 		else if( 0==stricmp(sValueName,"STEPSHASH") )
