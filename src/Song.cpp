@@ -117,6 +117,12 @@ void Song::AddForegroundChange( BackgroundChange seg )
 	SortBackgroundChangesArray( m_ForegroundChanges );
 }
 
+void Song::AddNoteLayerChange( BackgroundChange seg )
+{
+	m_NoteLayerChanges.push_back( seg );
+	SortBackgroundChangesArray( m_NoteLayerChanges );
+}
+
 void Song::AddLyricSegment( LyricSegment seg )
 {
 	m_LyricSegments.push_back( seg );

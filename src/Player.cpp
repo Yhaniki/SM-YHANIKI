@@ -79,6 +79,9 @@ PlayerMinus::PlayerMinus()
 	
 	m_iOffsetSample = 0;
 
+	m_bSplitDraw = false;
+	m_bInOverlayPass = false;
+
 	this->AddChild( &m_ArrowBackdrop );
 	this->AddChild( &m_Judgment );
 	this->AddChild( &m_ProTimingDisplay );
@@ -506,7 +509,25 @@ void PlayerMinus::DrawPrimitives()
 		m_PlayerNumber != GAMESTATE->m_MasterPlayerNumber )
 		return;
 
+	// When split, the note field and the overlay are drawn in separate passes.
+	if( !m_bSplitDraw || !m_bInOverlayPass )
+		DrawNoteFieldPart();
+	if( !m_bSplitDraw || m_bInOverlayPass )
+		DrawOverlayPart();
+}
 
+void PlayerMinus::DrawOverlayPass()
+{
+	if( !m_bSplitDraw )
+		return;	// Draw() already rendered everything
+
+	m_bInOverlayPass = true;
+	Draw();
+	m_bInOverlayPass = false;
+}
+
+void PlayerMinus::DrawNoteFieldPart()
+{
 	// Draw these below everything else.
 	// m_ArrowBackdrop.Draw();
 	// if( GAMESTATE->m_PlayerOptions[m_PlayerNumber].m_fBlind == 0 )
@@ -559,8 +580,10 @@ void PlayerMinus::DrawPrimitives()
 
 	DISPLAY->CameraPopMatrix();
 	DISPLAY->PopMatrix();
+}
 
-
+void PlayerMinus::DrawOverlayPart()
+{
 	if( !TAP_JUDGMENTS_UNDER_FIELD )
 		DrawTapJudgments();
 

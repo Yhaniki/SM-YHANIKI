@@ -378,6 +378,7 @@ void ScreenGameplay::Init()
 
 		m_Player[p].SetName( ssprintf("Player%i", p+1) );
 		m_Player[p].SetX( fPlayerX );
+		m_Player[p].SetSplitDraw( true );
 		this->AddChild( &m_Player[p] );
 	
 		m_sprOniGameOver[p].SetName( ssprintf("OniGameOver%i", p+1) );
@@ -385,6 +386,15 @@ void ScreenGameplay::Init()
 		m_sprOniGameOver[p].SetX( fPlayerX );
 		m_sprOniGameOver[p].SetY( SCREEN_TOP - m_sprOniGameOver[p].GetZoomedHeight()/2 );
 		m_sprOniGameOver[p].SetDiffuse( RageColor(1,1,1,0) );	// 0 alpha so we don't waste time drawing while not visible
+	}
+
+	/* Draw every player's note field, then the note layer once, then every player's
+	 * judgments and combo, so the note layer never covers any player's judgments. */
+	this->AddChild( &m_NoteLayer );
+	FOREACH_EnabledPlayer(p)
+	{
+		m_PlayerOverlay[p].SetPlayer( &m_Player[p] );
+		this->AddChild( &m_PlayerOverlay[p] );
 		this->AddChild( &m_sprOniGameOver[p] );
 	}
 
@@ -1143,6 +1153,8 @@ void ScreenGameplay::LoadNextSong()
 	}
 
 	m_Foreground.LoadFromSong( GAMESTATE->m_pCurSong );
+
+	m_NoteLayer.LoadFromSong( GAMESTATE->m_pCurSong, GAMESTATE->m_pCurSong->m_NoteLayerChanges );
 
 	m_fTimeSinceLastDancingComment = 0;
 

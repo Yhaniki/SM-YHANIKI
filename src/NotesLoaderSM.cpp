@@ -442,6 +442,20 @@ bool SMLoader::LoadFromMsd( const MsdFile &msd, const CString &sPath, Song &out 
 			}
 		}
 
+		/* Same format as #FGCHANGES; drawn between the note field and the judgments. */
+		else if( 0==stricmp(sValueName,"NOTELAYERCHANGES") )
+		{
+			CStringArray aChangeExpressions;
+			split( sParams[1], ",", aChangeExpressions );
+
+			for( unsigned b=0; b<aChangeExpressions.size(); b++ )
+			{
+				BackgroundChange change;
+				if( LoadFromBGChangesString( change, aChangeExpressions[b] ) )
+					out.AddNoteLayerChange( change );
+			}
+		}
+
 		/* The index has no note data, so it stores the hash of the notes in the
 		 * cache file here (see NotesWriterSM::GetCacheMetaText). */
 		else if( 0==stricmp(sValueName,"STEPSHASH") )

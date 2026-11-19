@@ -95,6 +95,7 @@ protected:
 	Player			m_Player;
 	Background		m_Background;
 	Foreground		m_Foreground;
+	Foreground		m_NoteLayer;	// #NOTELAYERCHANGES; drawn by hand, not a child
 	Course			*m_pAttacksFromCourse;
 
 // for MODE_RECORD and MODE_PLAY

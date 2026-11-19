@@ -16,6 +16,24 @@
  * as when they were written line by line. */
 static inline void PutLine( CString &f, const CString &str ) { f += str; f += "\r\n"; }
 
+/* Writes an #FGCHANGES-style tag; nothing is written when there are no changes. */
+static void WriteLayerChanges( CString &f, const CString &sTag, const vector<BackgroundChange> &aChanges )
+{
+	if( aChanges.empty() )
+		return;
+
+	f += "#" + sTag + ":";
+	for( unsigned i=0; i<aChanges.size(); i++ )
+	{
+		const BackgroundChange &seg = aChanges[i];
+
+		PutLine( f, ssprintf( "%.3f=%s=%.3f=%d=%d=%d", seg.m_fStartBeat, seg.m_sBGName.c_str(), seg.m_fRate, seg.m_bFadeLast, seg.m_bRewindMovie, seg.m_bLoop ) );
+		if( i != aChanges.size()-1 )
+			f += ",";
+	}
+	PutLine( f, ";" );
+}
+
 void NotesWriterSM::WriteGlobalTags( CString &f, const Song &out )
 {
 	PutLine( f, ssprintf( "#TITLE:%s;", out.m_sMainTitle.c_str() ) );
@@ -111,19 +129,8 @@ void NotesWriterSM::WriteGlobalTags( CString &f, const Song &out )
 		PutLine( f, "99999=-nosongbg-=1.000=0=0=0 // don't automatically add -songbackground-" );
 	PutLine( f, ";" );
 
-	if( out.m_ForegroundChanges.size() )
-	{
-		f += "#FGCHANGES:";
-		for( i=0; i<out.m_ForegroundChanges.size(); i++ )
-		{
-			const BackgroundChange &seg = out.m_ForegroundChanges[i];
-
-			PutLine( f, ssprintf( "%.3f=%s=%.3f=%d=%d=%d", seg.m_fStartBeat, seg.m_sBGName.c_str(), seg.m_fRate, seg.m_bFadeLast, seg.m_bRewindMovie, seg.m_bLoop ) );
-			if( i != out.m_ForegroundChanges.size()-1 )
-				f += ",";
-		}
-		PutLine( f, ";" );
-	}
+	WriteLayerChanges( f, "FGCHANGES", out.m_ForegroundChanges );
+	WriteLayerChanges( f, "NOTELAYERCHANGES", out.m_NoteLayerChanges );
 }
 
 void NotesWriterSM::WriteCacheTags( CString &f, const Song &out )

@@ -50,6 +50,13 @@ public:
 
 	static float GetMaxStepDistanceSeconds();
 	int combo_Editing;
+
+	/* Split drawing lets a screen put a layer (the song's note layer) between the
+	 * note field and everything drawn above it.  When split, Draw() renders only
+	 * the note field, and DrawOverlayPass() renders the judgments, combo, etc.
+	 * with the same transform. */
+	void SetSplitDraw( bool bSplit ) { m_bSplitDraw = bSplit; }
+	void DrawOverlayPass();
 protected:
 	void UpdateTapNotesMissedOlderThan( float fMissIfOlderThanThisBeat );
 	void OnRowCompletelyJudged( int iStepIndex );
@@ -58,6 +65,8 @@ protected:
 	void HandleAutosync(float fNoteOffset);
 	void DrawTapJudgments();
 	void DrawHoldJudgments();
+	void DrawNoteFieldPart();
+	void DrawOverlayPart();
 
 	int GetClosestNoteDirectional( int col, float fBeat, float fMaxBeatsAhead, int iDirection ) const;
 	int GetClosestNote( int col, float fBeat, float fMaxBeatsAhead, float fMaxBeatsBehind ) const;
@@ -95,6 +104,9 @@ protected:
 	RageSound		m_soundMine;
 	RageSound		m_soundAttackLaunch;
 	RageSound		m_soundAttackEnding;
+
+	bool			m_bSplitDraw;
+	bool			m_bInOverlayPass;
 };
 
 class Player : public PlayerMinus
@@ -105,6 +117,19 @@ public:
 protected:
 	NoteField		m_NoteField;
 
+};
+
+/* Draws a split player's overlay pass at this actor's place in its parent's draw
+ * order; see PlayerMinus::SetSplitDraw. */
+class PlayerOverlayProxy : public Actor
+{
+public:
+	PlayerOverlayProxy() { m_pPlayer = NULL; }
+	void SetPlayer( PlayerMinus *pPlayer ) { m_pPlayer = pPlayer; }
+	virtual void DrawPrimitives() { if( m_pPlayer ) m_pPlayer->DrawOverlayPass(); }
+
+private:
+	PlayerMinus		*m_pPlayer;
 };
 
 #endif

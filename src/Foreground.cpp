@@ -23,6 +23,11 @@ void Foreground::Unload()
 
 void Foreground::LoadFromSong( const Song *pSong )
 {
+	LoadFromSong( pSong, pSong->m_ForegroundChanges );
+}
+
+void Foreground::LoadFromSong( const Song *pSong, const vector<BackgroundChange> &aChanges )
+{
 	/* Replace whatever was loaded before, like Background::LoadFromSong.  Otherwise
 	 * the next song in a course would also replay the previous songs' layers. */
 	Unload();
@@ -32,9 +37,9 @@ void Foreground::LoadFromSong( const Song *pSong )
 	TEXTUREMAN->SetDefaultTexturePolicy( RageTextureID::TEX_VOLATILE );
 
 	m_pSong = pSong;
-	for( unsigned i=0; i<pSong->m_ForegroundChanges.size(); i++ )
+	for( unsigned i=0; i<aChanges.size(); i++ )
 	{
-		const BackgroundChange &change = pSong->m_ForegroundChanges[i];
+		const BackgroundChange &change = aChanges[i];
 		CString sBGName = change.m_sBGName;
 		
 		const CString sAniDir = pSong->GetSongDir()+sBGName;
