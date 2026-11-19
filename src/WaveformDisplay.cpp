@@ -28,6 +28,11 @@ static const RageColor COLOR_PEAK(        0x4a/255.f, 0x3f/255.f, 0x0d/255.f, 1 
 static const RageColor COLOR_RMS_LO(      0x8a/255.f, 0x77/255.f, 0x18/255.f, 1 );
 static const RageColor COLOR_RMS_HI(      0xf0/255.f, 0xcf/255.f, 0x3a/255.f, 1 );
 static const RageColor COLOR_NOW(         0, 0, 1, 1 );
+/* Height of the blue line at the current song position (where notes are placed),
+ * NoteField units.  The edit NoteField is zoomed 0.5, so this is one screen unit,
+ * as thick as the original waveform's line (DrawLineStrip width 1).  Half of
+ * that is under a pixel at 1024x768 and can miss every pixel, so no line shows. */
+static const float NOW_LINE_HEIGHT	= 2.f;
 
 /* Size of the smallest bin (RMS window), seconds. */
 static const double BIN_SECONDS	= 0.002;
@@ -376,8 +381,8 @@ void WaveformDisplay::DrawPrimitives()
 		AddQuad( -fHalfWidth, fNowY - 2.f, fRight, fNowY + 2.f, COLOR_RMS_LO );
 	}
 
-	/* Current song position. */
-	AddQuad( -fHalfWidth, fNowY - 0.5f, fHalfWidth, fNowY + 0.5f, COLOR_NOW );
+	/* Current song position: the blue line where notes are placed. */
+	AddQuad( -fHalfWidth, fNowY - NOW_LINE_HEIGHT/2, fHalfWidth, fNowY + NOW_LINE_HEIGHT/2, COLOR_NOW );
 
 	FlushQuads();
 }
