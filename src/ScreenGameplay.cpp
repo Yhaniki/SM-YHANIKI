@@ -2357,7 +2357,11 @@ void ScreenGameplay::HandleScreenMessage( const ScreenMessage SM )
 				return;		// ignore
 			m_DancingState = STATE_OUTRO;
 
-			GAMESTATE->RemoveAllActiveAttacks();
+			/* Keep the song's own #ATTACKS through the outro, so its mods (e.g. lanes
+			 * moved apart with MoveX) don't tween back while "cleared" or "failed" is
+			 * showing.  SongFinished() removes them before we leave the screen. */
+			FOREACH_PlayerNumber( p )
+				GAMESTATE->RemoveActiveAttacksForPlayer( p, NUM_ATTACK_LEVELS, true );
 			FOREACH_EnabledPlayer( p )
 				m_ActiveAttackList[p].Refresh();
 
