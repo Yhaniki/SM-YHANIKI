@@ -25,6 +25,8 @@ public:
 						const GameInput& GameI, const MenuInput& MenuI,
 						const StyleInput& StyleI );
 	virtual void HandleScreenMessage( const ScreenMessage SM );
+	virtual bool WantsTextInput() const;
+	virtual void HandleTextInput( const CString &sText );
 
 	void UpdateSongsListPos();
 	void UpdateGroupsListPos();

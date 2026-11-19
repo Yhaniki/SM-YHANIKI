@@ -24,6 +24,7 @@
 
 #include "SongUtil.h"
 #include "InputMapper.h"
+#include "TextInput.h"
 //==========
 #include "NoteField.h"
 #include <iostream>
@@ -121,6 +122,7 @@ ScreenNetSelectMusic::ScreenNetSelectMusic( const CString& sName ) : ScreenWithM
 	m_textChatInput.SetWrapWidthPixels( (int)(CHATINPUT_WIDTH * 2) );
 	SET_XY_AND_ON_COMMAND( m_textChatInput );
 	this->AddChild( &m_textChatInput );
+	UpdateTextInput();
 
 	m_textOutHidden.LoadFromFont( THEME->GetPathF("ScreenNetSelectMusic","chat") );
 	m_textOutHidden.SetWrapWidthPixels( (int)(CHATOUTPUT_WIDTH * 2) );
@@ -406,6 +408,11 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 	if ((type != IET_FIRST_PRESS) && (type != IET_SLOW_REPEAT) && (type != IET_FAST_REPEAT))
 		return;
 
+	/* While the IME is composing, keys are for it: arrows pick a word, Enter takes
+	 * it, Escape cancels it.  They aren't menu keys. */
+	if (DeviceI.device == DEVICE_KEYBOARD && TextInput::IsComposing())
+		return;
+
 	if ((DeviceI.button == KEY_RIGHT || DeviceI.button == KEY_LEFT) ||
 		(MenuI.button == MENU_BUTTON_RIGHT || MenuI.button == MENU_BUTTON_LEFT))
 	{
@@ -450,10 +457,6 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 		MenuDown(MenuI.player, type);
 		return;
 	}
-	bool bHoldingShift =
-		INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_LSHIFT)) ||
-		INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_RSHIFT));
-
 	bool bHoldingCtrl =
 		INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_LCTRL)) ||
 		INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_RCTRL)) ||
@@ -494,19 +497,14 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 	{
 	case KEY_ENTER:
 	case KEY_KP_ENTER:
+		/* Enter sends the chat line.  That comes in as typed text (HandleTextInput),
+		 * so the Enter that picks a word in the IME doesn't send it too.  Ctrl+Enter
+		 * goes on to start the song. */
 		if (!bHoldingCtrl)
-		{
-			if (m_sTextInput != "")
-				NSMAN->SendChat(m_sTextInput);
-			m_sTextInput = "";
-			UpdateTextInput();
 			return;
-		}
 		break;
 	case KEY_BACK:
-		if (!m_sTextInput.empty())
-			m_sTextInput = m_sTextInput.erase(m_sTextInput.size() - 1);
-		UpdateTextInput();
+		/* Backspace comes in as typed text, too. */
 		break;
 
 		// case KEY_F1:
@@ -538,35 +536,6 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 		{
 			input_check = true;
 		}
-		if (bHoldingShift && !bHoldingCtrl)
-		{
-			c = (char)toupper(c);
-
-			switch (c)
-			{
-			case '`':	c = '~';	break;
-			case '1':	c = '!';	break;
-			case '2':	c = '@';	break;
-			case '3':	c = '#';	break;
-			case '4':	c = '$';	break;
-			case '5':	c = '%';	break;
-			case '6':	c = '^';	break;
-			case '7':	c = '&';	break;
-			case '8':	c = '*';	break;
-			case '9':	c = '(';	break;
-			case '0':	c = ')';	break;
-			case '-':	c = '_';	break;
-			case '=':	c = '+';	break;
-			case '[':	c = '{';	break;
-			case ']':	c = '}';	break;
-			case '\'':	c = '"';	break;
-			case '\\':	c = '|';	break;
-			case ';':	c = ':';	break;
-			case ',':	c = '<';	break;
-			case '.':	c = '>';	break;
-			case '/':	c = '?';	break;
-			}
-		}
 
 		//Search list for given letter (to aide in searching)
 		if (bHoldingCtrl)
@@ -581,17 +550,53 @@ void ScreenNetSelectMusic::Input( const DeviceInput& DeviceI, const InputEventTy
 				}
 		}
 
-		if ((c >= ' ') && (!bHoldingCtrl))
-		{
-			m_sTextInput += c;
-			UpdateTextInput();
-		}
+		/* Characters for the chat line come in as typed text (HandleTextInput),
+		 * which follows the keyboard layout and the IME. */
 		break;
 	}
 	if (!input_check && DeviceI.button != KEY_F1)
 	{
 		Screen::Input(DeviceI, type, GameI, MenuI, StyleI);	// default input handler
 	}
+}
+
+bool ScreenNetSelectMusic::WantsTextInput() const
+{
+	/* Chatting needs the server.  Disconnected, letters search the song list. */
+	return NSMAN->useSMserver;
+}
+
+void ScreenNetSelectMusic::HandleTextInput( const CString &sText )
+{
+	if (m_In.IsTransitioning() || m_Out.IsTransitioning())
+		return;
+
+	/* Work in characters, so Backspace removes a whole Chinese character rather
+	 * than one byte of it. */
+	wstring sLine = CStringToWstring( m_sTextInput );
+	const wstring sTyped = CStringToWstring( sText );
+	for( unsigned i = 0; i < sTyped.size(); ++i )
+	{
+		const wchar_t c = sTyped[i];
+		if( c == L'\r' )
+		{
+			if( !sLine.empty() )
+				NSMAN->SendChat( WStringToCString(sLine) );
+			sLine = L"";
+		}
+		else if( c == L'\b' )
+		{
+			if( !sLine.empty() )
+				sLine.erase( sLine.size()-1 );
+		}
+		else if( c >= L' ' )
+		{
+			sLine += c;
+		}
+	}
+
+	m_sTextInput = WStringToCString( sLine );
+	UpdateTextInput();
 }
 bool ScreenNetSelectMusic::CheckHash(Song * temp_song)
 {
@@ -1309,6 +1314,9 @@ void ScreenNetSelectMusic::UpdateTextInput()
 {
 	// m_textChatInput.SetText2( m_sTextInput );
 	m_textChatInput.SetText( m_sTextInput );  
+
+	/* The IME shows what's being composed right after the chat line. */
+	TextInput::SetCompositionPos( m_textChatInput.GetDestX() + m_textChatInput.GetZoomedWidth(), m_textChatInput.GetDestY() );
 }
 
 void ScreenNetSelectMusic::StartSelectedSong()

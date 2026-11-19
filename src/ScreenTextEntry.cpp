@@ -9,6 +9,7 @@
 #include "ThemeManager.h"
 #include "FontCharAliases.h"
 #include "GameState.h"
+#include "TextInput.h"
 
 const float QUESTION_X	=	CENTER_X;
 const float QUESTION_Y	=	CENTER_Y - 60;
@@ -73,6 +74,9 @@ void ScreenTextEntry::UpdateText()
 	CString txt = WStringToCString(m_sAnswer);
 	FontCharAliases::ReplaceMarkers(txt);
 	m_textAnswer.SetText( txt );
+
+	/* The IME shows what's being composed right after the answer (it's centered). */
+	TextInput::SetCompositionPos( ANSWER_X + m_textAnswer.GetZoomedWidth()/2, ANSWER_Y - m_textAnswer.GetZoomedHeight()/2 );
 }
 
 void ScreenTextEntry::Update( float fDeltaTime )
@@ -93,6 +97,13 @@ void ScreenTextEntry::Input( const DeviceInput& DeviceI, const InputEventType ty
 	if( type != IET_FIRST_PRESS )
 		return;
 
+	/* While the IME is composing, keys are for it: Enter takes a word, Escape
+	 * cancels it. */
+	if( DeviceI.device == DEVICE_KEYBOARD && TextInput::IsComposing() )
+		return;
+
+	/* Characters and Backspace come in as typed text (HandleTextInput), which
+	 * follows the keyboard layout and the IME. */
 	switch( DeviceI.button )
 	{
 	case KEY_ESC:
@@ -103,63 +114,40 @@ void ScreenTextEntry::Input( const DeviceInput& DeviceI, const InputEventType ty
 	case KEY_KP_ENTER:
 		MenuStart(PLAYER_1);
 		break;
-	case KEY_BACK:
-		if(!m_sAnswer.empty())
-			m_sAnswer = m_sAnswer.erase( m_sAnswer.size()-1 );
-		if(GAMESTATE->m_bClearText == true)
+	}
+}
+
+bool ScreenTextEntry::WantsTextInput() const
+{
+	return true;
+}
+
+void ScreenTextEntry::HandleTextInput( const CString &sText )
+{
+	if( m_In.IsTransitioning() || m_Out.IsTransitioning() )
+		return;
+
+	/* Enter and Escape are handled as keys, in Input(). */
+	const wstring sTyped = CStringToWstring( sText );
+	for( unsigned i = 0; i < sTyped.size(); ++i )
+	{
+		const wchar_t c = sTyped[i];
+		if( c == L'\b' )
 		{
-			GAMESTATE->m_bClearText = false;
-			m_sAnswer.clear();
-		}
-		UpdateText();
-		break;
-	default:
-		char c;
-		c = DeviceI.ToChar();
-
-		bool bHoldingShift = 
-			INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_LSHIFT)) ||
-			INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_RSHIFT));
-
-		// International keyboards often have other keys mapped to shifted keys, and always 
-		// using a US layout is a bit gimped.  This is better than nothing though.
-		if( bHoldingShift )
-		{
-			c = (char)toupper(c);
-
-			switch( c )
+			if(!m_sAnswer.empty())
+				m_sAnswer = m_sAnswer.erase( m_sAnswer.size()-1 );
+			if(GAMESTATE->m_bClearText == true)
 			{
-			case '`':	c='~';	break;
-			case '1':	c='!';	break;
-			case '2':	c='@';	break;
-			case '3':	c='#';	break;
-			case '4':	c='$';	break;
-			case '5':	c='%';	break;
-			case '6':	c='^';	break;
-			case '7':	c='&';	break;
-			case '8':	c='*';	break;
-			case '9':	c='(';	break;
-			case '0':	c=')';	break;
-			case '-':	c='_';	break;
-			case '=':	c='+';	break;
-			case '[':	c='{';	break;
-			case ']':	c='}';	break;
-			case '\\':	c='|';	break;
-			case ';':	c=':';	break;
-			case '\'':	c='"';	break;
-			case ',':	c='<';	break;
-			case '.':	c='>';	break;
-			case '/':	c='?';	break;
+				GAMESTATE->m_bClearText = false;
+				m_sAnswer.clear();
 			}
 		}
-
-		if( c >= ' ' )
+		else if( c >= L' ' )
 		{
 			m_sAnswer += c;
-			UpdateText();
 		}
-		break;
 	}
+	UpdateText();
 }
 
 void ScreenTextEntry::HandleScreenMessage( const ScreenMessage SM )

@@ -47,6 +47,7 @@
 #include "GameManager.h"
 #include "FontManager.h"
 #include "InputFilter.h"
+#include "TextInput.h"
 #include "InputMapper.h"
 #include "InputQueue.h"
 #include "SongCacheIndex.h"
@@ -1419,6 +1420,18 @@ bool HandleGlobalInputs( DeviceInput DeviceI, InputEventType type, GameInput Gam
 	return false;
 }
 
+/* Text typed this frame goes to the top screen, if it takes text. */
+static void HandleTextInput()
+{
+	Screen *pTop = SCREENMAN->GetTopScreen();
+	const bool bWantText = g_bHasFocus && pTop != NULL && pTop->WantsTextInput();
+	TextInput::Update( bWantText );
+
+	const CString sText = TextInput::GetTypedText();
+	if( bWantText && !sText.empty() && !pTop->IsFirstUpdate() )
+		pTop->HandleTextInput( sText );
+}
+
 static void HandleInputEvents(float fDeltaTime)
 {
 	INPUTFILTER->Update( fDeltaTime );
@@ -1561,6 +1574,7 @@ static void GameLoop()
 
 		/* Important:  Process input AFTER updating game logic, or input will be acting on song beat from last frame */
 		HandleInputEvents( fDeltaTime );
+		HandleTextInput();
 
 		LIGHTSMAN->Update( fDeltaTime );
 
