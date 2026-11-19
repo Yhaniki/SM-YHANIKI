@@ -463,6 +463,19 @@ void PlayerOptions::FromString( CString sOptions )
 			continue;
 		}
 
+		/* Before lane backplates, a backplate was picked as a character: SINGLES[L]
+		 * (lanes on the left) and SINGLES[S] (lanes in the middle) were 2D characters
+		 * that only drew a carbon plate at a fixed spot on the screen.  Profiles still
+		 * have these names saved, so turn them into the Carbon lane backplate (the
+		 * same picture), which follows the lanes.  An explicit "backplate:" later in
+		 * the string still wins, since the character comes first in GetString. */
+		if( sBit == "singles[l]" || sBit == "singles[s]" )
+		{
+			if( m_sBackplate.empty() )
+				m_sBackplate = "carbon";
+			continue;
+		}
+
 		int i1;
 
 		Regex mult("^([0-9]+(\\.[0-9]+)?)x$");
