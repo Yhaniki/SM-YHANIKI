@@ -219,6 +219,7 @@ MOVE( BackgroundMode,		PREFSMAN->m_BackgroundMode );
 MOVE( ShowDanger,			PREFSMAN->m_bShowDanger );
 MOVE( DancingCharacters,	PREFSMAN->m_ShowDancingCharacters );
 MOVE( BeginnerHelper,		PREFSMAN->m_bShowBeginnerHelper );
+MOVE( SelectMusicSongBG,	PREFSMAN->m_bSelectMusicSongBackground );
 
 static void BGBrightness( int &sel, bool ToSel, const CStringArray &choices )
 {
@@ -462,6 +463,7 @@ static const ConfOption g_ConfOptions[] =
 	ConfOption( "Dancing\nCharacters",	DancingCharacters,	"DEFAULT TO OFF","DEFAULT TO RANDOM","SELECT","STATIC" ),
 	ConfOption( "Beginner\nHelper",		BeginnerHelper,		"OFF","ON" ),
 	ConfOption( "Random\nBackgrounds",	NumBackgrounds,		"5","10","15","20" ),
+	ConfOption( "Select Music\nSong BG",	SelectMusicSongBG,	"OFF","ON" ),
 
 	/* Input options */
 	ConfOption( "Auto Map\nOn Joy Change",	AutoMapOnJoyChange,	"OFF","ON (recommended)" ),
