@@ -1,5 +1,6 @@
 #include "global.h"
 #include "PlayerOptions.h"
+#include "LaneBackplate.h"
 #include "RageUtil.h"
 #include "RageLog.h"
 
@@ -37,6 +38,8 @@ void PlayerOptions::Init()
 	m_sPositioning = "";	// "null"
 	m_sNoteSkin = "default";
 	m_sCharacter = "default";
+	m_sBackplate = "";
+	m_fBackplateTransparency = 0;
 }
 
 void PlayerOptions::Approach( const PlayerOptions& other, float fDeltaSeconds )
@@ -185,6 +188,11 @@ CString PlayerOptions::GetString() const
 	{
 		sReturn += m_sCharacter + ", ";
 	}
+	if( m_sBackplate == LaneBackplate::SOLID )
+		sReturn += "Backplate, ";
+	else if( !m_sBackplate.empty() )
+		sReturn += "Backplate:" + m_sBackplate + ", ";
+	sReturn += AddPart( m_fBackplateTransparency, "BackplateTransparency" );
 	if( sReturn.GetLength() > 2 )
 		sReturn.erase( sReturn.GetLength()-2 );	// delete the trailing ", "
 	return sReturn;
@@ -444,6 +452,17 @@ void PlayerOptions::FromString( CString sOptions )
 		TrimLeft(sBit);
 		TrimRight(sBit);
 
+		/* "backplate:<image name>"; the name may have spaces in it. */
+		const CString sBackplatePrefix = "backplate:";
+		if( sBit.Left(sBackplatePrefix.size()) == sBackplatePrefix )
+		{
+			m_sBackplate = sBit.Right( sBit.size() - sBackplatePrefix.size() );
+			TrimLeft( m_sBackplate );
+			if( m_sBackplate.empty() )
+				m_sBackplate = LaneBackplate::SOLID;
+			continue;
+		}
+
 		int i1;
 
 		Regex mult("^([0-9]+(\\.[0-9]+)?)x$");
@@ -552,6 +571,8 @@ void PlayerOptions::FromString( CString sOptions )
 		else if( sBit == "cover" )		SET_FLOAT( fCover )
 		else if( sBit == "passmark" )	SET_FLOAT( fPassmark )
 		else if( sBit == "protiming")	m_bProTiming = on;
+		else if( sBit == "backplate" )	m_sBackplate = on? LaneBackplate::SOLID:CString();
+		else if( sBit == "backplatetransparency" )	m_fBackplateTransparency = level;
 		else if( sBit == "overhead" )	{ m_fSkew = 0; m_fPerspectiveTilt = 0;				m_SpeedfSkew = m_SpeedfPerspectiveTilt = speed; }
 		else if( sBit == "incoming" )	{ m_fSkew = level; m_fPerspectiveTilt = -level;		m_SpeedfSkew = m_SpeedfPerspectiveTilt = speed; }
 		else if( sBit == "space" )		{ m_fSkew = level; m_fPerspectiveTilt = +level;		m_SpeedfSkew = m_SpeedfPerspectiveTilt = speed; }
@@ -785,6 +806,8 @@ bool PlayerOptions::operator==( const PlayerOptions &other ) const
 	COMPARE(m_sPositioning);
 	COMPARE(m_sNoteSkin);
 	COMPARE(m_sCharacter);
+	COMPARE(m_sBackplate);
+	COMPARE(m_fBackplateTransparency);
 	int i;
 	for( i = 0; i < PlayerOptions::NUM_ACCELS; ++i )
 		COMPARE(m_fAccels[i]);
@@ -922,6 +945,8 @@ CString PlayerOptions::GetSavedPrefsString() const
 	SAVE( m_bTransforms[TRANSFORM_NOQUADS] );
 	SAVE( m_sNoteSkin );
 	SAVE( m_sCharacter );
+	SAVE( m_sBackplate );
+	SAVE( m_fBackplateTransparency );
 #undef SAVE
 	return po_prefs.GetString();
 }

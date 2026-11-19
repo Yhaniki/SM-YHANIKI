@@ -7,6 +7,7 @@
 $SMAssetFolders = @(
     'Announcers'
     'BGAnimations'
+    'Backplates'
     'CDTitles'
     'Characters'
     'Courses'

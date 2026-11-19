@@ -19,6 +19,7 @@
 #include "RageSound.h"
 #include "AttackDisplay.h"
 #include "NoteField.h"
+#include "LaneBackplate.h"
 
 class ScoreDisplay;
 class LifeMeter;
@@ -78,6 +79,7 @@ protected:
 	int				m_iOffsetSample;
 
 	ArrowBackdrop	m_ArrowBackdrop;
+	LaneBackplate	m_Backplate;
 	NoteField*		m_pNoteField;
 
 	HoldJudgment	m_HoldJudgment[MAX_NOTE_TRACKS];

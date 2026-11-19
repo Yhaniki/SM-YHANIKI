@@ -127,6 +127,13 @@ struct PlayerOptions
 	CString		m_sNoteSkin;
 	CString     m_sCharacter;
 
+	/* The plate drawn behind the lanes (LaneBackplate): empty for none,
+	 * LaneBackplate::SOLID for plain black, or the name of an image in the
+	 * Backplates folder.  Written "Backplate" / "Backplate:<name>". */
+	CString		m_sBackplate;
+	/* How much of the background shows through it: 0 = none, 1 = all. */
+	float		m_fBackplateTransparency;
+
 	void NextAccel();
 	void NextEffect();
 	void NextAppearance();
