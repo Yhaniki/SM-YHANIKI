@@ -27,8 +27,7 @@ static HBITMAP g_hBitmap = NULL;
  *  - the splash image is scaled to that width, keeping its aspect ratio, so
  *    replacement images of any size fit;
  *  - the three text lines are stacked below the image, sized from the actual
- *    dialog font (which may still be the substituted CJK font, so that song
- *    names in the local code page display correctly).
+ *    dialog font (which may still be the substituted CJK font).
  */
 static const int SPLASH_WIDTH = 468;
 static const int TEXT_TOP_MARGIN = 4;
@@ -162,7 +161,10 @@ BOOL CALLBACK LoadingWindow_Win32::WndProc( HWND hWnd, UINT msg, WPARAM wParam, 
 
 LoadingWindow_Win32::LoadingWindow_Win32()
 {
-	hwnd = CreateDialog(handle.Get(), MAKEINTRESOURCE(IDD_LOADING_DIALOG), NULL, WndProc);
+	/* Create the dialog as Unicode.  The text set in SetText is Unicode, but
+	 * controls of an ANSI dialog convert it to the system code page, so names
+	 * outside it (Japanese on a Chinese system, for example) came out as "?". */
+	hwnd = CreateDialogW(handle.Get(), MAKEINTRESOURCEW(IDD_LOADING_DIALOG), NULL, WndProc);
 	for( unsigned i = 0; i < 3; ++i )
 		text[i] = "XXX"; /* always set on first call */
 	SetText("Initializing hardware...");
@@ -177,13 +179,27 @@ LoadingWindow_Win32::~LoadingWindow_Win32()
 
 void LoadingWindow_Win32::Paint()
 {
-	SendMessage( hwnd, WM_PAINT, 0, 0 );
+	/* Draw changed text now.  The text lines are child controls, so include
+	 * children. */
+	RedrawWindow( hwnd, NULL, NULL, RDW_UPDATENOW | RDW_ALLCHILDREN );
 
 	/* Process all queued messages since the last paint.  This allows the window to
-	 * come back if it loses focus during load. */
+	 * come back if it loses focus during load.
+	 *
+	 * Never wait for a message here.  This used to peek at a message for the
+	 * dialog with PM_NOREMOVE and then take it with GetMessage, which waits
+	 * if the message is gone by then (a key press swallowed by the IME, for
+	 * example).  Loading then stopped until something else reached the dialog,
+	 * such as moving the mouse over it or a close request from taskkill or
+	 * Task Manager, which the dialog ignores, so loading simply went on.
+	 *
+	 * Take messages for every window of this thread, not only the dialog, so
+	 * the thread's IME windows are serviced too.  The loading window is
+	 * destroyed before the game window is created, so nothing else is here. */
 	MSG msg;
-	while( PeekMessage( &msg, hwnd, 0, 0, PM_NOREMOVE ) ) {
-		GetMessage(&msg, hwnd, 0, 0 );
+	while( PeekMessage(&msg, NULL, 0, 0, PM_REMOVE) )
+	{
+		TranslateMessage( &msg );
 		DispatchMessage( &msg );
 	}
 }
