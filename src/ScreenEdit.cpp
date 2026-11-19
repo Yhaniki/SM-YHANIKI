@@ -1960,11 +1960,19 @@ void ScreenEdit::HandleScreenMessage( const ScreenMessage SM )
 		StepsID id;
 		id.FromSteps( m_pSteps );
 
-		GAMESTATE->m_pCurSteps[PLAYER_1] = NULL; /* make RevertFromDisk not try to reset it */
-		SONGMAN->RevertFromDisk( GAMESTATE->m_pCurSong );
+		/* Make RevertFromDisk not try to reset them.  The constructor copies the chart
+		 * to every side, so clear them all: if the chart was removed from the file on
+		 * disk, converting any leftover pointer would throw and quit the game.  Allow
+		 * notes loss for the same reason; we pick the steps ourselves below. */
+		FOREACH_PlayerNumber( p )
+			GAMESTATE->m_pCurSteps[p] = NULL;
+		SONGMAN->RevertFromDisk( GAMESTATE->m_pCurSong, true );
 
 		CString sMessage = "Reloaded from disk.";
-		Steps *pSteps = id.ToSteps( GAMESTATE->m_pCurSong, false );
+		/* Allow NULL: the steps we were editing may have been removed from the
+		 * file on disk.  That case is handled below; throwing here would quit
+		 * the game. */
+		Steps *pSteps = id.ToSteps( GAMESTATE->m_pCurSong, true );
 
 		// Don't allow an autogen match.  This can't be what they chose to 
 		// edit originally because autogen steps are hidden.
@@ -1991,7 +1999,10 @@ void ScreenEdit::HandleScreenMessage( const ScreenMessage SM )
 
 		SCREENMAN->SystemMessage( sMessage );
 
-		m_pSteps = GAMESTATE->m_pCurSteps[PLAYER_1] = pSteps;
+		/* Keep every side on the same chart, as the constructor does. */
+		m_pSteps = pSteps;
+		FOREACH_PlayerNumber( p )
+			GAMESTATE->m_pCurSteps[p] = pSteps;
 		m_pSteps->GetNoteData( &m_NoteFieldEdit );
 		GAMESTATE->m_pCurSong->UseTimingOf( m_pSteps );
 
