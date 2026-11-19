@@ -81,6 +81,14 @@
       並在 `[ScreenBackgroundOptions]` 加 `conf,SelectMusicSongBG`（語言檔要有 `SelectMusicSongBGTitle` / `SelectMusicSongBGHelp`）。
     - CyberiaStyle 6 的作法：三個 `ScreenSelectMusic *background` 各加一層 `Layer25`（在 `over.png` 之上、六角閃光與面板之下），
       這些主題檔案在素材包裡，要重新打包素材包才會帶給其他人。
+  + 打擊軌道背板（Player Options → 軌道背板、背板透明度），取代以前用 Characters 的 `SINGLES[L]` / `SINGLES[S]` 當背板的作法
+    - 背板畫在 note 軌道後面，從畫面頂端到底端，跟著軌道的位置、寬度、Mini 縮放與透視傾斜
+    - 「黑色」是純黑背板；其他選項是根目錄 `Backplates` 資料夾裡的圖片（png / jpg / bmp / gif，檔名就是選項名稱），
+      圖片會拉成軌道的寬度、一個畫面的高度，上下重複
+    - 背板透明度 0%～90%，黑色和圖片都適用；設定跟其他玩家選項一樣存在 Profile
+    - 需要主題支援：`[ScreenPlayerOptions]` 加 `list,Backplates`、`list,BackplateTransparency`，`[ScreenOptionsMaster]` 加
+      `BackplateTransparency` 清單，語言檔加 `BackplatesTitle` / `BackplatesHelp`、`BackplateTransparencyTitle` / `BackplateTransparencyHelp`
+      與選項名稱 `BackplateSolid`、`BackplateTransparency0`～`BackplateTransparency90`。`Backplates` 資料夾在素材包裡。
 
 ## 遊戲中
   | 快速鍵     | 功能          |

@@ -292,6 +292,7 @@
     <ClCompile Include="HighScore.cpp" />
     <ClCompile Include="HoldGhostArrow.cpp" />
     <ClCompile Include="HoldJudgment.cpp" />
+    <ClCompile Include="LaneBackplate.cpp" />
     <ClCompile Include="IniFile.cpp" />
     <ClCompile Include="InputFilter.cpp" />
     <ClCompile Include="InputMapper.cpp" />
@@ -689,6 +690,7 @@
     <ClInclude Include="HighScore.h" />
     <ClInclude Include="HoldGhostArrow.h" />
     <ClInclude Include="HoldJudgment.h" />
+    <ClInclude Include="LaneBackplate.h" />
     <ClInclude Include="IniFile.h" />
     <ClInclude Include="InputFilter.h" />
     <ClInclude Include="InputMapper.h" />

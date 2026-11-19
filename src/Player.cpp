@@ -192,6 +192,7 @@ void PlayerMinus::Load( PlayerNumber pn, const NoteData* pNoteData, LifeMeter* p
 	m_fNoteFieldHeight = GRAY_ARROWS_Y_REVERSE-GRAY_ARROWS_Y_STANDARD;
 	m_pNoteField->Load( this, pn, iStartDrawingAtPixels, iStopDrawingAtPixels, m_fNoteFieldHeight );
 	m_ArrowBackdrop.SetPlayer( pn );
+	m_Backplate.Load( pn );
 
 	const bool bReverse = GAMESTATE->m_PlayerOptions[pn].GetReversePercentForColumn(0) == 1;
 	bool bPlayerUsingBothSides = GAMESTATE->GetCurrentStyle()->m_StyleType==Style::ONE_PLAYER_TWO_CREDITS;
@@ -573,24 +574,12 @@ void PlayerMinus::DrawNoteFieldPart()
 
 	// m_AttackDisplay.Draw();
 
-	if( TAP_JUDGMENTS_UNDER_FIELD )
-		DrawTapJudgments();
-
-	if( HOLD_JUDGMENTS_UNDER_FIELD )
-		DrawHoldJudgments();
-
 	float fTilt = GAMESTATE->m_CurrentPlayerOptions[m_PlayerNumber].m_fPerspectiveTilt;
 	float fSkew = GAMESTATE->m_CurrentPlayerOptions[m_PlayerNumber].m_fSkew;
 	bool bReverse = GAMESTATE->m_CurrentPlayerOptions[m_PlayerNumber].GetReversePercentForColumn(0)>0.5;
 
-
-	DISPLAY->CameraPushMatrix();
-	DISPLAY->PushMatrix();
-
 	float fCenterY = (GRAY_ARROWS_Y_STANDARD+GRAY_ARROWS_Y_REVERSE)/2;
 //	float fHeight = GRAY_ARROWS_Y_REVERSE-GRAY_ARROWS_Y_STANDARD;
-
-	DISPLAY->LoadMenuPerspective( 45, SCALE(fSkew,0.f,1.f,this->GetX(),CENTER_X), fCenterY );
 
 	float fOriginalY = 	m_pNoteField->GetY();
 
@@ -608,6 +597,29 @@ void PlayerMinus::DrawNoteFieldPart()
 		fYOffset = SCALE( fTilt, 0.f, 1.f, 0.f, -45.f ) * (bReverse?-1:1);
 	else
 		fYOffset = SCALE( fTilt, 0.f, -1.f, 0.f, -20.f ) * (bReverse?-1:1);
+
+	/* The lane backplate goes below everything else, placed and tilted like the
+	 * note field so it lines up with the lanes. */
+	DISPLAY->CameraPushMatrix();
+	DISPLAY->PushMatrix();
+	DISPLAY->LoadMenuPerspective( 45, SCALE(fSkew,0.f,1.f,this->GetX(),CENTER_X), fCenterY );
+	m_Backplate.SetY( fOriginalY + fYOffset );
+	m_Backplate.SetZoom( fZoom );
+	m_Backplate.SetRotationX( fTiltDegrees );
+	m_Backplate.Draw();
+	DISPLAY->CameraPopMatrix();
+	DISPLAY->PopMatrix();
+
+	if( TAP_JUDGMENTS_UNDER_FIELD )
+		DrawTapJudgments();
+
+	if( HOLD_JUDGMENTS_UNDER_FIELD )
+		DrawHoldJudgments();
+
+	DISPLAY->CameraPushMatrix();
+	DISPLAY->PushMatrix();
+
+	DISPLAY->LoadMenuPerspective( 45, SCALE(fSkew,0.f,1.f,this->GetX(),CENTER_X), fCenterY );
 
 	m_pNoteField->SetY( fOriginalY + fYOffset );
 	m_pNoteField->SetZoom( fZoom );

@@ -762,6 +762,9 @@
     <ClCompile Include="HoldJudgment.cpp">
       <Filter>Actors used in Gameplay</Filter>
     </ClCompile>
+    <ClCompile Include="LaneBackplate.cpp">
+      <Filter>Actors used in Gameplay</Filter>
+    </ClCompile>
     <ClCompile Include="Judgment.cpp">
       <Filter>Actors used in Gameplay</Filter>
     </ClCompile>
@@ -1920,6 +1923,9 @@
       <Filter>Actors used in Gameplay</Filter>
     </ClInclude>
     <ClInclude Include="HoldJudgment.h">
+      <Filter>Actors used in Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="LaneBackplate.h">
       <Filter>Actors used in Gameplay</Filter>
     </ClInclude>
     <ClInclude Include="Judgment.h">

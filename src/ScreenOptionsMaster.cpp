@@ -8,6 +8,7 @@
 #include "GameState.h"
 #include "ScreenManager.h"
 #include "NoteSkinManager.h"
+#include "LaneBackplate.h"
 #include "Course.h"
 #include "Steps.h"
 #include "Style.h"
@@ -54,6 +55,34 @@ void ScreenOptionsMaster::SetList( OptionRowData &row, OptionRowHandler &hand, C
 			mc.m_sModifiers = arraySkinNames[skin];
 			hand.ListEntries.push_back( mc );
 			row.choices.push_back( arraySkinNames[skin] );
+		}
+		return;
+	}
+
+	if( !ListName.CompareNoCase("backplates") )
+	{
+		/* The plate behind the lanes: none, plain black, or one of the images in
+		 * the Backplates folder. */
+		hand.Default.Init(); /* none */
+		row.bOneChoiceForAllPlayers = false;
+
+		CStringArray asNames;
+		LaneBackplate::GetBackplateNames( asNames );
+
+		ModeChoice mc;
+		mc.m_sModifiers = "no backplate";
+		hand.ListEntries.push_back( mc );
+		row.choices.push_back( ENTRY_NAME("Off") );
+
+		mc.m_sModifiers = "backplate";
+		hand.ListEntries.push_back( mc );
+		row.choices.push_back( ENTRY_NAME("BackplateSolid") );
+
+		for( unsigned i=0; i<asNames.size(); i++ )
+		{
+			mc.m_sModifiers = "backplate:" + asNames[i];
+			hand.ListEntries.push_back( mc );
+			row.choices.push_back( asNames[i] );
 		}
 		return;
 	}
