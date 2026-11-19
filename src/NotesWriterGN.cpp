@@ -11,6 +11,7 @@
 #include "RageUtil.h"
 
 #include <map>
+#include <cmath>
 
 static const int GN_ROWS_PER_MEASUREMENT = ROWS_PER_BEAT * GNFile::BEATS_PER_MEASUREMENT;
 
@@ -168,18 +169,94 @@ void NotesWriterGN::BuildFrames( const NoteData &nd, const TimingData &timing, f
 	stable_sort( vOut.begin(), vOut.end(), Sorter::Less );
 }
 
+/* How the game (sdo_stand_alone.exe) uses the per-difficulty header fields, from
+ * CNewNote::LoadNote and the gameplay screen (see GN_FORMAT.md):
+ *   note count  the size of the per-note state; the official files count non-empty
+ *               note slots (u0 != 0) of frame types 2..8.
+ *   extra52     the song's last measurement number.  The note lookup tables hold
+ *               extra52+1 measurements and are filled by each frame's measurement with
+ *               no bounds check, so it must be at least the highest frame measurement;
+ *               and the chart isn't loaded at all unless it is below 501.
+ *   duration    the song length in seconds.  The dancers' beat is
+ *               duration * 1000 / (extra52 * beats per measure), and at the start two
+ *               random times are drawn with "rand() % duration" until they reach 21 and
+ *               41, so it has to be above 41 or the game hangs. */
+static const int GN_MAX_EXTRA52 = 500;
+static const int GN_MIN_DURATION = 42;
+
+/* The header note count, counted the way the official files are.  This engine only plays
+ * types 2..5, but 6-key charts also use 6 and 7; those frames are kept as they are. */
 static int CountNotesInFrames( const vector<GNFile::Frame> &v )
 {
 	int iCount = 0;
 	for( unsigned f = 0; f < v.size(); f++ )
 	{
-		if( GNLoader::FrameTypeToCol(v[f].iType) < 0 )
+		if( v[f].iType < 2 || v[f].iType > 8 )
 			continue;
 		for( unsigned i = 0; i < v[f].vSlots.size(); i++ )
 			if( v[f].vSlots[i].u0 != 0 )
 				iCount++;
 	}
 	return iCount;
+}
+
+/* The highest measurement of any frame, or -1 if there are none. */
+static int MaxMeasurement( const vector<GNFile::Frame> &v )
+{
+	int iMax = -1;
+	for( unsigned f = 0; f < v.size(); f++ )
+		iMax = max( iMax, (int) v[f].iMeasurement );
+	return iMax;
+}
+
+/* Seconds from beat 0 to fBeat, from the header BPM and the type-1 frames: the timing
+ * the game itself reads from the file (no offset, no stops). */
+static double SecondsAtBeat( const vector<GNFile::Frame> &v, float fHeaderBPM, double fBeat )
+{
+	struct Change
+	{
+		double fBeat, fBPM;
+		static bool Less( const Change &a, const Change &b ) { return a.fBeat < b.fBeat; }
+	};
+	vector<Change> vChanges;
+	Change first = { 0.0, fHeaderBPM > 0 ? fHeaderBPM : 120.0 };
+	vChanges.push_back( first );
+	for( unsigned f = 0; f < v.size(); f++ )
+	{
+		if( v[f].iType != GNFile::FRAME_BPM )
+			continue;
+		for( unsigned i = 0; i < v[f].vSlots.size(); i++ )
+		{
+			if( v[f].vSlots[i].IsEmpty() )
+				continue;
+			const float fBPM = GNFile::SlotToBPM( v[f].vSlots[i] );
+			if( fBPM <= 0 || fBPM > 5000 )
+				continue;	// same plausibility check as the loader
+			Change c = { max( 0.0, (double) v[f].GetSlotBeat(i) ), fBPM };
+			vChanges.push_back( c );
+		}
+	}
+	/* Stable, so of two changes on the same beat the later one in the file wins. */
+	stable_sort( vChanges.begin(), vChanges.end(), Change::Less );
+
+	double fSeconds = 0;
+	for( unsigned i = 0; i < vChanges.size() && vChanges[i].fBeat < fBeat; i++ )
+	{
+		const double fEnd = (i + 1 < vChanges.size()) ? min( vChanges[i+1].fBeat, fBeat ) : fBeat;
+		fSeconds += (fEnd - vChanges[i].fBeat) * 60.0 / vChanges[i].fBPM;
+	}
+	return fSeconds;
+}
+
+/* Whole seconds from beat 0 to the end of the last measurement of these frames, the way
+ * the official files store the song length; 0 if there are no frames. */
+static int SongSeconds( const vector<GNFile::Frame> &v, float fHeaderBPM )
+{
+	const int iMax = MaxMeasurement( v );
+	if( iMax < 0 )
+		return 0;
+	const double fEndBeat = (iMax + 1) * (double) GNFile::BEATS_PER_MEASUREMENT;
+	return (int) floor( SecondsAtBeat( v, fHeaderBPM, fEndBeat ) );
 }
 
 static bool WriteWholeFile( CString sPath, const std::string &s )
@@ -198,7 +275,7 @@ static bool WriteWholeFile( CString sPath, const std::string &s )
 bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, CString &sErrOut )
 {
 	/* Use the original file as the skeleton: uninterpreted header fields and control
-	 * frames are kept. */
+	 * frames are kept, and the per-difficulty header values follow the new frames. */
 	GNFile::StepFile sf;
 	GNFile::ContainerInfo info;
 	if( !GNLoader::ReadGNFile( sPath, sf, info, sErrOut ) )
@@ -209,12 +286,55 @@ bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, 
 		DIFFICULTY_EASY, DIFFICULTY_MEDIUM, DIFFICULTY_HARD
 	};
 
-	/* The header BPM takes the starting BPM of the hardest difficulty. */
-	for( int d = GNFile::NUM_DIFFS - 1; d >= 0; d-- )
+	/* Every difficulty the song has is written.  One whose slot in the original .gn has no
+	 * notes (many files only contain Hard) is new: its slot holds no usable control frames
+	 * or header values, so both come from another difficulty below. */
+	bool abWrite[GNFile::NUM_DIFFS], abNew[GNFile::NUM_DIFFS];
+	for( int d = 0; d < GNFile::NUM_DIFFS; d++ )
 	{
 		const Steps *pSteps = song.GetStepsByDifficulty( STEPS_TYPE_DANCE_SINGLE, aDiffs[d], false );
-		if( pSteps == NULL )
+		abWrite[d] = pSteps != NULL;
+		abNew[d] = CountNotesInFrames( sf.avFrames[d] ) == 0;
+
+		/* A new chart that has no notes yet leaves the empty slot as it was, rather than
+		 * turning it into a selectable but empty difficulty. */
+		if( abWrite[d] && abNew[d] )
+		{
+			NoteData nd;
+			pSteps->GetNoteData( &nd );
+			const TimingData *pTiming = pSteps->HasOwnTiming() ? pSteps->GetOwnTiming() : &song.m_Timing;
+			vector<GNFile::Frame> vNoSkeleton, vNotes;
+			BuildFrames( nd, *pTiming, sf.fBPM, vNoSkeleton, vNotes );
+			abWrite[d] = CountNotesInFrames( vNotes ) > 0;
+		}
+	}
+
+	/* A new difficulty takes its control frames (bar lines, music markers, ...) from the
+	 * hardest difficulty that has a chart in the original.  Its own slot may hold some,
+	 * but those are placeholders (e.g. the music end marker right at the start); only if
+	 * no difficulty has a chart are they used. */
+	int iDonor = -1;
+	for( int d = GNFile::NUM_DIFFS - 1; d >= 0 && iDonor < 0; d-- )
+		if( !abNew[d] )
+			iDonor = d;
+
+	/* The original frames and header values, for the header values below (the loop
+	 * changes sf as it goes, and a new difficulty reads another one's originals). */
+	vector<GNFile::Frame> avOriginal[GNFile::NUM_DIFFS];
+	int aiOriginalExtra52[GNFile::NUM_DIFFS], aiOriginalDuration[GNFile::NUM_DIFFS];
+	for( int d = 0; d < GNFile::NUM_DIFFS; d++ )
+	{
+		avOriginal[d] = sf.avFrames[d];
+		aiOriginalExtra52[d] = sf.aiExtra52[d];
+		aiOriginalDuration[d] = sf.aiDuration[d];
+	}
+
+	/* The header BPM takes the starting BPM of the hardest difficulty written. */
+	for( int d = GNFile::NUM_DIFFS - 1; d >= 0; d-- )
+	{
+		if( !abWrite[d] )
 			continue;
+		const Steps *pSteps = song.GetStepsByDifficulty( STEPS_TYPE_DANCE_SINGLE, aDiffs[d], false );
 		const TimingData *pTiming = pSteps->HasOwnTiming() ? pSteps->GetOwnTiming() : &song.m_Timing;
 		if( !pTiming->m_BPMSegments.empty() )
 		{
@@ -225,32 +345,67 @@ bool NotesWriterGN::Write( CString sPath, const Song &song, bool bKeepFileSize, 
 
 	for( int d = 0; d < GNFile::NUM_DIFFS; d++ )
 	{
+		if( !abWrite[d] )
+			continue;	// not in the song (never there, or deleted in the editor), or new and empty: keep it as-is
 		const Steps *pSteps = song.GetStepsByDifficulty( STEPS_TYPE_DANCE_SINGLE, aDiffs[d], false );
-		if( pSteps == NULL )
-			continue;	// this difficulty was not loaded (it is empty in the .gn); keep it as-is
 
 		NoteData nd;
 		pSteps->GetNoteData( &nd );
 
 		const TimingData *pTiming = pSteps->HasOwnTiming() ? pSteps->GetOwnTiming() : &song.m_Timing;
 
-		vector<GNFile::Frame> vNew;
-		BuildFrames( nd, *pTiming, sf.fBPM, sf.avFrames[d], vNew );
-		sf.avFrames[d] = vNew;
+		const vector<GNFile::Frame> *pSkeleton = &avOriginal[d];
+		if( abNew[d] && iDonor >= 0 )
+			pSkeleton = &avOriginal[iDonor];
 
+		vector<GNFile::Frame> vNew;
+		BuildFrames( nd, *pTiming, sf.fBPM, *pSkeleton, vNew );
+
+		const int iMaxMeasurement = MaxMeasurement( vNew );
+		if( iMaxMeasurement > GN_MAX_EXTRA52 )
+		{
+			static const char *aszNames[GNFile::NUM_DIFFS] = { "Easy", "Normal", "Hard" };
+			char szErr[160];
+			snprintf( szErr, sizeof(szErr), "%s goes up to measure %d; the game only loads charts up to measure %d",
+				aszNames[d], iMaxMeasurement, GN_MAX_EXTRA52 );
+			sErrOut = szErr;
+			return false;
+		}
+
+		sf.avFrames[d] = vNew;
 		sf.aiNoteCount[d] = CountNotesInFrames( vNew );
 		sf.aiMeasurements[d] = (int) vNew.size();
 
-		/* Level: GN's level and SM's meter are the same number, so write it back if it was
-		 * changed in the editor. Leave it alone if the header originally had none (0), so
-		 * that a number guessed by Steps::TidyUpData does not end up in the file. */
-		if( sf.aiLevel[d] > 0 && pSteps->GetMeter() > 0 )
-			sf.aiLevel[d] = (int16_t) GNLoader::MeterToGNLevel( pSteps->GetMeter() );
+		/* extra52 and duration describe the song (where it ends, how fast the dancers
+		 * move), so they start from the original values: this difficulty's own, or for a
+		 * new one those of the difficulty its control frames came from, which keeps the
+		 * dancers exactly as on that difficulty.  An unchanged chart keeps both as they were. */
+		const int iBase = abNew[d] ? iDonor : d;
+		const int iBaseExtra52 = iBase >= 0 ? aiOriginalExtra52[iBase] : 0;
 
-		/* The exact meaning of aiExtra52 / aiDuration is not fully understood yet (testing
-		 * shows extra52 is neither the highest measure nor the measure count); writing
-		 * arbitrary values could make the original game compute the wrong speed, so they
-		 * are kept as-is. */
+		/* extra52 moves by as much as the chart reaches further or less far, and must
+		 * cover every frame (some files made by other tools don't). */
+		int iExtra52 = iMaxMeasurement;
+		if( iBase >= 0 )
+			iExtra52 = iBaseExtra52 + iMaxMeasurement - MaxMeasurement( avOriginal[iBase] );
+		iExtra52 = max( iExtra52, iMaxMeasurement );
+		sf.aiExtra52[d] = iExtra52;
+
+		/* The dancers' beat is duration / extra52, so the duration scales with extra52 and
+		 * their speed stays exactly the same.  With nothing to start from, use the song
+		 * length the way the official files store it. */
+		int iDuration;
+		if( iBase >= 0 && iBaseExtra52 > 0 )
+			iDuration = (int) floor( (double) aiOriginalDuration[iBase] * iExtra52 / iBaseExtra52 + 0.5 );
+		else
+			iDuration = SongSeconds( vNew, sf.fBPM );
+		sf.aiDuration[d] = max( iDuration, GN_MIN_DURATION );
+
+		/* Level: GN's level and SM's meter are the same number.  For a difficulty that
+		 * was already there, leave it alone if the header had none (0), so that a number
+		 * guessed by Steps::TidyUpData does not end up in the file. */
+		if( pSteps->GetMeter() > 0 && (abNew[d] || sf.aiLevel[d] > 0) )
+			sf.aiLevel[d] = (int16_t) GNLoader::MeterToGNLevel( pSteps->GetMeter() );
 	}
 
 	std::string sBody;

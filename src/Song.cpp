@@ -1036,10 +1036,12 @@ bool Song::HasStepsTypeAndDifficulty( StepsType st, Difficulty dc ) const
 	return !add.empty();
 }
 
-void Song::Save()
+void Song::Save( bool *pbWroteGNOut )
 {
 	LOG->Trace( "Song::SaveToSongFile()" );
-	
+	if( pbWroteGNOut != NULL )
+		*pbWroteGNOut = false;
+
 	ReCalculateRadarValuesAndLastBeat();
 	TranslateTitles();
 
@@ -1048,11 +1050,17 @@ void Song::Save()
 	SaveToDWIFile();
 
 	/* If the song was loaded from a .gn, write that back too; otherwise the edits would
-	 * only end up in the .sm. */
+	 * only end up in the .sm.  Songs that didn't come from a .gn never get one: this
+	 * only ever overwrites the existing file (SaveToGNFile fails if it's gone). */
 	if( IsFromGN() )
 	{
 		CString sErr;
-		if( !SaveToGNFile( sErr ) )
+		if( SaveToGNFile( sErr ) )
+		{
+			if( pbWroteGNOut != NULL )
+				*pbWroteGNOut = true;
+		}
+		else
 			LOG->Warn( "Couldn't write back .gn (%s): %s", GetGNPath().c_str(), sErr.c_str() );
 	}
 

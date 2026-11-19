@@ -15,7 +15,12 @@ class NotesWriterGN
 public:
 	/* Use the existing .gn at sPath as a skeleton, write the song's notes and BPMs back
 	 * into it, and overwrite the original file. Header fields we do not interpret and
-	 * control frames such as type 9/10 are kept as-is.
+	 * control frames such as type 9/10 are kept as-is; the per-difficulty header values
+	 * the game uses (note count, frame count, extra52, duration) follow the new frames.
+	 *
+	 * A difficulty that is empty in the original .gn but exists in the song is written
+	 * too: it takes its control frames, extra52 and duration from the hardest difficulty
+	 * that has a chart, and its level from the editor.
 	 *
 	 * bKeepFileSize: the output must be exactly the same size as the original file (the
 	 *                SDOM container already relies on zero padding to keep its size;

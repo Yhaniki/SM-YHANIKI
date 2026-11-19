@@ -108,13 +108,13 @@ namespace GNFile
 		uint8_t		aHeader8_15[8];			// not interpreted
 		float		fBPM;					// base BPM from the header
 		int16_t		aiLevel[NUM_DIFFS];
-		uint8_t		aHeader26_39[14];		// not interpreted
-		int32_t		aiNoteCount[NUM_DIFFS];	// counts only types 2/3/4/5
-		int32_t		aiExtra52[NUM_DIFFS];	// meaning not settled yet (see NotesWriterGN.cpp); kept as-is
+		uint8_t		aHeader26_39[14];		// not interpreted; the game's chart loader doesn't read it
+		int32_t		aiNoteCount[NUM_DIFFS];	// non-empty note slots, frame types 2..8 (see GN_FORMAT.md)
+		int32_t		aiExtra52[NUM_DIFFS];	// the song's last measurement number (see GN_FORMAT.md)
 		int32_t		aiMeasurements[NUM_DIFFS];	// number of StepFrames
 		uint8_t		aStrings[6][32];		// unknown0, title, unknown1, writer, producer, filename
 		int32_t		iUnknown19;
-		int32_t		aiDuration[NUM_DIFFS];	// seconds
+		int32_t		aiDuration[NUM_DIFFS];	// song length in seconds; with extra52 it sets the dance speed (see GN_FORMAT.md)
 		uint32_t	aiAddress[4];			// easy, normal, hard, end
 
 		std::vector<Frame>	avFrames[NUM_DIFFS];
