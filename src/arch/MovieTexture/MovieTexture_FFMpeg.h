@@ -70,7 +70,12 @@ private:
 
 	RageTimer m_Timer;
 	float m_Clock;
+
+	/* Frame skipping state; see CheckFrameTime(). */
 	bool m_FrameSkipMode;
+	bool m_bCantCatchUp;
+	RageTimer m_CatchUpCheckTimer;
+	float m_fBehindAtCatchUpCheck;
 
 	static int DecoderThread_start(void *p) { ((MovieTexture_FFMpeg *)(p))->DecoderThread(); return 0; }
 	void DecoderThread();
@@ -89,6 +94,7 @@ private:
 	void UpdateTimer();
 	bool DecodeFrame();
 	float CheckFrameTime();
+	void StopSkippingFrames();
 	void DiscardFrame();
 };
 
