@@ -212,7 +212,8 @@ public:
 	void LaunchAttack( PlayerNumber target, Attack aa );
 	void RebuildPlayerOptionsFromActiveAttacks( PlayerNumber pn );
 	void RemoveAllActiveAttacks();	// called on end of song
-	void RemoveActiveAttacksForPlayer( PlayerNumber pn, AttackLevel al=NUM_ATTACK_LEVELS /*all*/ );
+	/* bKeepSongAttacks: leave the song's own #ATTACKS on (for battle/rave attacks). */
+	void RemoveActiveAttacksForPlayer( PlayerNumber pn, AttackLevel al=NUM_ATTACK_LEVELS /*all*/, bool bKeepSongAttacks=false );
 	void RemoveAllInventory();
 	int GetSumOfActiveAttackLevels( PlayerNumber pn ) const;
 	PlayerNumber GetBestPlayer() const;

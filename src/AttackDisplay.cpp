@@ -86,6 +86,9 @@ void AttackDisplay::Update( float fDelta )
 		if( GAMESTATE->m_ActiveAttacks[m_PlayerNumber][s].IsBlank() )
 			continue;
 
+		if( GAMESTATE->m_ActiveAttacks[m_PlayerNumber][s].bFromSong )
+			continue;
+
 		SetAttack( GAMESTATE->m_ActiveAttacks[m_PlayerNumber][s].sModifier );
 		break;
 	}

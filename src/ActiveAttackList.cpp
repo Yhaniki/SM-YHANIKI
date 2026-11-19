@@ -43,6 +43,9 @@ void ActiveAttackList::Refresh()
 		if( !attack.bOn )
 			continue; /* hasn't started yet */
 
+		if( attack.bFromSong )
+			continue; /* part of the chart, not something to announce */
+
 		CString sMods = attack.sModifier;
 		CStringArray asMods;
 		split( sMods, ",", asMods );

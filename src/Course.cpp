@@ -106,38 +106,7 @@ void Course::LoadFromCRSFile( CString sPath )
 		}
 
 		else if( 0 == stricmp(sValueName, "MODS") )
-		{
-			Attack attack;
-			float end = -9999;
-			for( unsigned j = 1; j < sParams.params.size(); ++j )
-			{
-				CStringArray sBits;
-				split( sParams[j], "=", sBits, false );
-				if( sBits.size() < 2 )
-					continue;
-
-				TrimLeft( sBits[0] );
-				TrimRight( sBits[0] );
-				if( !sBits[0].CompareNoCase("TIME") )
-					attack.fStartSecond = strtof( sBits[1], NULL );
-				else if( !sBits[0].CompareNoCase("LEN") )
-					attack.fSecsRemaining = strtof( sBits[1], NULL );
-				else if( !sBits[0].CompareNoCase("END") )
-					end = strtof( sBits[1], NULL );
-				else if( !sBits[0].CompareNoCase("MODS") )
-				{
-					if( end != -9999 )
-					{
-						attack.fSecsRemaining = end - attack.fStartSecond;
-						end = -9999;
-					}
-					attack.sModifier = sBits[1];
-					attacks.push_back( attack );
-				}
-			}
-
-				
-		}
+			ParseAttackParams( sParams.params, Attack(), attacks );
 		else if( 0 == stricmp(sValueName, "SONG") )
 		{
 			CourseEntry new_entry;

@@ -131,6 +131,19 @@ void NotesWriterSM::WriteGlobalTags( CString &f, const Song &out )
 
 	WriteLayerChanges( f, "FGCHANGES", out.m_ForegroundChanges );
 	WriteLayerChanges( f, "NOTELAYERCHANGES", out.m_NoteLayerChanges );
+
+	if( !out.m_Attacks.empty() )
+	{
+		f += "#ATTACKS:";
+		for( unsigned i=0; i<out.m_Attacks.size(); i++ )
+		{
+			const Attack &a = out.m_Attacks[i];
+			if( i != 0 )
+				f += ":";
+			PutLine( f, ssprintf( "TIME=%.3f:LEN=%.3f:MODS=%s", a.fStartSecond, a.fSecsRemaining, a.sModifier.c_str() ) );
+		}
+		PutLine( f, ";" );
+	}
 }
 
 void NotesWriterSM::WriteCacheTags( CString &f, const Song &out )

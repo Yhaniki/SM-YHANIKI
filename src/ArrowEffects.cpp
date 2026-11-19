@@ -253,6 +253,9 @@ float ArrowGetXPos( PlayerNumber pn, int iColNum, float fYOffset )
 		fPixelOffsetFromCenter += fEffects[PlayerOptions::EFFECT_BEAT] * fShift;
 	} while(0);
 
+	/* MoveX<n>: shift the whole column; can be negative. */
+	fPixelOffsetFromCenter += GAMESTATE->m_CurrentPlayerOptions[pn].m_fMoveX[iColNum] * ARROW_SIZE;
+
 	return fPixelOffsetFromCenter;
 }
 

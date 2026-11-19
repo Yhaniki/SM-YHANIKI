@@ -60,6 +60,14 @@ static CachedThemeMetricF TICK_EARLY_SECONDS		("ScreenGameplay","TickEarlySecond
 /* Global, so it's accessible from ShowSavePrompt: */
 static float g_fOldOffset;  // used on offset screen to calculate difference
 
+/* The song's own #ATTACKS go along with the course modifiers (if any), so they are
+ * launched in SetupSong and ScoreKeeperMAX2 sees any transforms in them. */
+static void AddSongAttacks( const Song *pSong, AttackArray &aa )
+{
+	if( pSong != NULL )
+		aa.insert( aa.end(), pSong->m_Attacks.begin(), pSong->m_Attacks.end() );
+}
+
 const ScreenMessage	SM_PlayReady			= ScreenMessage(SM_User+0);
 const ScreenMessage	SM_PlayGo				= ScreenMessage(SM_User+1);
 
@@ -257,6 +265,7 @@ void ScreenGameplay::Init()
 				m_vpStepsQueue[p].push_back( e->pSteps );
 				AttackArray a;
 				e->GetAttackArray( a );
+				AddSongAttacks( e->pSong, a );
 				m_asModifiersQueue[p].push_back( a );
 			}
 
@@ -268,7 +277,9 @@ void ScreenGameplay::Init()
         FOREACH_PlayerNumber(p)
 		{
 			m_vpStepsQueue[p].push_back( GAMESTATE->m_pCurSteps[p] );
-			m_asModifiersQueue[p].push_back( AttackArray() );
+			AttackArray a;
+			AddSongAttacks( GAMESTATE->m_pCurSong, a );
+			m_asModifiersQueue[p].push_back( a );
 		}
 	}
 
@@ -913,7 +924,10 @@ void ScreenGameplay::SetupSong( PlayerNumber p, int iSongIndex )
 			a.fStartSecond = -1;	// now
 		
 		GAMESTATE->LaunchAttack( p, a );
-		GAMESTATE->m_SongOptions.FromString( a.sModifier );
+		/* This applies right away, whatever the attack's TIME is; a song's own
+		 * #ATTACKS only change the player options. */
+		if( !a.bFromSong )
+			GAMESTATE->m_SongOptions.FromString( a.sModifier );
 	}
 
 	/* Update attack bOn flags. */

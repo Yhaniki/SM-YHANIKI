@@ -480,10 +480,14 @@ void GameState::Update( float fDelta )
 			if( m_ActiveAttacks[p][s].bOn == bCurrentlyEnabled )
 				continue; /* OK */
 
-			if( m_ActiveAttacks[p][s].bOn && !bCurrentlyEnabled )
-				m_bAttackEndedThisUpdate[p] = true;
-			else if( !m_ActiveAttacks[p][s].bOn && bCurrentlyEnabled )
-				m_bAttackBeganThisUpdate[p] = true;
+			/* A song's own attacks are part of the chart: no sounds, no attack displays. */
+			if( !attack.bFromSong )
+			{
+				if( m_ActiveAttacks[p][s].bOn && !bCurrentlyEnabled )
+					m_bAttackEndedThisUpdate[p] = true;
+				else if( !m_ActiveAttacks[p][s].bOn && bCurrentlyEnabled )
+					m_bAttackBeganThisUpdate[p] = true;
+			}
 
 			bRebuildPlayerOptions = true;
 
@@ -1279,11 +1283,13 @@ void GameState::LaunchAttack( PlayerNumber target, Attack a )
 	this->RebuildPlayerOptionsFromActiveAttacks( target );
 }
 
-void GameState::RemoveActiveAttacksForPlayer( PlayerNumber pn, AttackLevel al )
+void GameState::RemoveActiveAttacksForPlayer( PlayerNumber pn, AttackLevel al, bool bKeepSongAttacks )
 {
 	for( unsigned s=0; s<m_ActiveAttacks[pn].size(); s++ )
 	{
 		if( al != NUM_ATTACK_LEVELS && al != m_ActiveAttacks[pn][s].level )
+			continue;
+		if( bKeepSongAttacks && m_ActiveAttacks[pn][s].bFromSong )
 			continue;
 		m_ActiveAttacks[pn].erase( m_ActiveAttacks[pn].begin()+s, m_ActiveAttacks[pn].begin()+s+1 );
 		--s;
