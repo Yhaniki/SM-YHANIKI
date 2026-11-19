@@ -17,7 +17,9 @@
  *
  * The actor goes where the note field is (same Y, zoom and tilt) and covers the
  * lanes from the top of the screen to the bottom; the image repeats above and below
- * the screen, so tilted lanes are covered all the way to the far end.
+ * the screen, so tilted lanes are covered all the way to the far end.  When MoveX<n>
+ * moves lanes apart, the plate is cut between them and each piece moves with its
+ * lanes.
  */
 class LaneBackplate : public Actor
 {
@@ -38,6 +40,8 @@ public:
 
 private:
 	static CString GetBackplatePath( const CString &sName );
+	void DrawPiece( float fLeft, float fRight, float fPieceLeft, float fPieceRight,
+					float fShift, float fCenterY, float fAlpha );
 
 	PlayerNumber	m_PlayerNumber;
 	bool			m_bShow;
