@@ -71,6 +71,11 @@
   + 遊戲大廳Note數改為顯示總按鍵數(原本為Tap + Hold)
   + 使用Shift+f8顯示AutoPlayCPU、結算分數時為0分
   + 修改NoteSkin:note/note(RV)長條發光模式
+  + 選歌畫面背景可換成目前選擇歌曲的背景圖（Options → Background Options → 選歌畫面 歌曲背景，預設關閉）
+    - 需要主題支援：在選歌背景的 `BGAnimation.ini` 加一層 `File=currentsongbackground`，搭配 `Condition=SelectMusicSongBackground()` 跟著開關，
+      並在 `[ScreenBackgroundOptions]` 加 `conf,SelectMusicSongBG`（語言檔要有 `SelectMusicSongBGTitle` / `SelectMusicSongBGHelp`）。
+    - CyberiaStyle 6 的作法：三個 `ScreenSelectMusic *background` 各加一層 `Layer25`（在 `over.png` 之上、六角閃光與面板之下），
+      這些主題檔案在素材包裡，要重新打包素材包才會帶給其他人。
 
 ## 遊戲中
   | 快速鍵     | 功能          |

@@ -223,6 +223,7 @@
     <ClCompile Include="CourseUtil.cpp" />
     <ClCompile Include="CryptHelpers.cpp" />
     <ClCompile Include="CryptManager.cpp" />
+    <ClCompile Include="CurrentSongBackground.cpp" />
     <ClCompile Include="crypto51\algebra.cpp" />
     <ClCompile Include="crypto51\algparam.cpp" />
     <ClCompile Include="crypto51\asn.cpp" />
@@ -605,6 +606,7 @@
     <ClInclude Include="CourseUtil.h" />
     <ClInclude Include="CryptHelpers.h" />
     <ClInclude Include="CryptManager.h" />
+    <ClInclude Include="CurrentSongBackground.h" />
     <ClInclude Include="crypto51\algebra.h" />
     <ClInclude Include="crypto51\algparam.h" />
     <ClInclude Include="crypto51\argnames.h" />

@@ -25,6 +25,7 @@
 #include "Foreach.h"
 #include "Style.h"
 #include "NetworkSyncManager.h"
+#include "CurrentSongBackground.h"
 #include <ctime>
 
 const int NUM_SCORE_DIGITS	=	9;
@@ -338,6 +339,9 @@ ScreenSelectMusic::ScreenSelectMusic( CString sClassName ) : ScreenWithMenuEleme
 ScreenSelectMusic::~ScreenSelectMusic()
 {
 	LOG->Trace( "ScreenSelectMusic::~ScreenSelectMusic()" );
+
+	/* Don't leave song backgrounds on other screens waiting for our wheel. */
+	CurrentSongBackground::SetSelectionMoving( false );
 
 }
 
@@ -719,6 +723,9 @@ void ScreenSelectMusic::CheckBackgroundRequests()
 
 void ScreenSelectMusic::Update( float fDeltaTime )
 {
+	/* Song backgrounds in the theme wait for the wheel to stop, like the banner does. */
+	CurrentSongBackground::SetSelectionMoving( !m_MusicWheel.IsSettled() );
+
 	Screen::Update( fDeltaTime );
 	m_bgOptionsOut.Update( fDeltaTime );
 	m_bgNoOptionsOut.Update( fDeltaTime );

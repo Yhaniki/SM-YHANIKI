@@ -708,6 +708,9 @@
     <ClCompile Include="SongCreditDisplay.cpp">
       <Filter>Actors used in Menus</Filter>
     </ClCompile>
+    <ClCompile Include="CurrentSongBackground.cpp">
+      <Filter>Actors used in Menus</Filter>
+    </ClCompile>
     <ClCompile Include="TextBanner.cpp">
       <Filter>Actors used in Menus</Filter>
     </ClCompile>
@@ -1857,6 +1860,9 @@
       <Filter>Actors used in Menus</Filter>
     </ClInclude>
     <ClInclude Include="SongCreditDisplay.h">
+      <Filter>Actors used in Menus</Filter>
+    </ClInclude>
+    <ClInclude Include="CurrentSongBackground.h">
       <Filter>Actors used in Menus</Filter>
     </ClInclude>
     <ClInclude Include="TextBanner.h">

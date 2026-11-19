@@ -74,6 +74,7 @@ void PrefsManager::Init()
 	m_bShowStats = false;
 #endif
 	m_bShowBanners = true ;
+	m_bSelectMusicSongBackground = false;
 	m_BackgroundMode = BGMODE_ANIMATIONS;
 	m_iNumBackgrounds = 8;
 	m_bShowDanger = true;
@@ -375,6 +376,7 @@ void PrefsManager::ReadPrefsFromFile( CString sIni )
 	ini.GetValue( "Options", "UseDedicatedMenuButtons",			m_bOnlyDedicatedMenuButtons );
 	ini.GetValue( "Options", "ShowStats",						m_bShowStats );
 	ini.GetValue( "Options", "ShowBanners",						m_bShowBanners );
+	ini.GetValue( "Options", "SelectMusicSongBackground",		m_bSelectMusicSongBackground );
 	ini.GetValue( "Options", "BackgroundMode",					(int&)m_BackgroundMode );
 	ini.GetValue( "Options", "NumBackgrounds",					m_iNumBackgrounds);
 	ini.GetValue( "Options", "ShowDanger",						m_bShowDanger );
@@ -623,6 +625,7 @@ void PrefsManager::SaveGlobalPrefsToDisk() const
 	ini.SetValue( "Options", "UseDedicatedMenuButtons",			m_bOnlyDedicatedMenuButtons );
 	ini.SetValue( "Options", "ShowStats",						m_bShowStats );
 	ini.SetValue( "Options", "ShowBanners",						m_bShowBanners );
+	ini.SetValue( "Options", "SelectMusicSongBackground",		m_bSelectMusicSongBackground );
 	ini.SetValue( "Options", "BackgroundMode",					m_BackgroundMode);
 	ini.SetValue( "Options", "NumBackgrounds",					m_iNumBackgrounds);
 	ini.SetValue( "Options", "ShowDanger",						m_bShowDanger );
@@ -880,6 +883,11 @@ PrefsManager::Premium	PrefsManager::GetPremium()
 	else 
 		return m_Premium; 
 }
+
+#include "LuaFunctions.h"
+/* Lets a theme add or drop layers depending on the option, e.g.
+ * "Condition=SelectMusicSongBackground()" in a BGAnimation.ini. */
+LuaFunction_NoArgs( SelectMusicSongBackground,	PREFSMAN->m_bSelectMusicSongBackground )
 
 
 /*

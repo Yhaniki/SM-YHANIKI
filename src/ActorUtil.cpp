@@ -11,6 +11,7 @@
 #include "arch/ArchHooks/ArchHooks.h"
 #include "RageFileManager.h"
 #include "SongCreditDisplay.h"
+#include "CurrentSongBackground.h"
 #include "song.h"
 #include "GameState.h"
 #include "RageTextureManager.h"
@@ -95,6 +96,11 @@ Actor* LoadFromActorFile( CString sIniPath, CString sLayer )
 				Sprite* pSprite = new Sprite;
 				pSprite->LoadBG( sFile );
 				pActor = pSprite;
+			}
+			else if( sFile.CompareNoCase("currentsongbackground")==0 )
+			{
+				/* Like "songbackground", but keeps following GAMESTATE->m_pCurSong. */
+				pActor = new CurrentSongBackground;
 			}
 			else if( sFile.CompareNoCase("songbanner")==0 )
 			{

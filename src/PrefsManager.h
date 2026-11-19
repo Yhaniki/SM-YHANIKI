@@ -28,6 +28,9 @@ public:
 	int				m_iRefreshRate;
 	bool			m_bShowStats;
 	bool			m_bShowBanners;
+	/* Show the background of the song under the cursor on ScreenSelectMusic.
+	 * Themes read it through the Lua function SelectMusicSongBackground(). */
+	bool			m_bSelectMusicSongBackground;
 	enum BackgroundModes { BGMODE_OFF, BGMODE_ANIMATIONS, BGMODE_MOVIEVIS, BGMODE_RANDOMMOVIES } m_BackgroundMode;
 	int				m_iNumBackgrounds;
 	float			m_fBGBrightness;
