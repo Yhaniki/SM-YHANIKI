@@ -111,26 +111,69 @@ void LaneBackplate::DrawPrimitives()
 	 * is enough for Mini (half size) and for tilted lanes. */
 	const float fCenterY = CENTER_Y - GetY();
 
+	/* The lanes from left to right, each with how far MoveX<n> moves it (as
+	 * ArrowGetXPos does). */
+	struct Lane
+	{
+		float fX, fShift;
+		bool operator<( const Lane &other ) const { return fX < other.fX; }
+	};
+	const Style *pStyle = GAMESTATE->GetCurrentStyle();
+	const PlayerOptions &po = GAMESTATE->m_CurrentPlayerOptions[m_PlayerNumber];
+	vector<Lane> aLanes;
+	for( int c = 0; c < pStyle->m_iColsPerPlayer; ++c )
+	{
+		Lane lane = { pStyle->m_ColumnInfo[m_PlayerNumber][c].fXOffset, po.m_fMoveX[c] * ARROW_SIZE };
+		aLanes.push_back( lane );
+	}
+	if( aLanes.empty() )
+		return;
+	sort( aLanes.begin(), aLanes.end() );
+
 	/* From the left edge of the leftmost lane to the right edge of the rightmost,
 	 * as NoteField::GetWidth measures them. */
-	float fMinX, fMaxX;
-	GAMESTATE->GetCurrentStyle()->GetMinAndMaxColX( m_PlayerNumber, fMinX, fMaxX );
-	const float fLeft = fMinX - ARROW_SIZE/2, fRight = fMaxX + ARROW_SIZE/2;
+	const float fLeft = aLanes.front().fX - ARROW_SIZE/2, fRight = aLanes.back().fX + ARROW_SIZE/2;
 
+	/* MoveX cuts the plate between lanes that move apart: each run of neighboring
+	 * lanes that move together is a piece, cut halfway between lanes, and moves with
+	 * them.  Without MoveX the whole plate is one piece. */
+	for( unsigned i = 0; i < aLanes.size(); )
+	{
+		unsigned j = i + 1;
+		while( j < aLanes.size() && fabsf(aLanes[j].fShift - aLanes[i].fShift) < 0.01f )
+			++j;
+
+		const float fPieceLeft = (i == 0)? fLeft : (aLanes[i-1].fX + aLanes[i].fX) / 2;
+		const float fPieceRight = (j == aLanes.size())? fRight : (aLanes[j-1].fX + aLanes[j].fX) / 2;
+		DrawPiece( fLeft, fRight, fPieceLeft, fPieceRight, aLanes[i].fShift, fCenterY, fAlpha );
+		i = j;
+	}
+}
+
+/* Draw the part of the plate from fPieceLeft to fPieceRight (of the whole plate,
+ * fLeft to fRight), moved right by fShift. */
+void LaneBackplate::DrawPiece( float fLeft, float fRight, float fPieceLeft, float fPieceRight,
+							   float fShift, float fCenterY, float fAlpha )
+{
 	if( !m_bImage )
 	{
-		m_quadSolid.StretchTo( RectF(fLeft, fCenterY - SCREEN_HEIGHT*1.5f, fRight, fCenterY + SCREEN_HEIGHT*1.5f) );
+		m_quadSolid.StretchTo( RectF(fPieceLeft + fShift, fCenterY - SCREEN_HEIGHT*1.5f,
+									 fPieceRight + fShift, fCenterY + SCREEN_HEIGHT*1.5f) );
 		m_quadSolid.SetDiffuse( RageColor(0,0,0,fAlpha) );
 		m_quadSolid.Draw();
 		return;
 	}
 
-	/* The image covers the lanes for one screen height; repeat it above and below. */
+	/* The image covers the lanes for one screen height; repeat it above and below.
+	 * Stretch it over the whole plate and crop it to the piece, so each piece shows
+	 * the part of the image it shows when the plate is whole. */
 	m_sprImage.SetDiffuse( RageColor(1,1,1,fAlpha) );
+	m_sprImage.SetCropLeft( (fPieceLeft - fLeft) / (fRight - fLeft) );
+	m_sprImage.SetCropRight( (fRight - fPieceRight) / (fRight - fLeft) );
 	for( int i = -1; i <= 1; ++i )
 	{
 		const float fTop = fCenterY + (i-0.5f)*SCREEN_HEIGHT;
-		m_sprImage.StretchTo( RectF(fLeft, fTop, fRight, fTop + SCREEN_HEIGHT) );
+		m_sprImage.StretchTo( RectF(fLeft + fShift, fTop, fRight + fShift, fTop + SCREEN_HEIGHT) );
 		m_sprImage.Draw();
 	}
 }
