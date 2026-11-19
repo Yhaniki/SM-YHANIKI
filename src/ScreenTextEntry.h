@@ -18,6 +18,8 @@ public:
 	virtual void DrawPrimitives();
 	virtual void Input( const DeviceInput& DeviceI, const InputEventType type, const GameInput &GameI, const MenuInput &MenuI, const StyleInput &StyleI );
 	virtual void HandleScreenMessage( const ScreenMessage SM );
+	virtual bool WantsTextInput() const;
+	virtual void HandleTextInput( const CString &sText );
 
 	static CString s_sLastAnswer;
 	static bool s_bCancelledLast;

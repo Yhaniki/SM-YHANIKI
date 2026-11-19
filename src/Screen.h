@@ -21,6 +21,12 @@ public:
 	virtual void Input( const DeviceInput& DeviceI, const InputEventType type, const GameInput &GameI, const MenuInput &MenuI, const StyleInput &StyleI );
 	virtual void HandleScreenMessage( const ScreenMessage SM );
 
+	/* Typed text (see TextInput): a screen that takes text returns true here, and
+	 * gets what was typed each frame, as UTF-8 with '\b', '\r' and '\x1b' for
+	 * Backspace, Enter and Escape. */
+	virtual bool WantsTextInput() const { return false; }
+	virtual void HandleTextInput( const CString &sText ) { }
+
 	void PostScreenMessage( const ScreenMessage SM, const float fDelay );
 	void ClearMessageQueue();
 	void ClearMessageQueue( const ScreenMessage SM );	// clear of a specific SM

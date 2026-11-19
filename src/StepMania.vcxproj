@@ -487,6 +487,7 @@
     <ClCompile Include="ScreenTestLights.cpp" />
     <ClCompile Include="ScreenTestSound.cpp" />
     <ClCompile Include="ScreenTextEntry.cpp" />
+    <ClCompile Include="TextInput.cpp" />
     <ClCompile Include="ScreenTitleMenu.cpp" />
     <ClCompile Include="ScreenUnlock.cpp" />
     <ClCompile Include="ScreenWithMenuElements.cpp" />
@@ -893,6 +894,7 @@
     <ClInclude Include="ScreenTestLights.h" />
     <ClInclude Include="ScreenTestSound.h" />
     <ClInclude Include="ScreenTextEntry.h" />
+    <ClInclude Include="TextInput.h" />
     <ClInclude Include="ScreenTitleMenu.h" />
     <ClInclude Include="ScreenUnlock.h" />
     <ClInclude Include="ScreenWithMenuElements.h" />

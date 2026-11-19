@@ -1047,6 +1047,9 @@
     <ClCompile Include="InputFilter.cpp">
       <Filter>Global Singletons</Filter>
     </ClCompile>
+    <ClCompile Include="TextInput.cpp">
+      <Filter>Global Singletons</Filter>
+    </ClCompile>
     <ClCompile Include="InputMapper.cpp">
       <Filter>Global Singletons</Filter>
     </ClCompile>
@@ -2223,6 +2226,9 @@
       <Filter>Global Singletons</Filter>
     </ClInclude>
     <ClInclude Include="InputFilter.h">
+      <Filter>Global Singletons</Filter>
+    </ClInclude>
+    <ClInclude Include="TextInput.h">
       <Filter>Global Singletons</Filter>
     </ClInclude>
     <ClInclude Include="InputMapper.h">
