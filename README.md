@@ -88,6 +88,9 @@
     - 需要主題支援：`[ScreenPlayerOptions]` 加 `list,Backplates`、`list,BackplateTransparency`，`[ScreenOptionsMaster]` 加
       `BackplateTransparency` 清單，語言檔加 `BackplatesTitle` / `BackplatesHelp`、`BackplateTransparencyTitle` / `BackplateTransparencyHelp`
       與選項名稱 `BackplateSolid`、`BackplateTransparency0`～`BackplateTransparency90`。`Backplates` 資料夾在素材包裡。
+    - 舊設定自動轉換：Profile 裡存的人物 `SINGLES[L]` / `SINGLES[S]` 讀進來會變成 `Carbon` 背板（同一張圖），不再當人物畫
+    - CyberiaStyle 6（素材包）：「人物開關」那列換成這兩列，`Characters` 拿掉 `SINGLES[L]` / `SINGLES[S]`，
+      `ScreenGameplay Static Background` 改成 `staticbg/none`（舊的固定位置背板，不會跟著軌道）
 
 ## 遊戲中
   | 快速鍵     | 功能          |
