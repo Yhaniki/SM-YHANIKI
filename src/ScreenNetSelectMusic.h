@@ -18,6 +18,7 @@ class ScreenNetSelectMusic : public ScreenWithMenuElements
 {
 public:
 	ScreenNetSelectMusic( const CString& sName );
+	virtual ~ScreenNetSelectMusic();
 	virtual void DrawPrimitives();
 
 	virtual void Update( float fDeltaTime );
