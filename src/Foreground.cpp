@@ -23,6 +23,10 @@ void Foreground::Unload()
 
 void Foreground::LoadFromSong( const Song *pSong )
 {
+	/* Replace whatever was loaded before, like Background::LoadFromSong.  Otherwise
+	 * the next song in a course would also replay the previous songs' layers. */
+	Unload();
+
         /* Song graphics can get very big; never keep them in memory. */
 	RageTextureID::TexPolicy OldPolicy = TEXTUREMAN->GetDefaultTexturePolicy();
 	TEXTUREMAN->SetDefaultTexturePolicy( RageTextureID::TEX_VOLATILE );
