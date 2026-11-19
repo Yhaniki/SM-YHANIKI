@@ -77,13 +77,19 @@ public:
 	void ServerStop();
 	void ServerUpdate();
 	StepManiaLanServer();
-	~StepManiaLanServer();
+	virtual ~StepManiaLanServer();
 	CString servername;
 	CString lastError;
 	int lastErrorCode;
 
 protected:
 #if !defined(WITHOUT_NETWORKING)
+	/* Notifications for front ends such as the standalone server's window
+	 * (StandAloneServer/); the in-game server ignores them. */
+	virtual void OnClientConnected( unsigned int clientNum ) { }
+	virtual void OnClientDisconnecting( unsigned int clientNum ) { }	// still in Client[]
+	virtual void OnChatLine( const CString &sLine ) { }				// a chat line sent to everyone
+
 	bool stop;
 	PacketFunctions Packet;
 	PacketFunctions Reply;

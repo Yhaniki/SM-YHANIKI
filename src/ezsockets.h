@@ -129,6 +129,9 @@ public:
 	CString getIp();
 	CString getPeerIp();	//Address of the other end of a connected socket
 
+	//Native handle, for select() over many sockets and setsockopt().
+	int GetSocketHandle() const { return sock; }
+
 private:
 
 	//Only necessiary in windows, xbox

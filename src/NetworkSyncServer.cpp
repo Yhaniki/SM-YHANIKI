@@ -6,6 +6,9 @@
 #include "ShareSongTransfer.h"
 #include <time.h>
 #include <windows.h>
+#if defined(_WINDOWS)
+#include <mstcpip.h>	// SIO_KEEPALIVE_VALS
+#endif
 #include <unordered_set>
 
 #if defined(WITHOUT_NETWORKING)
@@ -20,6 +23,8 @@ static const bool AUTO_SHARE_MISSING_SONG = true;			// send the song (without vi
 static const unsigned long SHARE_READY_TIMEOUT_MS = 15000;	// the sender has to answer an offer
 static const unsigned long SHARE_IDLE_TIMEOUT_MS = 45000;	// no progress at all (both ends give up after 15s on their own)
 static const unsigned long SHARE_AUTO_WAIT_MS = 10000;		// automatic job waiting for the host's "I have it" report
+static const int MAX_PACKETS_PER_UPDATE = 100;				// per client; more waits for the next update
+static const int MAX_ACCEPTS_PER_UPDATE = 8;
 
 std::unordered_set<std::string> cmdList =
 	{"share",
@@ -56,6 +61,7 @@ LanPlayer::LanPlayer()
 StepManiaLanServer::StepManiaLanServer()
 {
 	stop = true;
+	ClientHost = -1;
 	SecondSameSelect = false;
 	ChangeHost = false;
 	m_Share.active = false;
@@ -135,10 +141,17 @@ void StepManiaLanServer::ServerUpdate()
 void StepManiaLanServer::UpdateClients()
 {
 	//Go through all the clients and check to see if it is being used.
-	//If so then try to get a backet and parse the data.
+	//If so then parse every packet that has arrived: taking only one per
+	//update lets the scoreboard fall behind whenever the clients send faster
+	//than the server is updated.
 	for (unsigned int x = 0; x < Client.size(); ++x)
-		if (CheckConnection(x) && (Client[x]->GetData(Packet) >= 0))
+		for (int n = 0; n < MAX_PACKETS_PER_UPDATE; ++n)
+		{
+			//ParseData can remove clients (/kick, /ban)
+			if (x >= Client.size() || !CheckConnection(x) || Client[x]->GetData(Packet) < 0)
+				break;
 			ParseData(Packet, x);
+		}
 }
 
 GameClient::GameClient()
@@ -159,31 +172,48 @@ GameClient::GameClient()
 
 void StepManiaLanServer::Disconnect(const unsigned int clientNum)
 {
+	if (clientNum >= Client.size())
+		return;
+	OnClientDisconnecting(clientNum);
 	ShareOnClientRemoved(clientNum);
-	if (clientNum == (Client.size()-1))//host leave
+	const bool hostLeft = (clientNum == 0);
+	delete Client[clientNum];
+	Client.erase(Client.begin() + clientNum);
+
+	if (Client.empty())
 	{
-		delete Client[Client.size()-1];
-		Client[Client.size()-1] = NULL;
-		Client.pop_back();
+		//Nobody left: the next player starts with a fresh room.
+		CancelAllShares("");
+		CurrentSongInfo = GameInfo();
+		CurrentSongInfo.hash = 0;
+		LastSongInfo = GameInfo();
+		LastSongInfo.hash = 0;
+		SecondSameSelect = false;
+		ChangeHost = false;
+	}
+	else if (hostLeft)
+	{
+		//On a standalone server the host can leave while the others stay:
+		//the next player takes over and picks the song again.
 		ClearHasSong();
+		ResetLastSongInfo();
+		SecondSameSelect = false;
+		ServerChat("Host changed to " + ClientDisplayName(0) + ".");
 	}
-	else
-	{
-		vector<GameClient*>::iterator Iterator;
-		Iterator = Client.begin();
-		for (unsigned int x = 0; x < Client.size(); ++x)
-		{
-			if (x == clientNum)
-			{
-				delete Client[x];
-				Client[x] = NULL;
-				Client.erase(Iterator);
-			}
-			++Iterator;
-		}
-	}
+
+	//Player IDs are positions in the user list, which just shifted.
+	AssignPlayerIDs();
 	SendUserList();
 	SendPlayerCondition();
+
+	//The others may have been waiting only for this player to load the song:
+	//without another start request nobody would ever start them.
+	for (unsigned int x = 0; x < Client.size(); ++x)
+		if (Client[x]->isStarting && Client[x]->GotStartRequest)
+		{
+			CheckReady();
+			break;
+		}
 }
 
 int GameClient::GetData(PacketFunctions& Packet)
@@ -302,10 +332,13 @@ void GameClient::StyleUpdate(PacketFunctions& Packet)
 {
 	int playernumber = 0;
 	Player[0].name = Player[1].name = "";
-	twoPlayers = Packet.Read1()-1;
-	for (int x = 0; x < twoPlayers+1; ++x)
+	int count = Packet.Read1();
+	twoPlayers = count >= 2;
+	for (int x = 0; x < count && x < 2; ++x)
 	{
 		playernumber = Packet.Read1();
+		if (playernumber >= 2)
+			break;	//malformed packet
 		Player[playernumber].name = Packet.ReadNT();
 	}
 }
@@ -441,8 +474,6 @@ void StepManiaLanServer::GameOver(PacketFunctions& Packet, const unsigned int cl
 	bool allOver = true;
 	unsigned int x;
 
-	unsigned int numPlayers = playersPtr.size();
-
 	Client[clientNum]->hasSong = Client[clientNum]->forceHas = 0;
 	Client[clientNum]->GotStartRequest = false;
 	Client[clientNum]->InGame = false;
@@ -458,9 +489,16 @@ void StepManiaLanServer::GameOver(PacketFunctions& Packet, const unsigned int cl
 		for (x = 0; x < Client.size(); ++x)
 			if (Client[x]->wasIngame && Client[x]->lowerJudge)
 				for (int y = 0; y < 2; ++y)
-					Client[x]->Player[y].options = "TIMING " + playersPtr[x]->options;
+					Client[x]->Player[y].options = "TIMING " + Client[x]->Player[y].options;
 
+		//Count after SortStats refreshed the list: players may have left since the last stats update.
 		SortStats(playersPtr);
+		const unsigned int numPlayers = playersPtr.size();
+		vector<unsigned int> recipients;
+		for (x = 0; x < Client.size(); ++x)
+			if (Client[x]->wasIngame)
+				recipients.push_back(x);
+
 		Reply.ClearPacket();
 		Reply.Write1( NSCGON + NSServerOffset );
 		Reply.Write1( (uint8_t) numPlayers );
@@ -488,13 +526,12 @@ void StepManiaLanServer::GameOver(PacketFunctions& Packet, const unsigned int cl
 		{
 			Reply.WriteNT( playersPtr[x]->percentage );
 		}
-		for (x = 0; x < Client.size(); ++x)
-			if(Client[x]->wasIngame)
-			{
-				SendNetPacket(x, Reply);
-				Client[x]->wasIngame = false;
-			}
-		//============
+		for (x = 0; x < recipients.size(); ++x)
+		{
+			SendNetPacket(recipients[x], Reply);
+			Client[recipients[x]]->wasIngame = false;
+		}
+		//Life graphs, one packet per player, to the same clients
 		for(x = 0; x < numPlayers; ++x)
 		{
 			Reply.ClearPacket();
@@ -505,12 +542,9 @@ void StepManiaLanServer::GameOver(PacketFunctions& Packet, const unsigned int cl
 			{
 				Reply.Write4( playersPtr[x]->Graph[i] );
 			}
-			for(int j=0; j<numPlayers; ++j)
-			{
-				SendNetPacket(j, Reply);
-			}
+			for (unsigned int j = 0; j < recipients.size(); ++j)
+				SendNetPacket(recipients[j], Reply);
 		}
-		//============
 	}
 }
 
@@ -689,11 +723,14 @@ bool GameClient::IsPlaying(int x)
 void GameClient::UpdateStats(PacketFunctions& Packet)
 {
 	//Get the Stats from a packet
-	char firstbyte = Packet.Read1();
-	char secondbyte = Packet.Read1();
+	uint8_t firstbyte = Packet.Read1();
+	uint8_t secondbyte = Packet.Read1();
 	int pID = int(firstbyte/16); /* MSN */
+	int step = int(firstbyte%16); /* LSN */
+	if (pID >= 2 || step >= 9)
+		return;	//malformed packet; these index Player[] and steps[]
 
-	Player[pID].currstep = int(firstbyte%16); /* LSN */
+	Player[pID].currstep = step;
 	Player[pID].projgrade = int(secondbyte/16);
 	Player[pID].score = Packet.Read4();
 	Player[pID].combo = Packet.Read2();
@@ -706,30 +743,46 @@ void GameClient::UpdateStats(PacketFunctions& Packet)
 	Player[pID].steps[Player[pID].currstep]++;
 }
 
+/* Send small packets (chat, start signal) right away, and notice players
+ * whose connection silently died (e.g. their PC lost the network): without
+ * keepalive they would stay in the room forever and block "everyone has the song". */
+static void TuneClientSocket( EzSockets &sock )
+{
+#if defined(_WINDOWS)
+	SOCKET s = (SOCKET)sock.GetSocketHandle();
+	BOOL noDelay = TRUE;
+	setsockopt( s, IPPROTO_TCP, TCP_NODELAY, (const char *)&noDelay, sizeof(noDelay) );
+
+	struct tcp_keepalive ka;
+	ka.onoff = 1;
+	ka.keepalivetime = 30000;		// ms of silence before the first probe
+	ka.keepaliveinterval = 5000;	// ms between probes; Windows gives up after 10
+	DWORD bytes = 0;
+	WSAIoctl( s, SIO_KEEPALIVE_VALS, &ka, sizeof(ka), NULL, 0, &bytes, NULL, NULL );
+#endif
+}
+
 void StepManiaLanServer::NewClientCheck()
 {
-	//Make a new client and accept a connection to it.
-	//If no connection is accepted, delete the client.
-
-	GameClient *tmp = new GameClient;
-
-	if (server.accept(tmp->clientSocket) == 1)
+	//Accept every waiting connection.  Checking first avoids creating a
+	//GameClient on every update when nobody is connecting.
+	for (int n = 0; n < MAX_ACCEPTS_PER_UPDATE && server.CanRead(); ++n)
 	{
-		if (!IsBanned(tmp->clientSocket.address))
-		{
-			Client.push_back(tmp);
-			AssignPlayerIDs();
-		}
-		else
+		GameClient *tmp = new GameClient;
+		if (!server.accept(tmp->clientSocket))
 		{
 			delete tmp;
-			tmp = NULL;
+			break;
 		}
-	}
-	else
-	{
-		delete tmp;
-		tmp = NULL;
+		if (IsBanned(tmp->clientSocket.address))
+		{
+			delete tmp;
+			continue;
+		}
+		TuneClientSocket(tmp->clientSocket);
+		Client.push_back(tmp);
+		AssignPlayerIDs();
+		OnClientConnected(Client.size() - 1);
 	}
 }
 
@@ -868,6 +921,7 @@ void StepManiaLanServer::RelayChat(CString &passedmessage, const unsigned int cl
 	Reply.WriteNT(message);
 
 	SendToAllClients(Reply);
+	OnChatLine(message);
 }
 
 void StepManiaLanServer::SelectSong(PacketFunctions& Packet, unsigned int clientNum)
@@ -1063,6 +1117,7 @@ void StepManiaLanServer::ServerChat(const CString& message)
 	Reply.Write1(NSCCM + NSServerOffset);
 	Reply.WriteNT(x);
 	SendToAllClients(Reply);
+	OnChatLine(x);
 }
 
 void  StepManiaLanServer::ServerChatOne(const CString& message, const unsigned int clientNum)

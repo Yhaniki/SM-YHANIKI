@@ -322,6 +322,7 @@
     <ClCompile Include="MusicWheel.cpp" />
     <ClCompile Include="MusicWheelItem.cpp" />
     <ClCompile Include="NetworkSyncManager.cpp" />
+    <ClCompile Include="NetworkPacket.cpp" />
     <ClCompile Include="NetworkSyncServer.cpp" />
     <ClCompile Include="ShareSongTransfer.cpp" />
     <ClCompile Include="NoteData.cpp" />

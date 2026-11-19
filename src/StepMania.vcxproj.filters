@@ -1059,6 +1059,9 @@
     <ClCompile Include="NetworkSyncManager.cpp">
       <Filter>Global Singletons</Filter>
     </ClCompile>
+    <ClCompile Include="NetworkPacket.cpp">
+      <Filter>Global Singletons</Filter>
+    </ClCompile>
     <ClCompile Include="NetworkSyncServer.cpp">
       <Filter>Global Singletons</Filter>
     </ClCompile>
