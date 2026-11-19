@@ -26,6 +26,7 @@
 #include "StepsUtil.h"
 #include "CourseUtil.h"
 #include "RageFileManager.h"
+#include "RageUtil_CharConversions.h"
 #include "UnlockSystem.h"
 #include "CatalogXml.h"
 #include "Foreach.h"
@@ -1261,12 +1262,24 @@ Song *SongManager::FindSong( CString sPath )
 	CStringArray bits;
 	split( sPath, "/", bits );
 
+	Song *pSong = NULL;
 	if( bits.size() == 1 )
-		return FindSong( "", bits[0] );
+		pSong = FindSong( "", bits[0] );
 	else if( bits.size() == 2 )
-		return FindSong( bits[0], bits[1] );
+		pSong = FindSong( bits[0], bits[1] );
+	else
+		return NULL;
 
-	return NULL;	
+	/* Course and edit files written in the system code page name folders the
+	 * way older builds listed them; folder names are UTF-8 now.  Try the raw
+	 * string first, since it may also be a title in the same code page. */
+	if( pSong == NULL )
+	{
+		const CString sUtf8 = LegacyPathToUtf8( sPath );
+		if( sUtf8 != sPath )
+			pSong = FindSong( sUtf8 );
+	}
+	return pSong;
 }
 
 Song *SongManager::FindSong( CString sGroup, CString sSong )

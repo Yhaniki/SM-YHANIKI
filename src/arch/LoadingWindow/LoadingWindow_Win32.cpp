@@ -1,5 +1,6 @@
 #include "../../global.h"
 #include "../../RageUtil.h"
+#include "../../RageUtil_CharConversions.h"
 
 #include "LoadingWindow_Win32.h"
 #include "RageFileManager.h"
@@ -201,8 +202,9 @@ void LoadingWindow_Win32::SetText(CString str)
 			continue;
 		text[i] = asMessageLines[i];
 
-		SendDlgItemMessage( hwnd, msgs[i], WM_SETTEXT, 0, 
-			(LPARAM)asMessageLines[i].c_str());
+		/* The text is UTF-8 (it shows song folder names). */
+		SendDlgItemMessageW( hwnd, msgs[i], WM_SETTEXT, 0,
+			(LPARAM)Utf8ToWide(asMessageLines[i]).c_str());
 	}
 }
 

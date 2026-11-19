@@ -1,6 +1,7 @@
 #include "global.h"
 #include "RageMath.h"
 #include "RageUtil.h"
+#include "RageUtil_CharConversions.h"
 #include "RageLog.h"
 #include "RageFile.h"
 #include "arch/arch.h"
@@ -438,6 +439,12 @@ CString GetCwd()
 {
 #ifdef _XBOX
 	return SYS_BASE_PATH;
+#elif defined(_WINDOWS)
+	/* Paths are UTF-8; the ANSI getcwd would lose characters outside the code page. */
+	wchar_t buf[PATH_MAX];
+	bool ret = _wgetcwd(buf, PATH_MAX) != NULL;
+	ASSERT(ret);
+	return WideToUtf8( buf );
 #else
 	char buf[PATH_MAX];
 	bool ret = getcwd(buf, PATH_MAX) != NULL;

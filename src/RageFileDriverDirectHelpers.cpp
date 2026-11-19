@@ -1,6 +1,7 @@
 #include "global.h"
 #include "RageFileDriverDirectHelpers.h"
 #include "RageUtil.h"
+#include "RageUtil_CharConversions.h"
 #include "RageLog.h"
 
 #include <cerrno>
@@ -61,10 +62,37 @@ HANDLE DoFindFirstFile( const CString &sPath, WIN32_FIND_DATA *fd )
 	return FindFirstFile( TempPath, fd );
 }
 
+#elif defined(WIN32)
+int DoMkdir( const CString &sPath, int perm )
+{
+	return _wmkdir( Utf8ToWide(sPath).c_str() );
+}
+
+int DoOpen( const CString &sPath, int flags, int perm )
+{
+	return _wopen( Utf8ToWide(sPath).c_str(), flags, perm );
+}
+
+int DoStat( const CString &sPath, struct stat *st )
+{
+	/* The CRT's own stat() casts the same way. */
+	static_assert( sizeof(struct stat) == sizeof(struct _stat), "struct stat doesn't match struct _stat" );
+	return _wstat( Utf8ToWide(sPath).c_str(), (struct _stat *) st );
+}
+
+int DoRemove( const CString &sPath )
+{
+	return _wremove( Utf8ToWide(sPath).c_str() );
+}
+
+int DoRmdir( const CString &sPath )
+{
+	return _wrmdir( Utf8ToWide(sPath).c_str() );
+}
 #endif
 
 #if defined(WIN32)
-int WinMoveFileInternal( const CString &sOldPath, const CString &sNewPath )
+int WinMoveFileInternal( const wchar_t *sOldPath, const wchar_t *sNewPath )
 {
 	static bool Win9x = false;
 
@@ -75,7 +103,7 @@ int WinMoveFileInternal( const CString &sOldPath, const CString &sNewPath )
 	 * to be robust on 9x anyway). */
 	if( !Win9x )
 	{
-		if( MoveFileEx( sOldPath, sNewPath, MOVEFILE_REPLACE_EXISTING ) )
+		if( MoveFileExW( sOldPath, sNewPath, MOVEFILE_REPLACE_EXISTING ) )
 			return 1;
 
 		// On Win9x, MoveFileEx is expected to fail (returns ERROR_CALL_NOT_IMPLEMENTED).
@@ -86,16 +114,16 @@ int WinMoveFileInternal( const CString &sOldPath, const CString &sNewPath )
 			return 0;
 	}
 
-	if( MoveFile( sOldPath, sNewPath ) )
+	if( MoveFileW( sOldPath, sNewPath ) )
 		return 1;
 	
 	if( GetLastError() != ERROR_ALREADY_EXISTS )
 		return 0;
 
-	if( !DeleteFile( sNewPath ) )
+	if( !DeleteFileW( sNewPath ) )
 		return 0;
 
-	return MoveFile( sOldPath, sNewPath );
+	return MoveFileW( sOldPath, sNewPath );
 }
 
 int WinMoveFile( CString sOldPath, CString sNewPath )
@@ -104,15 +132,17 @@ int WinMoveFile( CString sOldPath, CString sNewPath )
 	sOldPath.Replace( "/", "\\" );
 	sNewPath.Replace( "/", "\\" );
 #endif
+	const wstring wOldPath = Utf8ToWide( sOldPath );
+	const wstring wNewPath = Utf8ToWide( sNewPath );
 
-	if( WinMoveFileInternal(sOldPath, sNewPath) )
+	if( WinMoveFileInternal(wOldPath.c_str(), wNewPath.c_str()) )
 		return 1;
 	if( GetLastError() != ERROR_ACCESS_DENIED )
 		return 0;
 	/* Try turning off the read-only bit on the file we're overwriting. */
-	SetFileAttributes( sNewPath, FILE_ATTRIBUTE_NORMAL );
+	SetFileAttributesW( wNewPath.c_str(), FILE_ATTRIBUTE_NORMAL );
 
-	return WinMoveFileInternal( sOldPath, sNewPath );
+	return WinMoveFileInternal( wOldPath.c_str(), wNewPath.c_str() );
 }
 #endif
 
@@ -245,41 +275,31 @@ void DirectFilenameDB::PopulateFileSet( FileSet &fs, const CString &path )
 	fs.files.clear();
 
 #if defined(WIN32)
-	WIN32_FIND_DATA fd;
+	/* Use the wide API: the ANSI one turns characters that don't fit the
+	 * system code page into '?', and those files can't be opened. */
+	WIN32_FIND_DATAW fd;
 
 	if ( sPath.size() > 0  && sPath.Right(1) == "/" )
 		sPath.erase( sPath.size() - 1 );
 
-	HANDLE hFind = DoFindFirstFile( root+sPath+"/*", &fd );
+	HANDLE hFind = FindFirstFileW( Utf8ToWide(root+sPath+"/*").c_str(), &fd );
 	CHECKPOINT_M( root+sPath+"/*" );
 
 	if( hFind == INVALID_HANDLE_VALUE )
 		return;
 
 	do {
-		if(!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+		if( !wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..") )
 			continue;
 
-		/* FindFirstFile returns names in the system code page.  Characters the
-		 * code page can't represent (e.g. Japanese kana on Traditional Chinese
-		 * Windows) come back as '?', and a name containing '?' can never be
-		 * opened.  Use the 8.3 short name instead when the volume has one: it is
-		 * made of characters the code page can represent.  '?' can't appear in a
-		 * real file name, nor as the second byte of a DBCS character, so it
-		 * reliably marks a lossy conversion. */
-		const char *szName = fd.cFileName;
-		if( strchr(fd.cFileName, '?') != NULL &&
-			fd.cAlternateFileName[0] != '\0' && strchr(fd.cAlternateFileName, '?') == NULL )
-			szName = fd.cAlternateFileName;
-
 		File f;
-		f.SetName( szName );
+		f.SetName( WideToUtf8(fd.cFileName) );
 		f.dir = !!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
 		f.size = fd.nFileSizeLow;
 		f.hash = fd.ftLastWriteTime.dwLowDateTime;
 
 		fs.files.insert(f);
-	} while( FindNextFile( hFind, &fd ) );
+	} while( FindNextFileW( hFind, &fd ) );
 	FindClose(hFind);
 #else
 	int OldDir = DoOpen(".", O_RDONLY);

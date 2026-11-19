@@ -5,6 +5,7 @@
 #include "ShareSongTransfer.h"
 #include "RageLog.h"
 #include "RageUtil.h"
+#include "RageUtil_CharConversions.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -59,37 +60,6 @@ const char PART_SUFFIX[] = ".yhpart";
 
 unsigned long long MinU64( unsigned long long a, unsigned long long b ) { return a < b ? a : b; }
 
-/* ---------- string conversion ---------- */
-
-std::wstring ToWide( const std::string &s, UINT iCodePage )
-{
-	if( s.empty() )
-		return std::wstring();
-	int n = MultiByteToWideChar( iCodePage, 0, s.data(), (int)s.size(), NULL, 0 );
-	if( n <= 0 )
-		return std::wstring();
-	std::wstring w( n, L'\0' );
-	MultiByteToWideChar( iCodePage, 0, s.data(), (int)s.size(), &w[0], n );
-	return w;
-}
-
-std::string FromWide( const std::wstring &w, UINT iCodePage )
-{
-	if( w.empty() )
-		return std::string();
-	int n = WideCharToMultiByte( iCodePage, 0, w.data(), (int)w.size(), NULL, 0, NULL, NULL );
-	if( n <= 0 )
-		return std::string();
-	std::string s( n, '\0' );
-	WideCharToMultiByte( iCodePage, 0, w.data(), (int)w.size(), &s[0], n, NULL, NULL );
-	return s;
-}
-
-std::wstring AnsiToWide( const std::string &s ) { return ToWide( s, CP_ACP ); }
-std::string WideToAnsi( const std::wstring &w ) { return FromWide( w, CP_ACP ); }
-std::string AnsiToUtf8( const std::string &s ) { return FromWide( ToWide( s, CP_ACP ), CP_UTF8 ); }
-std::wstring Utf8ToWide( const std::string &s ) { return ToWide( s, CP_UTF8 ); }
-
 bool EndsWithNoCase( const std::string &s, const char *szSuffix )
 {
 	size_t n = strlen( szSuffix );
@@ -104,19 +74,6 @@ std::string StripTrailingSlashes( std::string s )
 }
 
 /* ---------- receiver side path sanitizing ---------- */
-
-/* Can the game (which uses the ANSI file APIs) open a name containing this character? */
-bool IsCharOkForAnsi( wchar_t c )
-{
-	if( c < 0x80 )
-		return true;
-	if( c >= 0xD800 && c <= 0xDFFF )	// surrogate pairs never fit an ANSI code page
-		return false;
-	char buf[8];
-	BOOL bUsedDefault = FALSE;
-	int n = WideCharToMultiByte( CP_ACP, WC_NO_BEST_FIT_CHARS, &c, 1, buf, sizeof(buf), NULL, &bUsedDefault );
-	return n > 0 && !bUsedDefault;
-}
 
 bool IsReservedDeviceName( const std::wstring &sName )
 {
@@ -141,7 +98,7 @@ bool SanitizeComponent( const std::wstring &sIn, std::wstring &sOut )
 	for( size_t i = 0; i < sIn.size(); ++i )
 	{
 		wchar_t c = sIn[i];
-		if( c < 32 || wcschr( L"<>:\"/\\|?*", c ) != NULL || !IsCharOkForAnsi( c ) )
+		if( c < 32 || wcschr( L"<>:\"/\\|?*", c ) != NULL )
 			sOut += L'_';
 		else
 			sOut += c;
@@ -192,32 +149,29 @@ bool PathExistsW( const std::wstring &s )
 struct FileEntry
 {
 	std::string sRelUtf8;	// path inside the song folder, '/' separated
-	std::string sFullAnsi;	// sender only
+	std::wstring sFull;		// sender only
 	unsigned long long iSize;
 	bool bVideo;
 };
 
-void ScanDir( const std::string &sDirAnsi, const std::string &sRelUtf8, int iDepth,
+void ScanDir( const std::wstring &sDir, const std::string &sRelUtf8, int iDepth,
 	bool bIncludeVideo, std::vector<FileEntry> &vOut )
 {
-	WIN32_FIND_DATAA fd;
-	HANDLE h = FindFirstFileA( (sDirAnsi + "\\*").c_str(), &fd );
+	WIN32_FIND_DATAW fd;
+	HANDLE h = FindFirstFileW( (sDir + L"\\*").c_str(), &fd );
 	if( h == INVALID_HANDLE_VALUE )
 		return;
 	do
 	{
-		std::string sName = fd.cFileName;
-		if( sName == "." || sName == ".." )
+		const std::wstring sName = fd.cFileName;
+		if( sName == L"." || sName == L".." )
 			continue;
 		if( fd.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) )
 			continue;
-		/* '?' means the name doesn't fit the code page; the game can't open it either. */
-		if( sName.find( '?' ) != std::string::npos )
-			continue;
 
-		std::string sNameUtf8 = AnsiToUtf8( sName );
+		const std::string sNameUtf8 = WideToUtf8( sName );
 		std::string sRel = sRelUtf8.empty() ? sNameUtf8 : sRelUtf8 + "/" + sNameUtf8;
-		std::string sFull = sDirAnsi + "\\" + sName;
+		std::wstring sFull = sDir + L"\\" + sName;
 
 		if( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
 		{
@@ -225,20 +179,20 @@ void ScanDir( const std::string &sDirAnsi, const std::string &sRelUtf8, int iDep
 				ScanDir( sFull, sRel, iDepth + 1, bIncludeVideo, vOut );
 			continue;
 		}
-		if( EndsWithNoCase( sName, PART_SUFFIX ) )
+		if( EndsWithNoCase( sNameUtf8, PART_SUFFIX ) )
 			continue;
 
 		FileEntry e;
 		e.sRelUtf8 = sRel;
-		e.sFullAnsi = sFull;
+		e.sFull = sFull;
 		e.iSize = ((unsigned long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
-		e.bVideo = ShareSongTransfer::IsVideoFile( sName.c_str() );
+		e.bVideo = ShareSongTransfer::IsVideoFile( sNameUtf8.c_str() );
 		if( e.bVideo && !bIncludeVideo )
 			continue;
 		if( e.sRelUtf8.size() > MAX_PATH_BYTES )
 			continue;
 		vOut.push_back( e );
-	} while( FindNextFileA( h, &fd ) && vOut.size() < MAX_FILES );
+	} while( FindNextFileW( h, &fd ) && vOut.size() < MAX_FILES );
 	FindClose( h );
 }
 
@@ -554,7 +508,7 @@ void ShareSongTransfer::SenderThread( CString sSongDir, bool bIncludeVideo )
 		std::string sFolderName = (iSlash == std::string::npos) ? sDir : sDir.substr( iSlash + 1 );
 
 		std::vector<FileEntry> vFiles;
-		ScanDir( sDir, "", 0, bIncludeVideo, vFiles );
+		ScanDir( Utf8ToWide( sDir ), "", 0, bIncludeVideo, vFiles );
 		if( vFiles.empty() )
 		{
 			sError = "no files found in the song folder";
@@ -645,7 +599,7 @@ void ShareSongTransfer::SenderThread( CString sSongDir, bool bIncludeVideo )
 		ByteWriter header;
 		header.U32( MAGIC_HEADER );
 		header.U16( PROTOCOL_VERSION );
-		header.Str( AnsiToUtf8( sFolderName ) );
+		header.Str( sFolderName );
 		header.U32( (unsigned int)vFiles.size() );
 		for( size_t i = 0; i < vFiles.size(); ++i )
 		{
@@ -699,10 +653,10 @@ void ShareSongTransfer::SenderThread( CString sSongDir, bool bIncludeVideo )
 		for( size_t i = 0; i < vNeed.size(); ++i )
 		{
 			const FileEntry &e = vFiles[vNeed[i]];
-			FILE *f = fopen( e.sFullAnsi.c_str(), "rb" );
+			FILE *f = _wfopen( e.sFull.c_str(), L"rb" );
 			if( f == NULL )
 			{
-				sError = ssprintf( "cannot read %s", e.sFullAnsi.c_str() );
+				sError = "cannot read " + WideToUtf8( e.sFull );
 				return RESULT_FAILED;
 			}
 			unsigned long long iLeft = e.iSize;
@@ -713,7 +667,7 @@ void ShareSongTransfer::SenderThread( CString sSongDir, bool bIncludeVideo )
 				if( iGot != iWant )
 				{
 					fclose( f );
-					sError = ssprintf( "read error in %s", e.sFullAnsi.c_str() );
+					sError = "read error in " + WideToUtf8( e.sFull );
 					return RESULT_FAILED;
 				}
 				if( !conn.SendAll( &buf[0], iGot, &m_iDoneBytes ) )
@@ -890,7 +844,7 @@ void ShareSongTransfer::ReceiverThread( vector<CString> vsHosts, unsigned short 
 		bool bRootExists = false;
 		if( bSupplement )
 		{
-			sRoot = AnsiToWide( StripTrailingSlashes( sExistingSongDir ) );
+			sRoot = Utf8ToWide( StripTrailingSlashes( sExistingSongDir ) );
 			bRootExists = PathExistsW( sRoot );
 			if( !bRootExists )
 			{
@@ -900,7 +854,7 @@ void ShareSongTransfer::ReceiverThread( vector<CString> vsHosts, unsigned short 
 		}
 		else
 		{
-			std::wstring sConnect = AnsiToWide( StripTrailingSlashes( sConnectDir ) );
+			std::wstring sConnect = Utf8ToWide( StripTrailingSlashes( sConnectDir ) );
 			CreateDirectoryW( sConnect.c_str(), NULL );
 			std::wstring sName;
 			if( !SanitizeComponent( Utf8ToWide( sFolderUtf8 ), sName ) )
@@ -971,7 +925,7 @@ void ShareSongTransfer::ReceiverThread( vector<CString> vsHosts, unsigned short 
 			}
 			vCreatedDirs.push_back( sRoot );
 			std::lock_guard<std::mutex> lock( m_Mutex );
-			m_sReceivedFolder = WideToAnsi( sRoot.substr( sRoot.find_last_of( L'\\' ) + 1 ) ).c_str();
+			m_sReceivedFolder = WideToUtf8( sRoot.substr( sRoot.find_last_of( L'\\' ) + 1 ) );
 		}
 
 		/* Receive the data, each file into a .yhpart first. */
@@ -989,7 +943,7 @@ void ShareSongTransfer::ReceiverThread( vector<CString> vsHosts, unsigned short 
 				{
 					if( !CreateDirectoryW( sPath.c_str(), NULL ) )
 					{
-						sError = CString( ("cannot create folder " + WideToAnsi( sPath )).c_str() );
+						sError = "cannot create folder " + WideToUtf8( sPath );
 						return RESULT_FAILED;
 					}
 					vCreatedDirs.push_back( sPath );
@@ -1002,7 +956,7 @@ void ShareSongTransfer::ReceiverThread( vector<CString> vsHosts, unsigned short 
 			if( pPartFile == NULL )
 			{
 				sPartFile.clear();
-				sError = CString( ("cannot write " + WideToAnsi( sPath )).c_str() );
+				sError = "cannot write " + WideToUtf8( sPath );
 				return RESULT_FAILED;
 			}
 			unsigned long long iLeft = e.iSize;
@@ -1025,7 +979,7 @@ void ShareSongTransfer::ReceiverThread( vector<CString> vsHosts, unsigned short 
 			pPartFile = NULL;
 			if( !bClosedOk || !MoveFileExW( sPartFile.c_str(), sPath.c_str(), MOVEFILE_REPLACE_EXISTING ) )
 			{
-				sError = CString( ("cannot finish " + WideToAnsi( sPath )).c_str() );
+				sError = "cannot finish " + WideToUtf8( sPath );
 				return RESULT_FAILED;
 			}
 			sPartFile.clear();
@@ -1039,7 +993,7 @@ void ShareSongTransfer::ReceiverThread( vector<CString> vsHosts, unsigned short 
 			/* Everything is on disk already; the sender just won't hear about it. */
 			LOG->Warn( "ShareSong: could not send the final ack: %s", conn.m_sError.c_str() );
 		}
-		LOG->Info( "ShareSong: received %u files into \"%s\"", (unsigned)vNeed.size(), WideToAnsi( sRoot ).c_str() );
+		LOG->Info( "ShareSong: received %u files into \"%s\"", (unsigned)vNeed.size(), WideToUtf8( sRoot ).c_str() );
 		return vNeed.empty() ? RESULT_NOTHING_NEEDED : RESULT_OK;
 	};
 

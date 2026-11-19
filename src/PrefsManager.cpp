@@ -4,6 +4,7 @@
 #include "GameState.h"
 #include "RageDisplay.h"
 #include "RageUtil.h"
+#include "RageUtil_CharConversions.h"
 #include "arch/arch.h" /* for default driver specs */
 #include "RageSoundReader_Resample.h" /* for ResampleQuality */
 #include "RageFile.h"
@@ -587,6 +588,9 @@ void PrefsManager::ReadPrefsFromFile( CString sIni )
 
 	ini.GetValue( "Options", "AdditionalSongFolders",			m_sAdditionalSongFolders );
 	ini.GetValue( "Options", "AdditionalFolders",				m_sAdditionalFolders );
+	/* Paths are UTF-8 now; an ini saved in the system code page still works. */
+	m_sAdditionalSongFolders = LegacyPathToUtf8( m_sAdditionalSongFolders );
+	m_sAdditionalFolders = LegacyPathToUtf8( m_sAdditionalFolders );
 	FixSlashesInPlace(m_sAdditionalSongFolders);
 	FixSlashesInPlace(m_sAdditionalFolders);
 

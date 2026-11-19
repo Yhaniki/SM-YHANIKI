@@ -41,6 +41,7 @@ void NetworkSyncManager::SelectUserSong() { }
 #include "SongManager.h"
 #include "Style.h"
 #include "ShareSongTransfer.h"
+#include "RageUtil_CharConversions.h"
 #include "arch/LoadingWindow/LoadingWindow.h"
 
 const ScreenMessage	SM_AddToChat	= ScreenMessage(SM_User+4);
@@ -48,10 +49,16 @@ const ScreenMessage SM_ChangeSong	= ScreenMessage(SM_User+5);
 const ScreenMessage SM_GotEval		= ScreenMessage(SM_User+6);
 // const ScreenMessage SM_BackFromReloadSongs			= ScreenMessage(SM_User+7);
 
+/* path is UTF-8. */
 bool IsPathExists(const std::string &path)
 {
+#if defined(_WINDOWS)
+	struct _stat buffer;
+	return (_wstat(Utf8ToWide(path).c_str(), &buffer) == 0);
+#else
 	struct stat buffer;
 	return (stat(path.c_str(), &buffer) == 0);
+#endif
 }
 
 NetworkSyncManager::NetworkSyncManager( LoadingWindow *ld )
@@ -514,11 +521,7 @@ void NetworkSyncManager::Update(float fDeltaTime)
 CString GetSongDirPath(std::string &songDir,
 					   std::string &additionalSongFolders)
 {
-	const int maxBufferSize = 512;
-	string currentPath;
-	char buf[maxBufferSize];
-	getcwd(buf, sizeof(buf));
-	currentPath.assign(buf);
+	const string currentPath = GetCwd();
 	CString path = currentPath + "/" + songDir;
 	replace(path.begin(), path.end(), '/', '\\');
 	if (!IsPathExists(path))
@@ -541,11 +544,7 @@ CString GetSongDirPath(std::string &songDir,
 
 CString GetConnectFolderPath(void)
 {
-	const int maxBufferSize = 512;
-	string currentPath;
-	char buf[maxBufferSize];
-	getcwd(buf, sizeof(buf));
-	currentPath.assign(buf);
+	const string currentPath = GetCwd();
 	CString path = currentPath + "\\Songs\\connect";
 	return path;
 }

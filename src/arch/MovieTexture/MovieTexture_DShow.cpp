@@ -16,6 +16,7 @@
 /* for TEXTUREMAN->GetTextureColorDepth() */
 #include "RageTextureManager.h"
 #include "RageUtil.h"
+#include "RageUtil_CharConversions.h"
 #include "RageLog.h"
 #include "RageException.h"
 #include "RageSurface.h"
@@ -340,7 +341,7 @@ void MovieTexture_DShow::Create()
 
     // Add the source filter
     CComPtr<IBaseFilter>    pFSrc;          // Source Filter
-    wstring wFileName = CStringToWstring(actualID.filename);
+    wstring wFileName = Utf8ToWide(actualID.filename);
 
 	// if this fails, it's probably because the user doesn't have DivX installed
 	/* No, it also happens if the movie can't be opened for some reason; for example,

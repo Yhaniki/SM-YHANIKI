@@ -1,6 +1,7 @@
 #include "global.h"
 #include "DialogDriver_Win32.h"
 #include "RageUtil.h"
+#include "RageUtil_CharConversions.h"
 #include "ProductInfo.h"
 #include "DialogDriver.h"
 
@@ -37,12 +38,13 @@ static BOOL CALLBACK OKWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 				style &= ~WS_VISIBLE;
 	        SetWindowLong( hush, GWL_STYLE, style );
 
-			SendDlgItemMessage( 
-				hWnd, 
-				IDC_MESSAGE, 
-				WM_SETTEXT, 
-				0, 
-				(LPARAM)(LPCTSTR)sMessage
+			/* The message is UTF-8 (it may contain file paths). */
+			SendDlgItemMessageW(
+				hWnd,
+				IDC_MESSAGE,
+				WM_SETTEXT,
+				0,
+				(LPARAM)Utf8ToWide(sMessage).c_str()
 				);
 		}
 		break;
@@ -89,12 +91,13 @@ static BOOL CALLBACK ErrorWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
 
 			sMessage.Replace( "\n", "\r\n" );
 			
-			SendDlgItemMessage( 
-				hWnd, 
-				IDC_EDIT_ERROR, 
-				WM_SETTEXT, 
-				0, 
-				(LPARAM)(LPCTSTR)sMessage
+			/* The message is UTF-8 (it may contain file paths). */
+			SendDlgItemMessageW(
+				hWnd,
+				IDC_EDIT_ERROR,
+				WM_SETTEXT,
+				0,
+				(LPARAM)Utf8ToWide(sMessage).c_str()
 				);
 		}
 		break;
@@ -155,7 +158,7 @@ Dialog::Result DialogDriver_Win32::AbortRetryIgnore( CString sMessage, CString I
 	SDL_PumpEvents();
 #endif
 
-	switch( MessageBox(NULL, sMessage, PRODUCT_NAME, MB_ABORTRETRYIGNORE|MB_DEFBUTTON2 ) )
+	switch( MessageBoxW(NULL, Utf8ToWide(sMessage).c_str(), Utf8ToWide(PRODUCT_NAME).c_str(), MB_ABORTRETRYIGNORE|MB_DEFBUTTON2 ) )
 	{
 	case IDABORT:	return Dialog::abort;
 	case IDRETRY:	return Dialog::retry;
@@ -170,7 +173,7 @@ Dialog::Result DialogDriver_Win32::RetryCancel( CString sMessage, CString ID )
 	SDL_PumpEvents();
 #endif
 
-	switch( MessageBox(NULL, sMessage, PRODUCT_NAME, MB_RETRYCANCEL ) )
+	switch( MessageBoxW(NULL, Utf8ToWide(sMessage).c_str(), Utf8ToWide(PRODUCT_NAME).c_str(), MB_RETRYCANCEL ) )
 	{
 	case IDRETRY:	return Dialog::retry;
 	default:	ASSERT(0);

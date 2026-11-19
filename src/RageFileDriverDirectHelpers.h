@@ -12,6 +12,14 @@ int DoStat( const CString &sPath, struct stat *st );
 int DoRemove( const CString &sPath );
 int DoRmdir( const CString &sPath );
 HANDLE DoFindFirstFile( const CString &sPath, WIN32_FIND_DATA *fd );
+#elif defined(WIN32)
+/* Paths are UTF-8; these go through the wide CRT functions, so names that
+ * don't fit the system code page still work. */
+int DoMkdir( const CString &sPath, int perm );
+int DoOpen( const CString &sPath, int flags, int perm );
+int DoStat( const CString &sPath, struct stat *st );
+int DoRemove( const CString &sPath );
+int DoRmdir( const CString &sPath );
 #else
 #define DoOpen open
 #define DoStat stat

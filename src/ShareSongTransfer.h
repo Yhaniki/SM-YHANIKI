@@ -46,7 +46,7 @@ public:
 	ShareSongTransfer();
 	~ShareSongTransfer();
 
-	/* Send the song folder sSongDir (absolute path, system code page).
+	/* Send the song folder sSongDir (absolute path, UTF-8; so are the receiver's dirs).
 	 * Video files are skipped unless bIncludeVideo. */
 	bool StartSend( int iTransferId, const CString &sSongDir, bool bIncludeVideo );
 

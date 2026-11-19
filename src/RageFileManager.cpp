@@ -3,6 +3,7 @@
 #include "RageFileManager.h"
 #include "RageFileDriver.h"
 #include "RageUtil.h"
+#include "RageUtil_CharConversions.h"
 #include "RageUtil_FileDB.h"
 #include "RageLog.h"
 #include "RageThreads.h"
@@ -73,9 +74,9 @@ static CString GetDirOfExecutable( CString argv0 )
 
 	CString sPath;
 #if defined(_WIN32)
-	char buf[MAX_PATH];
-	GetModuleFileName( NULL, buf, sizeof(buf) );
-	sPath = buf;
+	wchar_t buf[MAX_PATH];
+	GetModuleFileNameW( NULL, buf, MAX_PATH );
+	sPath = WideToUtf8( buf );
 #else
 	sPath = argv0;
 #endif
@@ -115,7 +116,7 @@ static void ChangeToDirOfExecutable( CString argv0 )
 	/* Set the CWD.  Any effects of this is platform-specific; most files are read and
 	 * written through RageFile.  See also RageFileManager::RageFileManager. */
 #if defined(_WINDOWS)
-	chdir( DirOfExecutable + "/.." );
+	_wchdir( Utf8ToWide(DirOfExecutable + "/..").c_str() );
 #elif defined(DARWIN)
 	chdir(DirOfExecutable + "/../../..");
 #endif

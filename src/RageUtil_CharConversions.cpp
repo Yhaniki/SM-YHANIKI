@@ -110,5 +110,48 @@ bool ConvertString(CString &str, const CString &encodings)
 	return false;
 }
 
+#if defined(_WINDOWS)
+wstring Utf8ToWide( const CString &s )
+{
+	if( s.empty() )
+		return wstring();
+	const int iLen = MultiByteToWideChar( CP_UTF8, 0, s.data(), (int) s.size(), NULL, 0 );
+	if( iLen <= 0 )
+		return wstring();
+	wstring ret( iLen, L'\0' );
+	MultiByteToWideChar( CP_UTF8, 0, s.data(), (int) s.size(), &ret[0], iLen );
+	return ret;
+}
+
+CString WideToUtf8( const wstring &s )
+{
+	if( s.empty() )
+		return CString();
+	const int iLen = WideCharToMultiByte( CP_UTF8, 0, s.data(), (int) s.size(), NULL, 0, NULL, NULL );
+	if( iLen <= 0 )
+		return CString();
+	string ret( iLen, '\0' );
+	WideCharToMultiByte( CP_UTF8, 0, s.data(), (int) s.size(), &ret[0], iLen, NULL, NULL );
+	return CString( ret.data(), iLen );
+}
+#endif
+
+CString LegacyPathToUtf8( const CString &s )
+{
+	if( utf8_is_valid(s) )
+		return s;
+#if defined(_WINDOWS)
+	/* Not CodePageConvert: that logs, and this runs before LOG exists. */
+	const int iLen = MultiByteToWideChar( CP_ACP, MB_ERR_INVALID_CHARS, s.data(), (int) s.size(), NULL, 0 );
+	if( iLen > 0 )
+	{
+		wstring w( iLen, L'\0' );
+		MultiByteToWideChar( CP_ACP, MB_ERR_INVALID_CHARS, s.data(), (int) s.size(), &w[0], iLen );
+		return WideToUtf8( w );
+	}
+#endif
+	return s;
+}
+
 /* Written by Glenn Maynard.  In the public domain; there are so many
  * simple conversion interfaces that restricting them is silly. */
