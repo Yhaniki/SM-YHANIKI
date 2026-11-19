@@ -445,6 +445,8 @@ try {
 	m_bWantRewind = false;
 	m_Clock = 0;
 	m_FrameSkipMode = false;
+	m_bCantCatchUp = false;
+	m_fBehindAtCatchUpCheck = 0;
 	m_bThreaded = PREFSMAN->m_bThreadedMovieDecode;
 
 	CreateDecoder();
@@ -821,49 +823,70 @@ float MovieTexture_FFMpeg::CheckFrameTime()
 	/* If we're ahead, we're decoding too fast; delay. */
 	if( Offset > 0.00001f )
 	{
-		if( m_FrameSkipMode )
-		{
-			/* We're caught up; stop skipping frames. */
-			LOG->Trace( "stopped skipping frames" );
-			m_FrameSkipMode = false;
-		}
+		StopSkippingFrames();
 		return Offset;
 	}
 
-	/*
-	 * We're behind by -Offset seconds.  
-	 *
-	 * If we're just slightly behind, don't worry about it; we'll simply
-	 * not sleep, so we'll move as fast as we can to catch up.
-	 *
-	 * If we're far behind, we're short on CPU.  Skip texture updates; this
-	 * is a big bottleneck on many systems.
-	 *
-	 * If we hit a threshold, start skipping frames via #1.  If we do that,
-	 * don't stop once we hit the threshold; keep doing it until we're fully
-	 * caught up.
-	 *
-	 * We should try to notice if we simply don't have enough CPU for the video;
-	 * it's better to just stay in frame skip mode than to enter and exit it
-	 * constantly, but we don't want to do that due to a single timing glitch.
-	 */
-	
-	const float FrameSkipThreshold = 0.5f;
-
-	if( -Offset >= FrameSkipThreshold && !m_FrameSkipMode )
+	/* We're behind.  If the next frame isn't due yet, this one is only
+	 * slightly late; show it now. */
+	const float fBehind = -Offset;
+	if( fBehind < decoder->LastFrameDelay / m_Rate )
 	{
-		LOG->Trace( "(%s) Time is %f, and the movie is at %f.  Entering frame skip mode.",
-			GetID().filename.c_str(), m_Clock, decoder->GetTimestamp());
-		m_FrameSkipMode = true;
+		StopSkippingFrames();
+		return 0;
 	}
 
-	if( m_FrameSkipMode && decoder->m_stream->codec.frame_number % 1000 ){
-		// LOG->Info( "decoder->m_stream->codec.frame_number %d", decoder->m_stream->codec.frame_number% 10000);
-		return -1; /* skip */
+	/*
+	 * The next frame is already due, so this one would be replaced right
+	 * away.  Skip it: converting and uploading frames is the expensive part,
+	 * and each shown frame waits for the main thread.  Skipping keeps the
+	 * movie in sync and lets it catch up quickly after a hitch or a seek
+	 * (seeking a non-AVI movie decodes from the start of the file).
+	 *
+	 * That only works if decoding alone is faster than real time.  While
+	 * skipping, check every CATCH_UP_CHECK_SECONDS whether we're gaining on
+	 * the clock; if we aren't, skipping everything would freeze the movie,
+	 * so show every other frame to keep it moving.
+	 */
+	const float CATCH_UP_CHECK_SECONDS = 0.5f;
+	const float LOG_BEHIND_SECONDS = 0.5f;
+	if( !m_FrameSkipMode )
+	{
+		if( fBehind >= LOG_BEHIND_SECONDS )
+		{
+			LOG->Trace( "(%s) Time is %f, and the movie is at %f.  Skipping frames to catch up.",
+				GetID().filename.c_str(), m_Clock, decoder->GetTimestamp() );
+		}
+		m_FrameSkipMode = true;
+		m_bCantCatchUp = false;
+		m_CatchUpCheckTimer.Touch();
+		m_fBehindAtCatchUpCheck = fBehind;
 	}
-		
-	
-	return 0;
+	else if( m_CatchUpCheckTimer.Ago() >= CATCH_UP_CHECK_SECONDS )
+	{
+		const bool bCantCatchUp = fBehind >= m_fBehindAtCatchUpCheck;
+		if( bCantCatchUp && !m_bCantCatchUp )
+		{
+			LOG->Trace( "(%s) Decoding can't keep up (%f seconds behind); showing every other frame.",
+				GetID().filename.c_str(), fBehind );
+		}
+		m_bCantCatchUp = bCantCatchUp;
+		m_CatchUpCheckTimer.Touch();
+		m_fBehindAtCatchUpCheck = fBehind;
+	}
+
+	if( m_bCantCatchUp && decoder->m_stream->codec.frame_number % 2 == 0 )
+	{
+		return 0;
+	}
+
+	return -1; /* skip */
+}
+
+void MovieTexture_FFMpeg::StopSkippingFrames()
+{
+	m_FrameSkipMode = false;
+	m_bCantCatchUp = false;
 }
 
 void MovieTexture_FFMpeg::DiscardFrame()
