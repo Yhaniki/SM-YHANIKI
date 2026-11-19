@@ -42,6 +42,7 @@ public:
 	void CrossedRow( int iNoteRow );
 	void CrossedMineRow( int iNoteRow );
 	void Step( int col, RageTimer tm );
+	void Release( int col, RageTimer tm );
 	void RandomiseNotes( int iNoteRow );
 	void FadeToFail();
 	int GetDancingCharacterState() const { return m_iDCState; };
@@ -61,7 +62,12 @@ protected:
 	void UpdateTapNotesMissedOlderThan( float fMissIfOlderThanThisBeat );
 	void OnRowCompletelyJudged( int iStepIndex );
 	void HandleTapRowScore( unsigned row );
+	void HandleTapRowScore( TapNoteScore scoreOfLastTap, int iNumTapsInRow );
 	void HandleHoldScore( HoldNoteScore holdScore, TapNoteScore tapScore );
+	void JudgeHoldNote( const HoldNote &hn, HoldNoteScore hns );
+	void JudgeHoldEnd( const HoldNote &hn, TapNoteScore score, float fNoteOffset );
+	bool IsPastHoldEndWindow( const HoldNote &hn ) const;
+	static TapNoteScore GetTapNoteScoreForOffset( float fSecondsFromPerfect );
 	void HandleAutosync(float fNoteOffset);
 	void DrawTapJudgments();
 	void DrawHoldJudgments();
@@ -107,6 +113,9 @@ protected:
 
 	bool			m_bSplitDraw;
 	bool			m_bInOverlayPass;
+
+	/* PREFSMAN->m_bHoldEndJudge, as of Load(), so a song is judged one way throughout. */
+	bool			m_bHoldEndJudge;
 };
 
 class Player : public PlayerMinus

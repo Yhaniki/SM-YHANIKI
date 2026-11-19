@@ -286,6 +286,7 @@ MOVE( EventMode,			PREFSMAN->m_bEventMode );
 /* Machine options */
 MOVE( MenuTimer,			PREFSMAN->m_bMenuTimer );
 MOVE( ScoringType,			PREFSMAN->m_iScoringType );
+MOVE( HoldEndJudge,			PREFSMAN->m_bHoldEndJudge );
 
 static void JudgeDifficulty( int &sel, bool ToSel, const CStringArray &choices )
 {
@@ -490,6 +491,7 @@ static const ConfOption g_ConfOptions[] =
 	ConfOption( "Event\nMode",			EventMode,			"OFF","ON" ),
 	ConfOption( "Scoring\nType",		ScoringType,		"MAX2","5TH" ),
 	ConfOption( "Judge\nDifficulty",	JudgeDifficulty,	"1","2","3","4","5","6","7","8","JUSTICE" ),
+	ConfOption( "Hold End\nJudge",		HoldEndJudge,		"OFF","ON" ),
 	ConfOption( "Life\nDifficulty",		LifeDifficulty,		"1","2","3","4","5","6","7" ),
 	ConfOption( "Progressive\nLifebar",	ProgressiveLifebar,	"OFF","1","2","3","4","5","6","7","8"),
 	ConfOption( "Progressive\nStage Lifebar",ProgressiveStageLifebar,	"OFF","1","2","3","4","5","6","7","8","INSANITY"),

@@ -67,6 +67,12 @@ public:
 	float			m_fJudgeWindowSecondsMine;
 	float			m_fJudgeWindowSecondsAttack;
 
+	/* Judge the end of a hold by when it's released, like a tap: releasing within
+	 * the Boo window of the end grades it Marvelous..Boo, releasing earlier is an NG
+	 * (and the end a Miss), and still holding after the window is a Boo.  The end
+	 * counts as a note of its own (combo, judgment totals, score). */
+	bool			m_bHoldEndJudge;
+
 	float			m_fLifeDifficultyScale;
 	float			m_fLifeDeltaPercentChangeMarvelous;
 	float			m_fLifeDeltaPercentChangePerfect;

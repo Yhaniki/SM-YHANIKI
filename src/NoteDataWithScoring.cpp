@@ -413,6 +413,7 @@ HoldNoteResult::HoldNoteResult( const HoldNote &hn )
 	hns = HNS_NONE;
 	fLife = 1.0f;
 	iLastHeldRow = hn.iStartRow;
+	tnsEnd = TNS_NONE;
 }
 
 /*

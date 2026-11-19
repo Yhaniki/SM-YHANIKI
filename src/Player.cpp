@@ -81,6 +81,7 @@ PlayerMinus::PlayerMinus()
 
 	m_bSplitDraw = false;
 	m_bInOverlayPass = false;
+	m_bHoldEndJudge = false;
 
 	this->AddChild( &m_ArrowBackdrop );
 	this->AddChild( &m_Judgment );
@@ -114,6 +115,7 @@ void PlayerMinus::Load( PlayerNumber pn, const NoteData* pNoteData, LifeMeter* p
 	m_pPrimaryScoreKeeper = pPrimaryScoreKeeper;
 	m_pSecondaryScoreKeeper = pSecondaryScoreKeeper;
 	m_pNoteField = pNoteField;
+	m_bHoldEndJudge = PREFSMAN->m_bHoldEndJudge;
 	m_iRowLastCrossed = BeatToNoteRowNotRounded( GAMESTATE->m_fSongBeat ) - 1;	// why this?
 	m_iMineRowLastCrossed = BeatToNoteRowNotRounded( GAMESTATE->m_fSongBeat ) - 1;	// why this?
 
@@ -354,8 +356,14 @@ void PlayerMinus::Update( float fDeltaTime )
 
 		float fLife = GetHoldNoteLife(hn);
 
-		// If the song beat is in the range of this hold:
-		if( hn.iStartRow <= iSongRow && iSongRow <= hn.iEndRow )
+		/* With Hold End Judge, the end of a hold whose head was missed is a note
+		 * that was missed too.  The hold itself is never judged OK or NG. */
+		if( m_bHoldEndJudge && tns == TNS_MISS && IsPastHoldEndWindow(hn) )
+			JudgeHoldEnd( hn, TNS_MISS, 0 );
+
+		// If the song beat is in the range of this hold.  When its end is judged,
+		// the hold stays in play past the end until it's let go (or judged late).
+		if( hn.iStartRow <= iSongRow && (iSongRow <= hn.iEndRow || m_bHoldEndJudge) )
 		{
 			bool bIsHoldingButton = INPUTMAPPER->IsButtonDown( GameI );
 			
@@ -407,26 +415,56 @@ void PlayerMinus::Update( float fDeltaTime )
 			hns = HNS_NG;
 
 		// check for OK
-		if( iSongRow >= hn.iEndRow && bSteppedOnTapNote && fLife > 0 )	// if this HoldNote is in the past
+		TapNoteScore tnsEnd = TNS_NONE;	// the grade of the end, with Hold End Judge
+		float fEndOffset = 0;
+		if( bSteppedOnTapNote && fLife > 0 )
 		{
-			fLife = 1;
-			hns = HNS_OK;
-			//m_pNoteField->DidTapNote( StyleI.col, TNS_PERFECT, true );	// bright ghost flash
-			bool bBright = g_CurStageStats.iCurCombo[m_PlayerNumber]>(int)BRIGHT_GHOST_COMBO_THRESHOLD;
-			m_pNoteField->DidTapNote( StyleI.col, TNS_MARVELOUS, bBright );	// bright ghost flash
+			if( !m_bHoldEndJudge )
+			{
+				if( iSongRow >= hn.iEndRow )	// if this HoldNote is in the past
+				{
+					fLife = 1;
+					hns = HNS_OK;
+					//m_pNoteField->DidTapNote( StyleI.col, TNS_PERFECT, true );	// bright ghost flash
+					bool bBright = g_CurStageStats.iCurCombo[m_PlayerNumber]>(int)BRIGHT_GHOST_COMBO_THRESHOLD;
+					m_pNoteField->DidTapNote( StyleI.col, TNS_MARVELOUS, bBright );	// bright ghost flash
+				}
+			}
+			else if( GAMESTATE->m_PlayerController[m_PlayerNumber] != PC_HUMAN )
+			{
+				/* AutoPlay and the CPU let go right at the end. */
+				if( iSongRow >= hn.iEndRow )
+				{
+					hns = HNS_OK;
+					if( GAMESTATE->m_PlayerController[m_PlayerNumber] == PC_CPU )
+						tnsEnd = PlayerAI::GetTapNoteScore( m_PlayerNumber );
+					else
+						tnsEnd = TNS_MARVELOUS;
+				}
+			}
+			else if( IsPastHoldEndWindow(hn) )
+			{
+				/* Letting go is normally graded by Release().  Still held after the
+				 * end's window: let go too late. */
+				hns = HNS_OK;
+				tnsEnd = TNS_BOO;
+				fEndOffset = -ADJUSTED_WINDOW(Boo);
+			}
 		}
 
 		if( hns != HNS_NONE )
 		{
 			/* this note has been judged */
-			HandleHoldScore( hns, tns );
-			m_HoldJudgment[hn.iTrack].SetHoldJudgment( hns );
+			JudgeHoldNote( hn, hns );
 
-			int ms_error = (hns == HNS_OK)? 0:MAX_PRO_TIMING_ERROR;
-
-			g_CurStageStats.iTotalError[m_PlayerNumber] += ms_error;
-			if( hns == HNS_NG ) /* don't show a 0 for an OK */
-				m_ProTimingDisplay.SetJudgment( ms_error, TNS_MISS );
+			if( m_bHoldEndJudge )
+			{
+				/* Dropping the hold misses its end. */
+				if( hns == HNS_NG )
+					tnsEnd = TNS_MISS;
+				JudgeHoldEnd( hn, tnsEnd, fEndOffset );
+			}
+			continue;
 		}
 
 		m_pNoteField->SetHoldNoteLife(hn, fLife);	// update the NoteField display
@@ -762,12 +800,7 @@ void PlayerMinus::Step( int col, RageTimer tm )
 				}
 				break;
 			default:
-				if(		 fSecondsFromPerfect <= ADJUSTED_WINDOW(Marvelous) )	score = TNS_MARVELOUS;
-				else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Perfect) )	score = TNS_PERFECT;
-				else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Great) )		score = TNS_GREAT;
-				else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Good) )		score = TNS_GOOD;
-				else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Boo) )		score = TNS_BOO;
-				else	score = TNS_NONE;
+				score = GetTapNoteScoreForOffset( fSecondsFromPerfect );
 				break;
 			}
 			break;
@@ -930,6 +963,154 @@ void PlayerMinus::Step( int col, RageTimer tm )
 	}
 	else
 		m_pNoteField->Step( col, TNS_NONE );
+}
+
+/* The grade of a step fSecondsFromPerfect away from its note (in real seconds, not
+ * music seconds); TNS_NONE if that's outside the Boo window. */
+TapNoteScore PlayerMinus::GetTapNoteScoreForOffset( float fSecondsFromPerfect )
+{
+	if(		 fSecondsFromPerfect <= ADJUSTED_WINDOW(Marvelous) )	return TNS_MARVELOUS;
+	else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Perfect) )	return TNS_PERFECT;
+	else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Great) )		return TNS_GREAT;
+	else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Good) )		return TNS_GOOD;
+	else if( fSecondsFromPerfect <= ADJUSTED_WINDOW(Boo) )		return TNS_BOO;
+	else	return TNS_NONE;
+}
+
+/* A step button was let go.  With Hold End Judge, this grades the end of the hold
+ * being held in that column by how far from the end it was let go, like Step()
+ * grades a tap.  Letting go before the end's window drops the hold. */
+void PlayerMinus::Release( int col, RageTimer tm )
+{
+	if( !m_bHoldEndJudge || GAMESTATE->m_PlayerController[m_PlayerNumber] != PC_HUMAN )
+		return;
+
+	/* Another button mapped to this column may still be down. */
+	const StyleInput StyleI( m_PlayerNumber, col );
+	const GameInput GameI = GAMESTATE->GetCurrentStyle()->StyleInputToGameInput( StyleI );
+	if( INPUTMAPPER->IsButtonDown( GameI ) )
+		return;
+
+	/* The hold in play in this column: its head was stepped on and it isn't judged
+	 * yet.  Holds are in order, and one has to be let go before the head of the
+	 * next can be stepped on, so the first such hold is the one. */
+	for( int i=0; i < GetNumHoldNotes(); i++ )
+	{
+		const HoldNote &hn = GetHoldNote(i);
+		if( hn.iTrack != col || GetHoldNoteScore(hn) != HNS_NONE )
+			continue;
+		const TapNoteScore tns = GetTapNoteScore( hn.iTrack, hn.iStartRow );
+		if( tns == TNS_NONE || tns == TNS_MISS )
+			continue;
+
+		/* When it was let go, in music time; see Step(). */
+		const float fRate = GAMESTATE->m_SongOptions.m_fMusicRate;
+		const float fCurrentMusicSeconds = GAMESTATE->m_fMusicSeconds + GAMESTATE->m_LastBeatUpdate.Ago()*fRate;
+		const float fReleaseSeconds = fCurrentMusicSeconds - tm.Ago()*fRate;
+		const float fEndSeconds = GAMESTATE->m_pCurSong->GetElapsedTimeFromBeat( NoteRowToBeat((float)hn.iEndRow) );
+
+		/* Positive if it was let go early. */
+		const float fNoteOffset = (fEndSeconds - fReleaseSeconds) / fRate;
+
+		TapNoteScore score = GetTapNoteScoreForOffset( fabsf(fNoteOffset) );
+		if( score == TNS_NONE && fNoteOffset < 0 )
+			score = TNS_BOO;	// later than the window; Update() just hasn't caught it yet
+
+		if( score == TNS_NONE )
+		{
+			JudgeHoldNote( hn, HNS_NG );
+			JudgeHoldEnd( hn, TNS_MISS, 0 );
+		}
+		else
+		{
+			JudgeHoldNote( hn, HNS_OK );
+			JudgeHoldEnd( hn, score, fNoteOffset );
+		}
+		return;
+	}
+}
+
+/* True once the end of hn is further in the past than a step can be graded (the
+ * Boo window), i.e. too late to let go of it in time. */
+bool PlayerMinus::IsPastHoldEndWindow( const HoldNote &hn ) const
+{
+	const float fEndSeconds = GAMESTATE->m_pCurSong->GetElapsedTimeFromBeat( NoteRowToBeat((float)hn.iEndRow) );
+	return GAMESTATE->m_fMusicSeconds > fEndSeconds + GetMaxStepDistanceSeconds();
+}
+
+/* Give a hold its final OK or NG: score it, show it and update the NoteField. */
+void PlayerMinus::JudgeHoldNote( const HoldNote &hn, HoldNoteScore hns )
+{
+	const TapNoteScore tns = GetTapNoteScore( hn.iTrack, hn.iStartRow );
+	HandleHoldScore( hns, tns );
+	m_HoldJudgment[hn.iTrack].SetHoldJudgment( hns );
+
+	int ms_error = (hns == HNS_OK)? 0:MAX_PRO_TIMING_ERROR;
+
+	g_CurStageStats.iTotalError[m_PlayerNumber] += ms_error;
+	if( hns == HNS_NG ) /* don't show a 0 for an OK */
+		m_ProTimingDisplay.SetJudgment( ms_error, TNS_MISS );
+
+	/* An OK hold ends with full life, an NG one with none. */
+	const float fLife = (hns == HNS_OK)? 1.0f:0.0f;
+	m_pNoteField->SetHoldNoteLife(hn, fLife);	// update the NoteField display
+	m_pNoteField->SetHoldNoteScore(hn, hns);	// update the NoteField display
+
+	SetHoldNoteLife(hn, fLife);
+	SetHoldNoteScore(hn, hns);
+}
+
+/* With Hold End Judge, the end of a hold is a note of its own: grade it like a tap
+ * (combo, score, life, judgment and timing display).  fNoteOffset is how early it
+ * was let go, in seconds; it's not used for TNS_MISS.  An end is graded only once. */
+void PlayerMinus::JudgeHoldEnd( const HoldNote &hn, TapNoteScore score, float fNoteOffset )
+{
+	HoldNoteResult *hnr = this->CreateHoldNoteResult( hn );
+	if( hnr->tnsEnd != TNS_NONE )
+		return;
+
+	// Do game-specific score mapping, as Step() does.
+	const Game* pGame = GAMESTATE->GetCurrentGame();
+	if( score == TNS_MARVELOUS )	score = pGame->m_mapMarvelousTo;
+	if( score == TNS_PERFECT )		score = pGame->m_mapPerfectTo;
+	if( score == TNS_GREAT )		score = pGame->m_mapGreatTo;
+	if( score == TNS_GOOD )			score = pGame->m_mapGoodTo;
+	if( score == TNS_BOO )			score = pGame->m_mapBooTo;
+
+	if( score == TNS_MISS )
+	{
+		g_CurStageStats.iTotalError[m_PlayerNumber] += MAX_PRO_TIMING_ERROR;
+		m_ProTimingDisplay.SetJudgment( MAX_PRO_TIMING_ERROR, TNS_MISS );
+	}
+	else
+	{
+		int ms_error = (int) roundf( fabsf(fNoteOffset) * 1000 );
+		ms_error = min( ms_error, MAX_PRO_TIMING_ERROR );
+
+		g_CurStageStats.iTotalError[m_PlayerNumber] += ms_error;
+		if( !GAMESTATE->m_PlayerOptions[m_PlayerNumber].m_fBlind )
+			m_ProTimingDisplay.SetJudgment( ms_error, score );
+	}
+
+	if( score==TNS_MARVELOUS  &&  !GAMESTATE->ShowMarvelous() )
+		score = TNS_PERFECT;
+
+	hnr->tnsEnd = score;
+
+	HandleTapRowScore( score, 1 );
+	m_Judgment.SetJudgment( score );
+
+	// show the ghost arrow for this column, as OnRowCompletelyJudged() does
+	if( GAMESTATE->m_PlayerOptions[m_PlayerNumber].m_fBlind )
+	{
+		if( score != TNS_MISS )
+			m_pNoteField->DidTapNote( hn.iTrack, TNS_MARVELOUS, false );
+	}
+	else if( score >= TNS_GREAT )
+	{
+		bool bBright = g_CurStageStats.iCurCombo[m_PlayerNumber]>(int)BRIGHT_GHOST_COMBO_THRESHOLD;
+		m_pNoteField->DidTapNote( hn.iTrack, score, bBright );
+	}
 }
 
 void PlayerMinus::HandleAutosync(float fNoteOffset)
@@ -1172,6 +1353,14 @@ void PlayerMinus::HandleTapRowScore( unsigned row )
 	int iNumTapsInRow = this->GetNumTracksWithTapOrHoldHead(row);
 	ASSERT(iNumTapsInRow > 0);
 
+	HandleTapRowScore( scoreOfLastTap, iNumTapsInRow );
+}
+
+/* Score a judged row of iNumTapsInRow notes, graded scoreOfLastTap: combo, score
+ * keepers and life.  Also used for the end of a hold (Hold End Judge), as a row
+ * of one note. */
+void PlayerMinus::HandleTapRowScore( TapNoteScore scoreOfLastTap, int iNumTapsInRow )
+{
 	bool NoCheating = true;
 #ifdef DEBUG
 	NoCheating = false;

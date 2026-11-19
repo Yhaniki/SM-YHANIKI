@@ -161,6 +161,9 @@ void ScoreKeeperMAX2::OnNextSong( int iSongInCourseIndex, const Steps* pSteps, c
 	m_iMaxScoreSoFar += m_iMaxPossiblePoints;
 
 	m_iNumTapsAndHolds = pNoteData->GetNumRowsWithTapOrHoldHead() + pNoteData->GetNumHoldNotes();
+	/* With Hold End Judge, the end of each hold is scored as a step of its own. */
+	if( PREFSMAN->m_bHoldEndJudge )
+		m_iNumTapsAndHolds += pNoteData->GetNumHoldNotes();
 
 	m_iPointBonus = m_iMaxPossiblePoints;
 
@@ -434,8 +437,10 @@ int ScoreKeeperMAX2::GetPossibleDancePoints( const RadarValues& radars )
 	 * PERFECT will be used instead. */
 
 	int NumTaps = int(radars[RADAR_NUM_TAPS_AND_HOLDS]);
-	int NumHolds = int(radars[RADAR_NUM_HOLDS]); 
-	return NumTaps*TapNoteScoreToDancePoints(TNS_MARVELOUS)+
+	int NumHolds = int(radars[RADAR_NUM_HOLDS]);
+	/* With Hold End Judge, the end of each hold is graded like a tap, too. */
+	int NumHoldEnds = PREFSMAN->m_bHoldEndJudge? NumHolds:0;
+	return (NumTaps+NumHoldEnds)*TapNoteScoreToDancePoints(TNS_MARVELOUS)+
 	   NumHolds*HoldNoteScoreToDancePoints(HNS_OK);
 }
 

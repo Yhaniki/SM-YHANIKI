@@ -29,11 +29,16 @@ struct HoldNoteResult
 	 * be the first index of the hold. */
 	int iLastHeldRow;
 
+	/* With PREFSMAN->m_bHoldEndJudge, the end of the hold is graded like a tap
+	 * when it's released; TNS_NONE until then. */
+	TapNoteScore tnsEnd;
+
 	HoldNoteResult()
 	{
 		hns = HNS_NONE;
 		fLife = 1.0f;
 		iLastHeldRow = 0;
+		tnsEnd = TNS_NONE;
 	}
 	HoldNoteResult( const HoldNote &hn );
 
