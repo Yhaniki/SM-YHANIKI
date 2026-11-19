@@ -99,6 +99,7 @@ void PrefsManager::Init()
 	m_fJudgeWindowSecondsOK =			0.250f;	// allow enough time to take foot off and put back on
 	m_fJudgeWindowSecondsMine =			0.090f;	// same as great
 	m_fJudgeWindowSecondsAttack =		0.135f;
+	m_bHoldEndJudge = false;
 	m_fLifeDeltaPercentChangeMarvelous =	+0.008f;
 	m_fLifeDeltaPercentChangePerfect =		+0.008f;
 	m_fLifeDeltaPercentChangeGreat =		+0.004f;
@@ -396,6 +397,7 @@ void PrefsManager::ReadPrefsFromFile( CString sIni )
 	ini.GetValue( "Options", "JudgeWindowSecondsOK",			m_fJudgeWindowSecondsOK );
 	ini.GetValue( "Options", "JudgeWindowSecondsMine",			m_fJudgeWindowSecondsMine );
 	ini.GetValue( "Options", "JudgeWindowSecondsAttack",		m_fJudgeWindowSecondsAttack );
+	ini.GetValue( "Options", "HoldEndJudge",					m_bHoldEndJudge );
 	ini.GetValue( "Options", "LifeDifficultyScale",				m_fLifeDifficultyScale );
 	ini.GetValue( "Options", "LifeDeltaPercentChangeMarvelous",	m_fLifeDeltaPercentChangeMarvelous );
 	ini.GetValue( "Options", "LifeDeltaPercentChangePerfect",	m_fLifeDeltaPercentChangePerfect );
@@ -645,6 +647,7 @@ void PrefsManager::SaveGlobalPrefsToDisk() const
 	ini.SetValue( "Options", "JudgeWindowSecondsOK",			m_fJudgeWindowSecondsOK );
 	ini.SetValue( "Options", "JudgeWindowSecondsMine",			m_fJudgeWindowSecondsMine );
 	ini.SetValue( "Options", "JudgeWindowSecondsAttack",		m_fJudgeWindowSecondsAttack );
+	ini.SetValue( "Options", "HoldEndJudge",					m_bHoldEndJudge );
 	ini.SetValue( "Options", "LifeDifficultyScale",				m_fLifeDifficultyScale );
 	ini.SetValue( "Options", "LifeDeltaPercentChangeMarvelous",	m_fLifeDeltaPercentChangeMarvelous );
 	ini.SetValue( "Options", "LifeDeltaPercentChangePerfect",	m_fLifeDeltaPercentChangePerfect );

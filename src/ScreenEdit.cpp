@@ -1691,6 +1691,10 @@ void ScreenEdit::InputRecord( const DeviceInput& DeviceI, const InputEventType t
 
 void ScreenEdit::InputPlay( const DeviceInput& DeviceI, const InputEventType type, const GameInput &GameI, const MenuInput &MenuI, const StyleInput &StyleI )
 {
+	/* Letting go of a step button grades the end of a hold (Hold End Judge). */
+	if( type == IET_RELEASE && StyleI.IsValid() && StyleI.player == PLAYER_1 && !PREFSMAN->m_bAutoPlay )
+		m_Player.Release( StyleI.col, DeviceI.ts );
+
 	if( type != IET_FIRST_PRESS )
 		return;
 

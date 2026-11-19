@@ -1892,6 +1892,15 @@ void ScreenGameplay::Input( const DeviceInput& DeviceI, const InputEventType typ
 		}
 	}
 
+	/* Letting go of a step button grades the end of a hold (Hold End Judge). */
+	if( type == IET_RELEASE &&
+		StyleI.IsValid() &&
+		GAMESTATE->IsHumanPlayer( StyleI.player ) &&
+		!PREFSMAN->m_bAutoPlay )
+	{
+		m_Player[StyleI.player].Release( StyleI.col, DeviceI.ts );
+	}
+
 	/* Nothing else cares about releases. */
 	if(type == IET_RELEASE) return;
 

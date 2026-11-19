@@ -66,6 +66,11 @@
   + 結算成績畫面顯示歌曲倍速
   + 修正使用AUTOPLAY或譜面無note會崩潰的問題
   + hold結尾改為TNS_MARVELOUS(白光)
+  + Hold 結尾判定模式（Options → Machine Options → Hold 結尾判定，預設關閉）
+    - 放開按鍵的時間跟 hold 結尾差多少，像按下一樣判 Marvelous～Boo 並顯示毫秒
+    - 結尾算一顆獨立的 note：加 combo、算進結算的判定數量、分數與百分比（滿分會跟著變多）
+    - 在 Boo 範圍之前放開：hold 判 NG、結尾判 Miss；一直按著超過 Boo 範圍：結尾判 Boo
+    - 需要主題支援：`[ScreenMachineOptions]` 加 `conf,HoldEndJudge`，語言檔加 `HoldEndJudgeTitle` / `HoldEndJudgeHelp`
   + 影片速度根據歌曲倍速改變
   + combo數字圖層上移
   + 遊戲大廳Note數改為顯示總按鍵數(原本為Tap + Hold)
