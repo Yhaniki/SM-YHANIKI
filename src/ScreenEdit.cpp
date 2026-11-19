@@ -2314,13 +2314,16 @@ void ScreenEdit::HandleMainMenuChoice( MainMenuChoice c, int* iAnswers )
 				 * this difficulty's own timing first. */
 				if( pSteps->HasOwnTiming() )
 					pSteps->SetOwnTiming( GAMESTATE->m_pCurSong->m_Timing );
-				GAMESTATE->m_pCurSong->Save();
+				bool bWroteGN = false;
+				GAMESTATE->m_pCurSong->Save( &bWroteGN );
 
 				// we shouldn't say we're saving a DWI if we're on any game besides
 				// dance, it just looks tacky and people may be wondering where the
 				// DWI file is :-)
-				if( GAMESTATE->m_pCurSong->IsFromGN() )
+				if( bWroteGN )
 					SCREENMAN->SystemMessage( "Saved as SM, DWI and GN." );
+				else if( GAMESTATE->m_pCurSong->IsFromGN() )
+					SCREENMAN->SystemMessage( "Saved as SM and DWI. Couldn't write the .gn (see log)." );
 				else if ((int)pSteps->m_StepsType <= (int)STEPS_TYPE_DANCE_SOLO)
 					SCREENMAN->SystemMessage( "Saved as SM and DWI." );
 				else

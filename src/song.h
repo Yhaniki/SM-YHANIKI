@@ -78,7 +78,9 @@ public:
 	void TranslateTitles();	// called by TidyUpData
 
 	void SaveToSMFile( CString sPath, bool bSavingCache );
-	void Save();	// saves SM and DWI
+	/* Saves SM and DWI, and writes the original .gn back if the song came from one.
+	 * pbWroteGNOut, if given, is set to whether the .gn was actually written. */
+	void Save( bool *pbWroteGNOut = NULL );
 	void SaveToCacheFile();
 	void SaveToDWIFile();
 
