@@ -130,19 +130,18 @@ bool EzSockets::accept(EzSockets& socket)
 		address = inet_ntoa(addr.sin_addr);
 	#endif
 	
-	int length = sizeof(socket);
-	// socket.address = address;
-	socket.sock = ::accept(sock,(struct sockaddr*) &socket.addr, 
+	int length = sizeof(socket.addr);
+	socket.sock = ::accept(sock,(struct sockaddr*) &socket.addr,
 						   (socklen_t*) &length);
 
-	CString strstrstr = socket.getIp();
-	
 	lastCode = socket.sock;
 
 	if (socket.sock <= 0)
 		return false;
-	
+
 	socket.state = skCONNECTED;
+	//The server bans by this address, so it must be the peer's.
+	socket.address = socket.getPeerIp();
 	return true;
 }
 
@@ -339,7 +338,7 @@ int EzSockets::PeekPack(char *data, unsigned int max)
 	
 	string tBuff(inBuffer.substr(4, size));
 	if (tBuff.length() > max)
-		tBuff.substr(0, max);
+		tBuff = tBuff.substr(0, max);	//never write past the caller's buffer
 	
 	memcpy (data, tBuff.c_str(),tBuff.length());
 	return size;

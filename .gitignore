@@ -35,3 +35,7 @@ Assets-pack.zip
 Assets-pack.zip.tmp
 # Build output of the .gn offline tests
 src/tests/gn/build/
+# StandAloneServer settings and log (written next to the exe)
+Program/StandAloneServer.ini
+Program/StandAloneServer.log
+Program/StandAloneServer-Debug.*

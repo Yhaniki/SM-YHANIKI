@@ -141,7 +141,7 @@
   + 結算成績畫面傳送玩家百分比
   + 結算成績畫面傳送玩家血量graph
   + 遊戲強制變更為不關門模式
-  + StandAloneServer(獨立執行伺服器)
+  + StandAloneServer(獨立執行伺服器，有視窗介面，說明見 [StandAloneServer/README.md](StandAloneServer/README.md))
   + 確認所有玩家連線譜面相同(判斷譜面按鍵數)
   + 大廳顯示玩家狀態(按F8開關)
   + 不是置中的玩家，遊戲中成績列表會顯示在上方

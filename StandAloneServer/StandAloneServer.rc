@@ -1,0 +1,3 @@
+#include "resource.h"
+
+IDI_APPICON ICON "..\\src\\archutils\\Win32\\StepMania.ico"
