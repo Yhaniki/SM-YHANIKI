@@ -12,7 +12,8 @@ public:
 
 	void Unload();
 
-	void LoadFromSong( const Song *pSong );
+	void LoadFromSong( const Song *pSong );	// loads the song's #FGCHANGES
+	void LoadFromSong( const Song *pSong, const vector<BackgroundChange> &aChanges );
 
 	virtual void Update( float fDeltaTime );
 

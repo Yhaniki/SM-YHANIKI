@@ -173,12 +173,16 @@ public:
 	TimingData					m_Timing;
 	vector<BackgroundChange>	m_BackgroundChanges;	// this must be sorted before gameplay
 	vector<BackgroundChange>	m_ForegroundChanges;	// this must be sorted before gameplay
+	/* Same as foreground changes, but drawn right above the note field and below the
+	 * judgments, combo and the rest of the gameplay UI. */
+	vector<BackgroundChange>	m_NoteLayerChanges;		// this must be sorted before gameplay
 	vector<LyricSegment>		m_LyricSegments;		// this must be sorted before gameplay
 
 	void AddBPMSegment( const BPMSegment &seg ) { m_Timing.AddBPMSegment( seg ); }
 	void AddStopSegment( const StopSegment &seg ) { m_Timing.AddStopSegment( seg ); }
 	void AddBackgroundChange( BackgroundChange seg );
 	void AddForegroundChange( BackgroundChange seg );
+	void AddNoteLayerChange( BackgroundChange seg );
 	void AddLyricSegment( LyricSegment seg );
 
 	void GetDisplayBpms( DisplayBpms &AddTo ) const;

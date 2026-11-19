@@ -372,6 +372,7 @@ ScreenEdit::ScreenEdit( CString sName ) : Screen( sName )
 	m_Player.Load( PLAYER_1, &noteData, NULL, NULL, NULL, NULL, NULL, NULL, NULL );
 	GAMESTATE->m_PlayerController[PLAYER_1] = PC_HUMAN;
 	m_Player.SetX( PLAYER_X );
+	m_Player.SetSplitDraw( true );	// so the note layer can go between the field and the judgments
 	/* Why was this here?  Nothing ever sets Player Y values; this was causing
 	 * the display in play mode to be offset half a screen down. */
 //	m_Player.SetXY( PLAYER_X, PLAYER_Y );
@@ -637,6 +638,7 @@ void ScreenEdit::Update( float fDeltaTime )
 		{
 			m_Background.Update( fDeltaTime );
 			m_Foreground.Update( fDeltaTime );	
+			m_NoteLayer.Update( fDeltaTime );
 		}
 
 		// check for end of playback/record
@@ -827,7 +829,10 @@ void ScreenEdit::DrawPrimitives()
 
 		m_NoteFieldRecord.Draw();
 		if( PREFSMAN->m_bEditorShowBGChangesPlay )
+		{
+			m_NoteLayer.Draw();
 			m_Foreground.Draw();
+		}
 		break;
 	case MODE_PLAYING:
 		if( PREFSMAN->m_bEditorShowBGChangesPlay )
@@ -848,7 +853,10 @@ void ScreenEdit::DrawPrimitives()
 		else
 			m_BGAnimation.Draw();
 
-		m_Player.Draw();
+		m_Player.Draw();	// note field only (split draw)
+		if( PREFSMAN->m_bEditorShowBGChangesPlay )
+			m_NoteLayer.Draw();
+		m_Player.DrawOverlayPass();	// judgments, combo
 		m_textAutoPlay.Draw();
 		if( PREFSMAN->m_bEditorShowBGChangesPlay )
 			m_Foreground.Draw();
@@ -1781,6 +1789,7 @@ void ScreenEdit::TransitionToEdit()
 	/* Important: people will stop playing, change the BG and start again; make sure we reload */
 	m_Background.Unload();
 	m_Foreground.Unload();
+	m_NoteLayer.Unload();
 
 	m_EditMode = MODE_EDITING;
 	GAMESTATE->m_bPastHereWeGo = false;
@@ -2742,6 +2751,8 @@ void ScreenEdit::HandleAreaMenuChoice( AreaMenuChoice c, int* iAnswers )
 
 					m_Foreground.Unload();
 					m_Foreground.LoadFromSong( m_pSong );
+
+					m_NoteLayer.LoadFromSong( m_pSong, m_pSong->m_NoteLayerChanges );
 
 				}
 

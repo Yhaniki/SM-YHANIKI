@@ -100,6 +100,7 @@ protected:
 
 	Background			m_Background;
 	Foreground			m_Foreground;
+	Foreground			m_NoteLayer;	// #NOTELAYERCHANGES: above the note fields, below the judgments
 
 	Transition	m_NextSongIn;	// shows between songs in a course
 	Transition	m_NextSongOut;	// shows between songs in a course
@@ -157,6 +158,7 @@ protected:
 	MeterDisplay		m_meterSongPosition;
 
 	Player				m_Player[NUM_PLAYERS];
+	PlayerOverlayProxy	m_PlayerOverlay[NUM_PLAYERS];	// draws each player's judgments, combo, etc.
 
 	// used in PLAY_MODE_BATTLE
 	Inventory*			m_pInventory[NUM_PLAYERS];
