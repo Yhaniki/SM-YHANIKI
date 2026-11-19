@@ -17,6 +17,7 @@
 #include "NetworkSyncManager.h"
 #include "SongManager.h"
 #include "song.h"
+#include "CurrentSongBackground.h"
 #include "UnlockSystem.h"
 #include "StepsUtil.h"
 #include "RageUtil.h"
@@ -1159,8 +1160,37 @@ void ScreenNetSelectMusic::TweenOffScreen()
 }
 
 
+ScreenNetSelectMusic::~ScreenNetSelectMusic()
+{
+	/* Don't leave song backgrounds on other screens waiting for our selection. */
+	CurrentSongBackground::SetSelectionMoving( false );
+}
+
+/* True while a left/right button is held: the selection keeps moving on repeat,
+ * so the song under the cursor is only passing by. */
+static bool IsSelectionMoving()
+{
+	if( INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_LEFT)) ||
+		INPUTFILTER->IsBeingPressed(DeviceInput(DEVICE_KEYBOARD, KEY_RIGHT)) )
+		return true;
+
+	FOREACH_PlayerNumber( pn )
+	{
+		if( INPUTMAPPER->IsButtonDown(MenuInput(pn, MENU_BUTTON_LEFT)) ||
+			INPUTMAPPER->IsButtonDown(MenuInput(pn, MENU_BUTTON_RIGHT)) )
+			return true;
+	}
+	return false;
+}
+
 void ScreenNetSelectMusic::Update( float fDeltaTime )
 {
+	/* Song backgrounds in the theme (File=currentsongbackground) wait until the
+	 * selection stops moving before loading the song's background.  Screens on top
+	 * of us (e.g. ScreenSelectMusic) report their own selection. */
+	if( SCREENMAN->GetTopScreen() == this )
+		CurrentSongBackground::SetSelectionMoving( IsSelectionMoving() );
+
 	Screen::Update( fDeltaTime );
 	UpdateUsersStates();
 	UpdateShareProgress();
