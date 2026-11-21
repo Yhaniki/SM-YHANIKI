@@ -4,6 +4,7 @@
 #include "RageUtil.h"
 #include "RageUtil_FileDB.h"
 #include "RageLog.h"
+#include "RageFileManager.h"
 
 #include <fcntl.h>
 #include <cerrno>
@@ -121,7 +122,12 @@ RageFileObj *RageFileDriverDirect::Open( const CString &path, int mode, RageFile
 			CreateDirectories( root + dir );
 	}
 
-	return MakeFileObjDirect( root + sPath, mode, p, err );
+	/* The OS open is the slow part (more so with a virus scanner looking at
+	 * every file opened), and uses nothing but the path; let other threads
+	 * use the file manager meanwhile. */
+	const CString sFullPath = root + sPath;
+	RageFileManagerUnlock unlock;
+	return MakeFileObjDirect( sFullPath, mode, p, err );
 }
 
 bool RageFileDriverDirect::Remove( const CString &path )

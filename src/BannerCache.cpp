@@ -48,6 +48,11 @@ BannerCache *BANNERCACHE;
 
 static map<CString,RageSurface *> g_BannerPathToImage;
 
+/* Banners being converted by CacheBannerInternal right now.  Two songs can
+ * share one banner file; only one thread converts it (they would otherwise
+ * write the same cache file at the same time). */
+static set<CString> g_BannersInProgress;
+
 CString BannerCache::GetBannerCachePath( CString BannerPath )
 {
 	/* Use GetHashForString, not ForFile, since we don't want to spend time
@@ -65,8 +70,11 @@ void BannerCache::LoadBanner( CString BannerPath )
 
 	for( int tries = 0; tries < 2; ++tries )
 	{
-		if( g_BannerPathToImage.find(BannerPath) != g_BannerPathToImage.end() )
-			return; /* already loaded */
+		{
+			LockMut( m_Mutex );
+			if( g_BannerPathToImage.find(BannerPath) != g_BannerPathToImage.end() )
+				return; /* already loaded */
+		}
 
 		CHECKPOINT_M( ssprintf( "BannerCache::LoadBanner: %s", CachePath.c_str() ) );
 		RageSurface *img = RageSurfaceUtils::LoadSurface( CachePath );
@@ -89,12 +97,18 @@ void BannerCache::LoadBanner( CString BannerPath )
 			}
 		}
 
-		g_BannerPathToImage[BannerPath] = img;
+		LockMut( m_Mutex );
+		if( g_BannerPathToImage.find(BannerPath) != g_BannerPathToImage.end() )
+			delete img; /* another thread loaded it meanwhile */
+		else
+			g_BannerPathToImage[BannerPath] = img;
+		return;
 	}
 }
 
 void BannerCache::OutputStats() const
 {
+	LockMut( const_cast<RageMutex &>(m_Mutex) );
 	map<CString,RageSurface *>::const_iterator ban;
 	int total_size = 0;
 	for( ban = g_BannerPathToImage.begin(); ban != g_BannerPathToImage.end(); ++ban )
@@ -108,6 +122,7 @@ void BannerCache::OutputStats() const
 
 void BannerCache::UnloadAllBanners()
 {
+	LockMut( m_Mutex );
 	map<CString,RageSurface *>::iterator it;
 	for( it = g_BannerPathToImage.begin(); it != g_BannerPathToImage.end(); ++it )
 		delete it->second;
@@ -115,9 +130,41 @@ void BannerCache::UnloadAllBanners()
 	g_BannerPathToImage.clear();
 }
 
-BannerCache::BannerCache()
+BannerCache::BannerCache():
+	m_Mutex( "BannerCache" )
 {
+	m_iBatchDepth = 0;
+	m_bBannerDataDirty = false;
 	BannerData.ReadFile( BANNER_CACHE_INDEX );	// don't care if this fails
+}
+
+void BannerCache::WriteBannerData()
+{
+	ASSERT( m_Mutex.IsLockedByThisThread() );
+	if( !m_bBannerDataDirty )
+		return;
+	BannerData.WriteFile( BANNER_CACHE_INDEX );
+	m_bBannerDataDirty = false;
+}
+
+void BannerCache::BeginBatch()
+{
+	LockMut( m_Mutex );
+	++m_iBatchDepth;
+}
+
+void BannerCache::EndBatch()
+{
+	LockMut( m_Mutex );
+	ASSERT( m_iBatchDepth > 0 );
+	if( --m_iBatchDepth == 0 )
+		WriteBannerData();
+}
+
+void BannerCache::FlushBannerData()
+{
+	LockMut( m_Mutex );
+	WriteBannerData();
 }
 
 BannerCache::~BannerCache()
@@ -233,6 +280,8 @@ RageTextureID BannerCache::LoadCachedBanner( CString BannerPath )
 			s_FailedBanners.insert( BannerPath );
 	}
 
+	LockMut( m_Mutex );
+
 	/* It's not in a texture.  Do we have it loaded? */
 	if( g_BannerPathToImage.find(BannerPath) == g_BannerPathToImage.end() )
 	{
@@ -309,8 +358,12 @@ void BannerCache::CacheBanner( CString BannerPath )
 	{
 		unsigned CurFullHash;
 		const unsigned FullHash = GetHashForFile( BannerPath );
-		if( BannerData.GetValue( BannerPath, "FullHash", CurFullHash ) &&
-			CurFullHash == FullHash )
+		bool bKnown;
+		{
+			LockMut( m_Mutex );
+			bKnown = BannerData.GetValue( BannerPath, "FullHash", CurFullHash );
+		}
+		if( bKnown && CurFullHash == FullHash )
 		{
 			/* It's identical.  Just load it. */
 			LoadBanner( BannerPath );
@@ -323,6 +376,23 @@ void BannerCache::CacheBanner( CString BannerPath )
 
 void BannerCache::CacheBannerInternal( CString BannerPath )
 {
+	{
+		LockMut( m_Mutex );
+		if( g_BannersInProgress.find(BannerPath) != g_BannersInProgress.end() )
+			return; /* another thread is converting this banner right now */
+		g_BannersInProgress.insert( BannerPath );
+	}
+
+	/* The conversion below runs without the lock, so threads can convert
+	 * different banners at the same time. */
+	struct ClearInProgress
+	{
+		RageMutex &m_Mutex;
+		const CString &m_sPath;
+		ClearInProgress( RageMutex &m, const CString &s ): m_Mutex(m), m_sPath(s) { }
+		~ClearInProgress() { LockMut( m_Mutex ); g_BannersInProgress.erase( m_sPath ); }
+	} clear( m_Mutex, BannerPath );
+
 	CString error;
 	RageSurface *img = RageSurfaceUtils::LoadFile( BannerPath, error );
 	if( img == NULL )
@@ -435,7 +505,9 @@ void BannerCache::CacheBannerInternal( CString BannerPath )
 
 	const CString CachePath = GetBannerCachePath(BannerPath);
 	RageSurfaceUtils::SaveSurface( img, CachePath );
+	const unsigned FullHash = GetHashForFile( BannerPath );
 
+	LockMut( m_Mutex );
 	if( PREFSMAN->m_BannerCache == PrefsManager::BNCACHE_LOW_RES )
 	{
 		/* If an old image is loaded, free it. */
@@ -456,10 +528,12 @@ void BannerCache::CacheBannerInternal( CString BannerPath )
 	BannerData.SetValue( BannerPath, "Path", CachePath );
 	BannerData.SetValue( BannerPath, "Width", src_width );
 	BannerData.SetValue( BannerPath, "Height", src_height );
-	BannerData.SetValue( BannerPath, "FullHash", GetHashForFile( BannerPath ) );
+	BannerData.SetValue( BannerPath, "FullHash", FullHash );
 	/* Remember this, so we can hint Sprite. */
 	BannerData.SetValue( BannerPath, "Rotated", WasRotatedBanner );
-	BannerData.WriteFile( BANNER_CACHE_INDEX );
+	m_bBannerDataDirty = true;
+	if( m_iBatchDepth == 0 )
+		WriteBannerData();
 }
 
 /*

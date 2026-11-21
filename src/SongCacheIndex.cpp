@@ -78,9 +78,12 @@ static bool GetStr( const CString &s, unsigned &pos, CString &out, unsigned iMax
 
 SongCacheIndex *SONGINDEX;
 
-SongCacheIndex::SongCacheIndex()
+SongCacheIndex::SongCacheIndex():
+	m_Mutex( "SongCacheIndex" )
 {
 	m_bSongMetaDirty = false;
+	m_iBatchDepth = 0;
+	m_bCacheIndexDirty = false;
 	ReadCacheIndex();
 	ReadSongMeta();
 }
@@ -105,6 +108,8 @@ static void EmptyDir( CString dir )
 
 void SongCacheIndex::ReadCacheIndex()
 {
+	LockMut( m_Mutex );
+	m_bCacheIndexDirty = false;
 	CacheIndex.ReadFile( CACHE_INDEX );	// don't care if this fails
 
 	int iCacheVersion = -1;
@@ -128,13 +133,49 @@ void SongCacheIndex::AddCacheIndex(const CString &path, unsigned hash)
 {
 	if( hash == 0 )
 		++hash; /* no 0 hash values */
+	LockMut( m_Mutex );
 	CacheIndex.SetValue( "Cache", "CacheVersion", FILE_CACHE_VERSION );
 	CacheIndex.SetValue( "Cache", MangleName(path), hash );
+	m_bCacheIndexDirty = true;
+
+	/* Rewriting the whole index for every song is O(n^2) when thousands of songs
+	 * are cached at once; inside a batch, write it when the batch ends. */
+	if( m_iBatchDepth == 0 )
+		WriteCacheIndex();
+}
+
+void SongCacheIndex::WriteCacheIndex()
+{
+	ASSERT( m_Mutex.IsLockedByThisThread() );
+	if( !m_bCacheIndexDirty )
+		return;
 	CacheIndex.WriteFile( CACHE_INDEX );
+	m_bCacheIndexDirty = false;
+}
+
+void SongCacheIndex::BeginBatch()
+{
+	LockMut( m_Mutex );
+	++m_iBatchDepth;
+}
+
+void SongCacheIndex::EndBatch()
+{
+	LockMut( m_Mutex );
+	ASSERT( m_iBatchDepth > 0 );
+	if( --m_iBatchDepth == 0 )
+		WriteCacheIndex();
+}
+
+void SongCacheIndex::FlushCacheIndex()
+{
+	LockMut( m_Mutex );
+	WriteCacheIndex();
 }
 
 unsigned SongCacheIndex::GetCacheHash( const CString &path ) const
 {
+	LockMut( m_Mutex );
 	unsigned iDirHash;
 	if( !CacheIndex.GetValue( "Cache", MangleName(path), iDirHash ) )
 		return 0;
@@ -153,6 +194,7 @@ CString SongCacheIndex::MangleName( const CString &Name )
 
 void SongCacheIndex::ReadSongMeta()
 {
+	LockMut( m_Mutex );
 	m_SongMeta.clear();
 	m_bSongMetaDirty = false;
 
@@ -216,6 +258,7 @@ void SongCacheIndex::ReadSongMeta()
 
 bool SongCacheIndex::GetSongMeta( const CString &sSongDir, unsigned uCacheHash, CString &sDataOut ) const
 {
+	LockMut( m_Mutex );
 	map<CString, SongMeta>::const_iterator it = m_SongMeta.find( sSongDir );
 	if( it == m_SongMeta.end() || it->second.uCacheHash != uCacheHash )
 		return false;
@@ -225,6 +268,7 @@ bool SongCacheIndex::GetSongMeta( const CString &sSongDir, unsigned uCacheHash, 
 
 void SongCacheIndex::SetSongMeta( const CString &sSongDir, unsigned uCacheHash, const CString &sData )
 {
+	LockMut( m_Mutex );
 	SongMeta &meta = m_SongMeta[sSongDir];
 	meta.uCacheHash = uCacheHash;
 	meta.sData = sData;
@@ -233,6 +277,8 @@ void SongCacheIndex::SetSongMeta( const CString &sSongDir, unsigned uCacheHash, 
 
 void SongCacheIndex::SaveSongMeta( const vector<CString> &vsSongDirs )
 {
+	LockMut( m_Mutex );
+
 	/* Drop songs that are no longer loaded (deleted or renamed). */
 	map<CString, SongMeta> Kept;
 	for( unsigned i = 0; i < vsSongDirs.size(); ++i )

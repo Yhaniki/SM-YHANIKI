@@ -4,14 +4,24 @@
 #define BANNER_CACHE_H
 
 #include "IniFile.h"
+#include "RageThreads.h"
 
 #include "RageTexture.h"
 
 class LoadingWindow;
 
+/* CacheBanner may be called from several song loading threads at once; the
+ * rest is only used by the main thread, but takes the same lock. */
 class BannerCache
 {
+	RageMutex m_Mutex;
 	IniFile BannerData;
+
+	/* See SongCacheIndex: inside a batch, banners.cache is written once at
+	 * the end instead of after every banner. */
+	int m_iBatchDepth;
+	bool m_bBannerDataDirty;
+	void WriteBannerData();
 
 	static CString GetBannerCachePath( CString BannerPath );
 	void UnloadAllBanners();
@@ -20,6 +30,10 @@ class BannerCache
 public:
 	BannerCache();
 	~BannerCache();
+
+	void BeginBatch();
+	void EndBatch();
+	void FlushBannerData();
 
 	RageTextureID LoadCachedBanner( CString BannerPath );
 

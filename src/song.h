@@ -61,7 +61,12 @@ public:
 
 	NotesLoader *MakeLoader( CString sDir ) const;
 
+	/* Safe to call for different songs from several threads at once (see
+	 * SongManager::LoadStepManiaSongDir). */
 	bool LoadFromSongDir( CString sDir );
+	/* Set by LoadFromSongDir: true if the song was parsed from its own files,
+	 * because it had no usable cache. */
+	bool m_bLoadedFromSongFile;
 
 	/* Where LoadFromSongDir got each song from: the song index, a cache file in
 	 * Cache/Songs, or the original song files. */
@@ -82,6 +87,7 @@ public:
 	 * pbWroteGNOut, if given, is set to whether the .gn was actually written. */
 	void Save( bool *pbWroteGNOut = NULL );
 	void SaveToCacheFile();
+	void AddCacheFileToSongIndex() const;
 	void SaveToDWIFile();
 
 	/* This song was loaded from a .gn (NotesLoaderGN); saving must also write back to

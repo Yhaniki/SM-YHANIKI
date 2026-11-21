@@ -2,12 +2,23 @@
 #define SONG_CACHE_INDEX_H
 
 #include "IniFile.h"
+#include "RageThreads.h"
 #include <map>
 
+/* All members are safe to call from several threads at once (songs are loaded
+ * by worker threads, see SongManager::LoadStepManiaSongDir). */
 class SongCacheIndex
 {
+	mutable RageMutex m_Mutex;
+
 	IniFile CacheIndex;
 	static CString MangleName( const CString &Name );
+
+	/* While a batch is open, AddCacheIndex only marks index.cache dirty instead
+	 * of rewriting the whole file for every song; EndBatch writes it once. */
+	int m_iBatchDepth;
+	bool m_bCacheIndexDirty;
+	void WriteCacheIndex();
 
 	/* The song index (Cache/songs.idx): for each song, its cache file contents
 	 * with the note data stripped (NotesWriterSM::GetCacheMetaText).  At startup
@@ -35,6 +46,12 @@ public:
 	void ReadCacheIndex();
 	void AddCacheIndex( const CString &path, unsigned hash );
 	unsigned GetCacheHash( const CString &path ) const;
+
+	/* Batches nest.  FlushCacheIndex writes pending changes without ending the
+	 * batch, so a crash during a long load loses only the latest entries. */
+	void BeginBatch();
+	void EndBatch();
+	void FlushCacheIndex();
 
 	/* Returns true only if the entry exists and its cache hash matches. */
 	bool GetSongMeta( const CString &sSongDir, unsigned uCacheHash, CString &sDataOut ) const;

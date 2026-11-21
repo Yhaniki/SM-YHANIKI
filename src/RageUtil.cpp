@@ -455,25 +455,34 @@ CString GetCwd()
 
 /* Reference: http://www.theorem.com/java/CRC32.java, rewritten by Glenn Maynard.
  * Public domain. */
-unsigned int GetHashForString ( const CString &s )
+namespace
 {
-	static unsigned tab[256];
-	static bool initted = false;
-	if(!initted)
+	struct CRC32Table
 	{
-		initted = true;
-		const unsigned POLY = 0xEDB88320;
-
-		for(int i = 0; i < 256; ++i)
+		unsigned tab[256];
+		CRC32Table()
 		{
-			tab[i] = i;
-			for(int j = 0; j < 8; ++j)
+			const unsigned POLY = 0xEDB88320;
+
+			for(int i = 0; i < 256; ++i)
 			{
-				if(tab[i] & 1) tab[i] = (tab[i] >> 1) ^ POLY;
-				else tab[i] >>= 1;
+				tab[i] = i;
+				for(int j = 0; j < 8; ++j)
+				{
+					if(tab[i] & 1) tab[i] = (tab[i] >> 1) ^ POLY;
+					else tab[i] >>= 1;
+				}
 			}
 		}
-	}
+	};
+}
+
+unsigned int GetHashForString ( const CString &s )
+{
+	/* A function-local static is initialized exactly once, even when several
+	 * threads get here first at the same time. */
+	static const CRC32Table table;
+	const unsigned *tab = table.tab;
 
 	unsigned crc = 0;
 	for(unsigned i = 0; i < s.size(); ++i)

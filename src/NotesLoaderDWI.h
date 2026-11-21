@@ -5,12 +5,16 @@
 
 #include "GameInput.h"
 #include "NotesLoader.h"
+#include <map>
 
 class Song;
 class Steps;
 
 class DWILoader: public NotesLoader
 {
+	/* Per loader (not global): songs are loaded by several threads at once. */
+	std::map<int,int> m_mapDanceNoteToNoteDataColumn;
+
 	void DWIcharToNote( char c, GameController i, int &note1Out, int &note2Out );
 	void DWIcharToNoteCol( char c, GameController i, int &col1Out, int &col2Out );
 

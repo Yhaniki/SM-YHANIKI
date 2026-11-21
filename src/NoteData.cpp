@@ -840,8 +840,7 @@ void NoteData::GetTracksHeldAtRow( int row, set<int>& addTo )
 
 int NoteData::GetNumTracksHeldAtRow( int row )
 {
-	static set<int> viTracks;
-	viTracks.clear();
+	set<int> viTracks;
 	GetTracksHeldAtRow( row, viTracks );
 	return viTracks.size();
 }

@@ -13,7 +13,6 @@
 #include <map>
 using namespace std;
 
-static std::map<int,int> g_mapDanceNoteToNoteDataColumn;
 
 enum
 {
@@ -85,12 +84,12 @@ void DWILoader::DWIcharToNoteCol( char c, GameController i, int &col1Out, int &c
 	DWIcharToNote( c, i, note1, note2 );
 
 	if( note1 != DANCE_NOTE_NONE )
-		col1Out = g_mapDanceNoteToNoteDataColumn[note1];
+		col1Out = m_mapDanceNoteToNoteDataColumn[note1];
 	else
 		col1Out = -1;
 
 	if( note2 != DANCE_NOTE_NONE )
-		col2Out = g_mapDanceNoteToNoteDataColumn[note2];
+		col2Out = m_mapDanceNoteToNoteDataColumn[note2];
 	else
 		col2Out = -1;
 }
@@ -137,33 +136,33 @@ bool DWILoader::LoadFromDWITokens(
 	}
 
 
-	g_mapDanceNoteToNoteDataColumn.clear();
+	m_mapDanceNoteToNoteDataColumn.clear();
 	switch( out.m_StepsType )
 	{
 	case STEPS_TYPE_DANCE_SINGLE:
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_LEFT] = 0;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_DOWN] = 1;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UP] = 2;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_RIGHT] = 3;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_LEFT] = 0;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_DOWN] = 1;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UP] = 2;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_RIGHT] = 3;
 		break;
 	case STEPS_TYPE_DANCE_DOUBLE:
 	case STEPS_TYPE_DANCE_COUPLE:
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_LEFT] = 0;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_DOWN] = 1;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UP] = 2;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_RIGHT] = 3;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_LEFT] = 4;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_DOWN] = 5;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_UP] = 6;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_RIGHT] = 7;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_LEFT] = 0;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_DOWN] = 1;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UP] = 2;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_RIGHT] = 3;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_LEFT] = 4;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_DOWN] = 5;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_UP] = 6;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD2_RIGHT] = 7;
 		break;
 	case STEPS_TYPE_DANCE_SOLO:
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_LEFT] = 0;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UPLEFT] = 1;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_DOWN] = 2;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UP] = 3;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UPRIGHT] = 4;
-		g_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_RIGHT] = 5;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_LEFT] = 0;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UPLEFT] = 1;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_DOWN] = 2;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UP] = 3;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_UPRIGHT] = 4;
+		m_mapDanceNoteToNoteDataColumn[DANCE_NOTE_PAD1_RIGHT] = 5;
 		break;
 	default:
 		ASSERT(0);
@@ -175,7 +174,7 @@ bool DWILoader::LoadFromDWITokens(
 	out.SetDifficulty( StringToDifficulty(sDescription) );
 
 	NoteData newNoteData;
-	newNoteData.SetNumTracks( g_mapDanceNoteToNoteDataColumn.size() );
+	newNoteData.SetNumTracks( m_mapDanceNoteToNoteDataColumn.size() );
 	newNoteData.ReserveRows( BeatToNoteRow(1000) );
 
 	for( int pad=0; pad<2; pad++ )		// foreach pad
