@@ -37,6 +37,7 @@
 #include "LyricsLoader.h"
 
 #include <set>
+#include <atomic>
 #include <time.h>
 
 #define CACHE_DIR "Cache/"
@@ -74,6 +75,7 @@ Song::Song()
 	m_fSpecifiedBPMMin = 0;
 	m_fSpecifiedBPMMax = 0;
 	m_bIsSymLink = false;
+	m_bLoadedFromSongFile = false;
 	m_bHasMusic = false;
 	m_bHasBanner = false;
 }
@@ -200,20 +202,25 @@ NotesLoader *Song::MakeLoader( CString sDir ) const
 }
 
 /* Hack: This should be a parameter to TidyUpData, but I don't want to
- * pull in <set> into Song.h, which is heavily used. */
-static set<istring> BlacklistedImages;
+ * pull in <set> into Song.h, which is heavily used.  Songs are loaded by
+ * several threads at once, so each thread has its own. */
+static thread_local set<istring> BlacklistedImages;
 
 /* Where each song was loaded from; SongManager logs it after each load pass. */
-static Song::LoadStats g_LoadStats;
+static std::atomic<int> g_iLoadedFromIndex, g_iLoadedFromCacheFile, g_iLoadedFromSongFile;
 
 void Song::ResetLoadStats()
 {
-	g_LoadStats = LoadStats();
+	g_iLoadedFromIndex = g_iLoadedFromCacheFile = g_iLoadedFromSongFile = 0;
 }
 
 Song::LoadStats Song::GetLoadStats()
 {
-	return g_LoadStats;
+	LoadStats ret;
+	ret.iFromIndex = g_iLoadedFromIndex;
+	ret.iFromCacheFile = g_iLoadedFromCacheFile;
+	ret.iFromSongFile = g_iLoadedFromSongFile;
+	return ret;
 }
 
 /*
@@ -268,7 +275,7 @@ bool Song::LoadFromSongDir( CString sDir )
 			 * notes are needed. */
 			ld.LoadFromSMBuffer( sMeta, GetCacheFilePath(), *this );
 			ld.TidyUpData( *this, true );
-			++g_LoadStats.iFromIndex;
+			++g_iLoadedFromIndex;
 		}
 		else
 		{
@@ -282,7 +289,7 @@ bool Song::LoadFromSongDir( CString sDir )
 			 * again; skip them. */
 			if( m_bHasMusic )
 				SONGINDEX->SetSongMeta( m_sSongDir, uDirHash, NotesWriterSM::GetCacheMetaText(*this) );
-			++g_LoadStats.iFromCacheFile;
+			++g_iLoadedFromCacheFile;
 		}
 	}
 	else
@@ -327,7 +334,13 @@ bool Song::LoadFromSongDir( CString sDir )
 
 		// save a cache file so we don't have to parse it all over again next time
 		SaveToCacheFile();
-		++g_LoadStats.iFromSongFile;
+		++g_iLoadedFromSongFile;
+
+		/* Put the song in the song index now.  Otherwise the next start finds
+		 * no index entry for it, opens and parses its cache file, and only the
+		 * start after that is fast. */
+		if( m_bHasMusic )
+			AddCacheFileToSongIndex();
 	}
 
 
@@ -350,20 +363,13 @@ bool Song::LoadFromSongDir( CString sDir )
 	/* Add AutoGen pointers.  (These aren't cached.) */
 	AddAutoGenNotes();
 
+	/* SongManager::LoadStepManiaSongDir uses this to select the first new song
+	 * after a reload from the music select screen. */
+	m_bLoadedFromSongFile = !bUseCache;
+
 	if( !m_bHasMusic )
 		return false;	// don't load this song
-	else
-	{
-		if(GAMESTATE->m_bfastLoadInScreenSelectMusic==true
-			&&GAMESTATE->m_pCurSong==NULL
-			&&GAMESTATE->m_pPreferredSong==NULL
-			&&bUseCache==false)
-			{
-				GAMESTATE->m_pCurSong=GAMESTATE->m_pPreferredSong=this;
-			}
-
-		return true;	// do load this song
-	}
+	return true;	// do load this song
 		
 }
 
@@ -1085,7 +1091,10 @@ void Song::Save( bool *pbWroteGNOut )
 
 	/* Write the cache last.  SaveToCacheFile records the directory hash, which
 	 * has to reflect the finished save (the .sm/.dwi written and .bms/.ksf
-	 * renamed above); otherwise the next group reload sees the song as changed. */
+	 * renamed above); otherwise the next group reload sees the song as changed.
+	 * Files in the song directory have just been written, so the directory
+	 * cache can still hold old sizes and times; flush it first. */
+	FILEMAN->FlushDirCache( m_sSongDir );
 	SaveToCacheFile();
 }
 
@@ -1110,12 +1119,41 @@ void Song::SaveToSMFile( CString sPath, bool bSavingCache )
 	wr.Write(sPath, *this, bSavingCache);
 }
 
+/* The index entry has to describe the song exactly as it's loaded from its
+ * cache file: radar values as written there, and each Steps' hash taken from
+ * the cache file's notes.  The state parsed from the song's own files can
+ * differ in those details, so read the cache file just written back into a
+ * scratch Song, the same way LoadFromSongDir does when there's no entry yet.
+ * This song itself is left as it is. */
+void Song::AddCacheFileToSongIndex() const
+{
+	Song tmp;
+	tmp.m_sSongDir = m_sSongDir;
+	tmp.m_sGroupName = m_sGroupName;
+	try
+	{
+		SMLoader ld;
+		if( !ld.LoadFromSMFile( GetCacheFilePath(), tmp, true ) )
+			return;
+		ld.TidyUpData( tmp, true );
+	}
+	catch( const RageException &e )
+	{
+		/* No entry; the next start reads the cache file instead. */
+		LOG->Warn( "Couldn't read back the cache file of '%s': %s", m_sSongDir.c_str(), e.what() );
+		return;
+	}
+
+	SONGINDEX->SetSongMeta( m_sSongDir, SONGINDEX->GetCacheHash(m_sSongDir), NotesWriterSM::GetCacheMetaText(tmp) );
+}
+
 void Song::SaveToCacheFile()
 {
-	/* Files in the song directory may have just been written, so the directory
-	 * cache can still hold old sizes and times.  Flush it so the recorded hash
-	 * matches what the next group reload will compute. */
-	FILEMAN->FlushDirCache( m_sSongDir );
+	/* Don't flush the directory cache here: this runs for every song parsed
+	 * while loading, and FlushDirCache drops the whole cache (every directory,
+	 * not just this one), so the next lookups had to list Cache/Songs/ (one
+	 * file per song) and the group folders all over again.  Callers that wrote
+	 * into the song directory flush it themselves (see Save). */
 	SONGINDEX->AddCacheIndex(m_sSongDir, GetHashForDirectory(m_sSongDir));
 	SaveToSMFile( GetCacheFilePath(), true );
 

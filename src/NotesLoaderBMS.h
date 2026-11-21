@@ -10,6 +10,9 @@ class Steps;
 
 class BMSLoader: public NotesLoader
 {
+	/* Per loader (not global): songs are loaded by several threads at once. */
+	int m_iTracks[MAX_NOTE_TRACKS];
+
 	bool LoadFromBMSFile( const CString &sPath, Steps &out1 );
 	void mapBMSTrackToDanceNote( int iBMSTrack, int &iDanceColOut, TapNote &tapNoteOut );
 	void PushTrackNumForMagic( int iTrackNum );

@@ -49,7 +49,6 @@
 		18/19 marks bm-single7, 28/29 marks bm-double7
 		bm-double uses 21-26. */
 
-static int iTracks[MAX_NOTE_TRACKS];
 
 enum
 {
@@ -76,20 +75,20 @@ enum
 void BMSLoader::ResetTracksMagic()
 {
 	for( int i = 0; i<MAX_NOTE_TRACKS; i++ )
-		iTracks[i] = 0;
+		m_iTracks[i] = 0;
 }
 
 void BMSLoader::PushTrackNumForMagic( int iTrackNum )
 {
 	int ix = (iTrackNum < 20) ? (iTrackNum - 11) : (iTrackNum - 12);
-	iTracks[ix]++;
+	m_iTracks[ix]++;
 }
 
 StepsType BMSLoader::CheckTracksMagic()
 {
 	int iTrackCount = 0;
 	for (int ix = 0; ix<MAX_NOTE_TRACKS; ix++) {
-		if(iTracks[ix] != 0) iTrackCount++;
+		if(m_iTracks[ix] != 0) iTrackCount++;
 	}
 	/*	Panel counts:
 		4 - DDR
@@ -111,7 +110,7 @@ StepsType BMSLoader::CheckTracksMagic()
 		return STEPS_TYPE_DANCE_SOLO;
 	case 8:
 		// Could also be couple or 7-key.
-		if (iTracks[7] == 0 && iTracks[8] == 0 && iTracks[1] == 0 && iTracks[3] == 
+		if (m_iTracks[7] == 0 && m_iTracks[8] == 0 && m_iTracks[1] == 0 && m_iTracks[3] == 
 0)
 			// these four tracks are IIDX-related
 			return STEPS_TYPE_DANCE_DOUBLE;

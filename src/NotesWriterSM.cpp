@@ -286,8 +286,13 @@ void NotesWriterSM::WriteAllSteps( CString &f, const Song &out, bool bSavingCach
 
 bool NotesWriterSM::Write(CString sPath, const Song &out, bool bSavingCache)
 {
-	/* Flush dir cache when writing steps, so the old size isn't cached. */
-	FILEMAN->FlushDirCache( Dirname(sPath) );
+	/* Flush dir cache when writing steps, so the old size isn't cached.  Not for
+	 * cache files: nothing needs their size, a new one is opened by path
+	 * whether or not the directory cache knows it yet, and the flush drops the
+	 * whole directory cache, which made writing thousands of cache files in a
+	 * row slow (see Song::SaveToCacheFile). */
+	if( !bSavingCache )
+		FILEMAN->FlushDirCache( Dirname(sPath) );
 
 	int flags = RageFile::WRITE;
 

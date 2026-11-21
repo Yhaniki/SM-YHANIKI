@@ -62,11 +62,8 @@ And here's one for a kanji page:
 
  */
 
-static void InitCharAliases()
+static void InitCharAliasesOnce()
 {
-	if(!CharAliases.empty())
-		return;
-
 	CharAliases["default"]		= Font::DEFAULT_GLYPH;	/* ? */
 	CharAliases["invalid"]		= INVALID_CHAR;			/* 0xFFFD */
 
@@ -332,6 +329,13 @@ void ReplaceText( CString &Text, const map<CString,CString> &m )
 }
 
 /* Replace all &markers; and &#NNNN;s with UTF-8. */
+/* Fill the tables exactly once, even if several threads get here first. */
+static void InitCharAliases()
+{
+	static const bool bInitted = ( InitCharAliasesOnce(), true );
+	(void) bInitted;
+}
+
 void FontCharAliases::ReplaceMarkers( CString &sText )
 {
 	InitCharAliases();

@@ -52,24 +52,26 @@ static uint8_t DitherPixel(int x, int y, int intensity,  int conv)
 	return uint8_t((out_intensity + 1) >> 16);
 }
 
+static bool InitDitherMatCalc()
+{
+	for( int i = 0; i < DitherMatDim; ++i )
+	{
+		for( int j = 0; j < DitherMatDim; ++j )
+		{
+			/* Each value is 0..15.  They represent 0/16 through 15/16.
+			 * Set DitherMatCalc to that value * 65536, so we can do it
+			 * with integer calcs. */
+			DitherMatCalc[i][j] = DitherMat[i][j] * 65536 / 16;
+		}
+	}
+	return true;
+}
+
 void RageSurfaceUtils::OrderedDither( const RageSurface *src, RageSurface *dst )
 {
-	static bool DitherMatCalc_initted = false;
-	if( !DitherMatCalc_initted )
-	{
-		for( int i = 0; i < DitherMatDim; ++i )
-		{
-			for( int j = 0; j < DitherMatDim; ++j )
-			{
-				/* Each value is 0..15.  They represent 0/16 through 15/16.
-				 * Set DitherMatCalc to that value * 65536, so we can do it
-				 * with integer calcs. */
-				DitherMatCalc[i][j] = DitherMat[i][j] * 65536 / 16;
-			}
-		}
-			
-		DitherMatCalc_initted = true;
-	}
+	/* Initialized once, thread-safely (banners are cached by several threads). */
+	static const bool DitherMatCalc_initted = InitDitherMatCalc();
+	(void) DitherMatCalc_initted;
 
 	/* We can't dither to paletted surfaces. */
 	ASSERT( dst->format->BytesPerPixel > 1 );

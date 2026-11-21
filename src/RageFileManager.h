@@ -55,6 +55,23 @@ private:
 
 extern RageFileManager *FILEMAN;
 
+/* Releases the file manager's lock for the lifetime of this object, so a call
+ * into the OS that may block (opening a file can take milliseconds on a cold
+ * hard disk, or while a virus scanner looks at it) doesn't stop other threads
+ * from using files meanwhile.  Songs are loaded by several threads at once.
+ *
+ * Only for drivers, inside a call made by RageFileManager.  While unlocked,
+ * don't touch anything the lock protects (the driver's FilenameDB, say); the
+ * driver itself stays valid, since Mount and Unmount wait for these calls to
+ * finish.  Does nothing if this thread doesn't hold the lock. */
+class RageFileManagerUnlock
+{
+	int m_iLockCount;
+public:
+	RageFileManagerUnlock();
+	~RageFileManagerUnlock();
+};
+
 #endif
 
 /*

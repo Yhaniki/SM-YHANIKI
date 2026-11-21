@@ -18,6 +18,55 @@ RageFileManager *FILEMAN = NULL;
 /* Lock this before touching any of these globals (except FILEMAN itself). */
 static RageMutex *g_Mutex;
 
+/* Number of RageFileManagerUnlock objects alive, in any thread.  While it's
+ * nonzero, a driver is running without g_Mutex and may return into code that
+ * still refers to g_Drivers entries, so g_Drivers must not change.  Protected
+ * by g_Mutex. */
+static int g_iUnlockedCalls = 0;
+
+RageFileManagerUnlock::RageFileManagerUnlock()
+{
+	m_iLockCount = 0;
+	if( g_Mutex == NULL || !g_Mutex->IsLockedByThisThread() )
+		return;
+
+	++g_iUnlockedCalls;
+	while( g_Mutex->IsLockedByThisThread() )
+	{
+		g_Mutex->Unlock();
+		++m_iLockCount;
+	}
+}
+
+RageFileManagerUnlock::~RageFileManagerUnlock()
+{
+	if( m_iLockCount == 0 )
+		return;
+
+	for( int i = 0; i < m_iLockCount; ++i )
+		g_Mutex->Lock();
+	--g_iUnlockedCalls;
+}
+
+/* Call with g_Mutex held, before changing g_Drivers. */
+static void WaitForUnlockedCalls()
+{
+	while( g_iUnlockedCalls > 0 )
+	{
+		int iLockCount = 0;
+		while( g_Mutex->IsLockedByThisThread() )
+		{
+			g_Mutex->Unlock();
+			++iLockCount;
+		}
+
+		usleep( 1000 );
+
+		for( int i = 0; i < iLockCount; ++i )
+			g_Mutex->Lock();
+	}
+}
+
 CString InitialWorkingDirectory;
 CString DirOfExecutable;
 
@@ -343,6 +392,7 @@ void RageFileManager::Mount( CString Type, CString Root, CString MountPoint )
 	ld.Type = Type;
 	ld.Root = Root;
 	ld.MountPoint = MountPoint;
+	WaitForUnlockedCalls();
 	g_Drivers.push_back( ld );
 
 	CHECKPOINT;
@@ -359,6 +409,8 @@ void RageFileManager::Unmount( CString Type, CString Root, CString MountPoint )
 
 	if( MountPoint.size() && MountPoint.Right(1) != "/" )
 		MountPoint += '/';
+
+	WaitForUnlockedCalls();
 
 	for( unsigned i = 0; i < g_Drivers.size(); ++i )
 	{

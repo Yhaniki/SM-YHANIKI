@@ -46,6 +46,9 @@ public:
 	BannerCacheMode	m_BannerCache;
 	bool			m_bPalettedBannerCache;
 	bool			m_bFastLoad;
+	/* Number of threads that load songs; 0 picks twice the number of CPU
+	 * threads (up to 16), 1 loads them one at a time like before. */
+	int				m_iSongLoadThreads;
 
 	/* Whether writing back a .gn insists on keeping the original file size (the SDOM /
 	 * Dance Online containers originally keep their length by zero padding).
