@@ -41,6 +41,8 @@ static const double BIN_SECONDS	= 0.002;
  * so 2 units is about one screen pixel there. */
 static const float ROW_HEIGHT		= 2.f;
 static const int   MAX_ROWS			= 1500;
+static const int   MAX_ROW_BINS		= 4096;		// power of two; ~8 seconds
+static const float MIN_ROW_HEIGHT	= 0.01f;	// rows shorter than this aren't drawn on their own
 /* RageDisplay_D3D draws quads with 16-bit indices; keep each batch well under that. */
 static const int   MAX_VERTS_PER_DRAW = 4096*4;
 
@@ -258,23 +260,12 @@ void WaveformData::FinishLoading()
 	m_bDone = true;
 }
 
-bool WaveformData::GetBin( float fStartSec, float fEndSec, Bin &out ) const
+bool WaveformData::GetBins( int iStart, int iEnd, Bin &out ) const
 {
-	const int iNumBins = (int) m_Levels[0].size();
-	if( iNumBins == 0 )
-		return false;
-
-	if( fEndSec < fStartSec )
-		swap( fStartSec, fEndSec );
-
-	int iStart = (int) floor( fStartSec * m_fBinsPerSecond );
-	int iEnd = (int) ceil( fEndSec * m_fBinsPerSecond );
-	if( iEnd <= iStart )
-		iEnd = iStart + 1;
-	if( iEnd <= 0 || iStart >= iNumBins )
-		return false;
 	iStart = max( iStart, 0 );
-	iEnd = min( iEnd, iNumBins );
+	iEnd = min( iEnd, GetNumBins() );
+	if( iStart >= iEnd )
+		return false;
 
 	/* Cover [iStart, iEnd) exactly with the largest aligned bins available. */
 	out.peak = out.rms = 0;
@@ -321,6 +312,11 @@ float WaveformDisplay::BeatToYPos( float fBeat ) const
 {
 	const float fYOffset = ArrowGetYOffset( m_PlayerNumber, 0, fBeat );
 	return ArrowGetYPos( m_PlayerNumber, 0, fYOffset, m_fYReverseOffsetPixels );
+}
+
+float WaveformDisplay::BinToYPos( const Song &song, int iBin, double fBinsPerSecond ) const
+{
+	return BeatToYPos( song.GetBeatFromElapsedTime( float(iBin / fBinsPerSecond) ) );
 }
 
 void WaveformDisplay::AddQuad( float fLeft, float fTop, float fRight, float fBottom, const RageColor &c )
@@ -387,55 +383,104 @@ void WaveformDisplay::DrawPrimitives()
 	FlushQuads();
 }
 
+/* First guess at the number of bins in a row starting at iBin: the power of two
+ * whose row is closest to ROW_HEIGHT tall at the tempo there (between
+ * ROW_HEIGHT/sqrt(2) and ROW_HEIGHT*sqrt(2), so rows average about ROW_HEIGHT).
+ * AddRows() checks it against the real Y positions. */
+static int GuessRowBins( const Song &song, int iBin, double fBinsPerSecond, float fUnitsPerBeat )
+{
+	float fBeat, fBPS;
+	bool bFreeze;
+	song.GetBeatAndBPSFromElapsedTime( float(iBin / fBinsPerSecond), fBeat, fBPS, bFreeze );
+	const double fUnitsPerBin = fUnitsPerBeat * fBPS / fBinsPerSecond;
+
+	int iBins = 1;
+	while( iBins < MAX_ROW_BINS && iBins * 2 * fUnitsPerBin <= ROW_HEIGHT * 1.41421356 )
+		iBins *= 2;
+	return iBins;
+}
+
 void WaveformDisplay::AddRows( const WaveformData &data, const Song &song, float fPeakScale, float fRmsScale )
 {
 	const float fHalfWidth = WAVE_WIDTH / 2;
+	const double fBinsPerSecond = data.GetBinsPerSecond();
+	if( fBinsPerSecond <= 0 )
+		return;
 
-	/* Split the visible beats into rows about ROW_HEIGHT tall.  Each row shows
-	 * the music between its two beats (the max over it, so zooming out never
-	 * hides a hit), and BPM changes and stops are followed exactly (a stop lands
-	 * inside the row that contains its beat). */
-	const float fFirstY = BeatToYPos( m_fFirstBeat );
-	const float fLastY = BeatToYPos( m_fLastBeat );
-	int iRows = (int) ( fabsf(fLastY - fFirstY) / ROW_HEIGHT );
-	CLAMP( iRows, 1, MAX_ROWS );
-	const float fBeatsPerRow = (m_fLastBeat - m_fFirstBeat) / iRows;
+	/* Rows are cut on the music's own time grid, not on the beat grid: a row is
+	 * a power-of-two number of bins, about ROW_HEIGHT tall, and starts on a
+	 * multiple of that number.  The same bins then always make up the same row,
+	 * wherever the chart's timing puts them, so changing the offset (F11/F12),
+	 * BPMs or stops, or scrolling, moves the waveform without reshaping it (only
+	 * rows right at a BPM change or stop may split differently, as row sizes
+	 * follow the tempo).  (Rows cut on the beat grid took in a different group of bins
+	 * whenever the offset changed, and since a row shows the loudest of its bins
+	 * so that zooming out never hides a hit, hits grew, shrank and jumped between
+	 * rows.)  Each row is placed by mapping its music time -> beat -> Y, so BPM
+	 * changes and stops still line up exactly. */
+	const float fUnitsPerBeat = fabsf( BeatToYPos(m_fLastBeat) - BeatToYPos(m_fFirstBeat) ) / (m_fLastBeat - m_fFirstBeat);
+	const int iEndBin = min( data.GetNumBins(),
+		(int) ceil(song.GetElapsedTimeFromBeat(m_fLastBeat) * fBinsPerSecond) );
+	int iBin = max( 0, (int) floor(song.GetElapsedTimeFromBeat(m_fFirstBeat) * fBinsPerSecond) );
+	iBin &= ~( GuessRowBins(song, iBin, fBinsPerSecond, fUnitsPerBeat) - 1 );
 
-	float fPrevY = fFirstY;
-	float fPrevSec = song.GetElapsedTimeFromBeat( m_fFirstBeat );
-	for( int r = 1; r <= iRows; ++r )
+	float fPrevY = BinToYPos( song, iBin, fBinsPerSecond );
+	WaveformData::Bin pending;	// rows with no height yet (under a stop)
+	pending.peak = pending.rms = 0;
+	for( int iRow = 0; iBin < iEndBin && iRow < MAX_ROWS; ++iRow )
 	{
-		const float fBeat = m_fFirstBeat + r * fBeatsPerRow;
-		const float fY = BeatToYPos( fBeat );
-		const float fSec = song.GetElapsedTimeFromBeat( fBeat );
+		int iBins = GuessRowBins( song, iBin, fBinsPerSecond, fUnitsPerBeat );
+		while( (iBin & (iBins-1)) != 0 )
+			iBins /= 2;	// stay on the grid
+
+		/* Grow the row while it stays short: under a stop the music plays on but
+		 * the chart doesn't move, so the whole stop fits in about one row. */
+		while( iBins < MAX_ROW_BINS && (iBin & (iBins*2-1)) == 0 &&
+			fabsf(BinToYPos(song, iBin + iBins*2, fBinsPerSecond) - fPrevY) <= ROW_HEIGHT * 0.75f )
+			iBins *= 2;
+
+		/* Shrink it if the tempo gets faster inside it. */
+		float fY = BinToYPos( song, iBin + iBins, fBinsPerSecond );
+		while( iBins > 1 && fabsf(fY - fPrevY) > ROW_HEIGHT * 2 )
+		{
+			iBins /= 2;
+			fY = BinToYPos( song, iBin + iBins, fBinsPerSecond );
+		}
 
 		WaveformData::Bin bin;
-		if( data.GetBin(fPrevSec, fSec, bin) )
+		if( !data.GetBins(iBin, iBin + iBins, bin) )
+			break;
+		iBin += iBins;
+
+		/* A row with no height can't be seen; show its music in the next row. */
+		MergeBin( pending, bin );
+		if( fabsf(fY - fPrevY) < MIN_ROW_HEIGHT )
+			continue;
+		bin = pending;
+		pending.peak = pending.rms = 0;
+
+		const float fPeak = min( bin.peak * fPeakScale, 1.f );
+		const float fRms = min( bin.rms * fRmsScale, 1.f );
+		if( fPeak > SILENCE )
 		{
-			const float fPeak = min( bin.peak * fPeakScale, 1.f );
-			const float fRms = min( bin.rms * fRmsScale, 1.f );
-			if( fPeak > SILENCE )
+			const float fTop = min( fPrevY, fY );
+			const float fBottom = max( fPrevY, fY );
+
+			/* Peak: faint halo that marks where the hits are. */
+			const float fPeakWidth = max( MIN_RMS_WIDTH, fPeak * fHalfWidth );
+			AddQuad( -fPeakWidth, fTop, fPeakWidth, fBottom, COLOR_PEAK );
+
+			/* RMS: the body, brighter where it's louder. */
+			const float fRmsWidth = fRms * fHalfWidth;
+			if( fRmsWidth >= MIN_RMS_WIDTH )
 			{
-				const float fTop = min( fPrevY, fY );
-				const float fBottom = max( fPrevY, fY );
-
-				/* Peak: faint halo that marks where the hits are. */
-				const float fPeakWidth = max( MIN_RMS_WIDTH, fPeak * fHalfWidth );
-				AddQuad( -fPeakWidth, fTop, fPeakWidth, fBottom, COLOR_PEAK );
-
-				/* RMS: the body, brighter where it's louder. */
-				const float fRmsWidth = fRms * fHalfWidth;
-				if( fRmsWidth >= MIN_RMS_WIDTH )
-				{
-					const float fBright = clamp( fRms * RMS_BRIGHTNESS, 0.f, 1.f );
-					const RageColor c = COLOR_RMS_LO + (COLOR_RMS_HI - COLOR_RMS_LO) * fBright;
-					AddQuad( -fRmsWidth, fTop, fRmsWidth, fBottom, c );
-				}
+				const float fBright = clamp( fRms * RMS_BRIGHTNESS, 0.f, 1.f );
+				const RageColor c = COLOR_RMS_LO + (COLOR_RMS_HI - COLOR_RMS_LO) * fBright;
+				AddQuad( -fRmsWidth, fTop, fRmsWidth, fBottom, c );
 			}
 		}
 
 		fPrevY = fY;
-		fPrevSec = fSec;
 	}
 }
 
