@@ -51,9 +51,15 @@ public:
 	static void UpdateShared( const CString &sMusicPath, float fMaxSeconds );
 	static void FreeShared();
 
-	/* Max peak / RMS over the music time range [fStartSec, fEndSec).
-	 * Returns false if no decoded audio lies in that range (yet). */
-	bool GetBin( float fStartSec, float fEndSec, Bin &out ) const;
+	/* Bin n covers music time [n, n+1) / GetBinsPerSecond(); 0 until the file
+	 * is opened. */
+	double GetBinsPerSecond() const { return m_fBinsPerSecond; }
+	/* Bins decoded so far. */
+	int GetNumBins() const { return (int) m_Levels[0].size(); }
+	/* Max peak / RMS over bins [iStart, iEnd); one look-up when the range is a
+	 * power of two starting on a multiple of it.  Returns false if none of
+	 * those bins is decoded (yet). */
+	bool GetBins( int iStart, int iEnd, Bin &out ) const;
 
 	/* Largest values decoded so far (the whole song's once IsLoaded()), for
 	 * normalising. */
@@ -107,11 +113,12 @@ private:
 
 /*
  * WaveformDisplay - draws the shared WaveformData behind a NoteField in the
- * editor.  The visible range is sampled in fixed-height rows (so the cost
- * depends on the screen height, not on the zoom or song length), every row is
- * mapped beat -> music time through the song's timing data (so BPM changes and
- * stops line up), and everything is sent to the renderer as a single batch of
- * quads.
+ * editor.  The visible range is drawn in rows about the same height (so the
+ * cost depends on the screen height, not on the zoom or song length).  Rows are
+ * cut on the music's time grid, so the offset, BPMs and stops move the
+ * waveform without reshaping it, and every row is mapped music time ->
+ * beat through the song's timing data (so BPM changes and stops line up).
+ * Everything is sent to the renderer as a single batch of quads.
  */
 class WaveformDisplay : public Actor
 {
@@ -124,6 +131,7 @@ public:
 
 private:
 	float BeatToYPos( float fBeat ) const;
+	float BinToYPos( const Song &song, int iBin, double fBinsPerSecond ) const;
 	/* One quad pair (peak halo + RMS body) per visible row; widths are the
 	 * values times fPeakScale / fRmsScale (clamped to 1), times half the width. */
 	void AddRows( const WaveformData &data, const Song &song, float fPeakScale, float fRmsScale );
